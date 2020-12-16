@@ -84,6 +84,7 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.hive.conf.Constants;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hive.beeline.cli.CliOptionsProcessor;
@@ -186,6 +187,8 @@ public class BeeLine implements Closeable {
       "tsv", new DeprecatedSeparatedValuesOutputFormat(this, '\t'),
       "xmlattr", new XMLAttributeOutputFormat(this),
       "xmlelements", new XMLElementOutputFormat(this),
+      "json", new JSONOutputFormat(this),
+      "jsonfile", new JSONFileOutputFormat(this),
   });
 
   private List<String> supportedLocalDriver =
@@ -890,8 +893,12 @@ public class BeeLine implements Closeable {
     getOpts().setInitFiles(cl.getOptionValues("i"));
     getOpts().setScriptFile(cl.getOptionValue("f"));
 
-
     if (url != null) {
+      String hplSqlMode = Utils.parsePropertyFromUrl(url, Constants.MODE);
+      if ("HPLSQL".equalsIgnoreCase(hplSqlMode)) {
+        getOpts().setDelimiter("/");
+        getOpts().setEntireLineAsCommand(true);
+      }
       // Specifying username/password/driver explicitly will override the values from the url;
       // make sure we don't override the values present in the url with empty values.
       if (user == null) {
@@ -931,6 +938,8 @@ public class BeeLine implements Closeable {
       if (!dispatch("!properties " + propertyFile)) {
         exit = true;
         return false;
+      } else {
+        return true;
       }
     }
     return false;
@@ -1324,7 +1333,16 @@ public class BeeLine implements Closeable {
         }
         fileStream = fs.open(path);
       } else {
-        fileStream = new FileInputStream(fileName);
+        org.apache.hadoop.fs.Path path = new org.apache.hadoop.fs.Path(fileName);
+        FileSystem fs;
+        HiveConf conf = new HiveConf();
+        if (!path.toUri().isAbsolute()) {
+          fs = FileSystem.getLocal(conf);
+          path = fs.makeQualified(path);
+        } else {
+          fs = FileSystem.get(path.toUri(), conf);
+        }
+        fileStream = fs.open(path);
       }
       return execute(initializeConsoleReader(fileStream), !getOpts().getForce());
     } catch (Throwable t) {
@@ -1869,7 +1887,7 @@ public class BeeLine implements Closeable {
    */
   int getSize(ResultSet rs) {
     try {
-      if (rs.getType() == rs.TYPE_FORWARD_ONLY) {
+      if (rs.getType() == ResultSet.TYPE_FORWARD_ONLY) {
         return -1;
       }
       rs.last();
@@ -2338,6 +2356,13 @@ public class BeeLine implements Closeable {
     if (signalHandler != null) {
       signalHandler.setStatement(stmnt);
     }
+
+    // If no fetch size is specified in beeline, let the driver figure it out
+    final int fetchSize = getOpts().getFetchSize();
+    if (fetchSize >= 0) {
+      stmnt.setFetchSize(fetchSize);
+    }
+
     return stmnt;
   }
 

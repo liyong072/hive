@@ -49,6 +49,7 @@ import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPNotEqual;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPNotNull;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPNull;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPOr;
+import org.apache.hadoop.hive.serde2.io.DateWritable;
 import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
@@ -204,9 +205,21 @@ public class ConvertAstToSearchArg {
         }
         return fl.doubleValue();
       case TIMESTAMP:
-        return Timestamp.valueOf(lit.toString());
+        final Timestamp ts;
+        if (lit instanceof Timestamp) {
+          ts = (Timestamp) lit;
+        } else if (lit instanceof org.apache.hadoop.hive.common.type.Timestamp) {
+          ts = ((org.apache.hadoop.hive.common.type.Timestamp) lit)
+              .toSqlTimestamp();
+        } else {
+          ts = org.apache.hadoop.hive.common.type.Timestamp.valueOf(lit.toString())
+              .toSqlTimestamp();
+        }
+        return ts;
       case DATE:
-        return Date.valueOf(lit.toString());
+        return new Date(
+            DateWritable.daysToMillis(
+                org.apache.hadoop.hive.common.type.Date.valueOf(lit.toString()).toEpochDay()));
       case DECIMAL:
         return new HiveDecimalWritable(lit.toString());
       case BOOLEAN:
@@ -458,7 +471,14 @@ public class ConvertAstToSearchArg {
     } else if (op == GenericUDFIn.class) {
       createLeaf(PredicateLeaf.Operator.IN, expr, 0);
     } else if (op == GenericUDFBetween.class) {
-      createLeaf(PredicateLeaf.Operator.BETWEEN, expr, 1);
+      // Start with NOT operator when the first child of GenericUDFBetween operator is set to TRUE
+      if (Boolean.TRUE.equals(((ExprNodeConstantDesc) expression.getChildren().get(0)).getValue())) {
+        builder.startNot();
+        createLeaf(PredicateLeaf.Operator.BETWEEN, expr, 1);
+        builder.end();
+      } else {
+        createLeaf(PredicateLeaf.Operator.BETWEEN, expr, 1);
+      }
     } else if (op == GenericUDFOPNull.class) {
       createLeaf(PredicateLeaf.Operator.IS_NULL, expr, 0);
     } else if (op == GenericUDFOPNotNull.class) {

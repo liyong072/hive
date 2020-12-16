@@ -32,7 +32,6 @@ import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeSpec;
-import org.apache.hadoop.hive.serde2.SerDeStats;
 import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory;
@@ -61,8 +60,8 @@ import org.apache.hadoop.io.Writable;
  * into a row. If the output type of the column in a query is not a string, it
  * will be automatically converted to String by Hive.
  *
- * For the format of the format String, please refer to {@link http
- * ://java.sun.com/j2se/1.5.0/docs/api/java/util/Formatter.html#syntax}
+ * For the format of the format String, please refer to link: http
+ * ://java.sun.com/j2se/1.5.0/docs/api/java/util/Formatter.html#syntax
  *
  * NOTE: Obviously, all columns have to be strings. Users can use
  * "CAST(a AS INT)" to convert columns to other types.
@@ -268,12 +267,6 @@ public class RegexSerDe extends AbstractSerDe {
     }
     outputRowText.set(outputRowString);
     return outputRowText;
-  }
-
-  @Override
-  public SerDeStats getSerDeStats() {
-    // no support for statistics
-    return null;
   }
 
 }

@@ -30,6 +30,8 @@ import org.apache.hadoop.hive.ql.exec.vector.VectorExpressionDescriptor;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizationContext;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 
 /**
@@ -59,10 +61,20 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
  * A vector expression has optional children vector expressions when 1 or more parameters need
  * to be calculated into vector scratch columns.  Columns and constants do not need children
  * expressions.
+ *
+ * HOW TO to extend VectorExpression (some basic steps and hints):
+ * 1. Create a subclass, and write a proper getDescriptor() (column/scalar?, number for args?, etc.)
+ * 2. Define an explicit parameterless constructor
+ * 3. Define a proper parameterized constructor (according to descriptor)
+ * 4. In case of UDF, add non-vectorized UDF class to Vectorizer.supported*UDFs
+ * 5. Add the new vectorized expression class to VectorizedExpressions annotation of the original UDF
+ * 6. If you subclass an expression, do the same steps (2,3,5) for subclasses as well (ctors)
+ * 7. If your base expression class is abstract, don't add it to VectorizedExpressions annotation
  */
 public abstract class VectorExpression implements Serializable {
 
   private static final long serialVersionUID = 1L;
+  protected transient final Logger LOG = LoggerFactory.getLogger(getClass().getName());
 
   /**
    * Child expressions for parameters -- but only those that need to be computed.
@@ -164,30 +176,30 @@ public abstract class VectorExpression implements Serializable {
 
   //------------------------------------------------------------------------------------------------
 
-  public void transientInit() throws HiveException {
+  public void transientInit(Configuration conf) throws HiveException {
     // Do nothing by default.
   }
 
-  public static void doTransientInit(VectorExpression vecExpr) throws HiveException {
+  public static void doTransientInit(VectorExpression vecExpr, Configuration conf) throws HiveException {
     if (vecExpr == null) {
       return;
     }
-    doTransientInitRecurse(vecExpr);
+    doTransientInitRecurse(vecExpr, conf);
   }
 
-  public static void doTransientInit(VectorExpression[] vecExprs) throws HiveException {
+  public static void doTransientInit(VectorExpression[] vecExprs, Configuration conf) throws HiveException {
     if (vecExprs == null) {
       return;
     }
     for (VectorExpression vecExpr : vecExprs) {
-      doTransientInitRecurse(vecExpr);
+      doTransientInitRecurse(vecExpr, conf);
     }
   }
 
-  private static void doTransientInitRecurse(VectorExpression vecExpr) throws HiveException {
+  private static void doTransientInitRecurse(VectorExpression vecExpr, Configuration conf) throws HiveException {
 
     // Well, don't recurse but make sure all children are initialized.
-    vecExpr.transientInit();
+    vecExpr.transientInit(conf);
     List<VectorExpression> newChildren = new ArrayList<VectorExpression>();
     VectorExpression[] children = vecExpr.getChildExpressions();
     if (children != null) {
@@ -199,7 +211,7 @@ public abstract class VectorExpression implements Serializable {
       if (children != null) {
         Collections.addAll(newChildren, children);
       }
-      childVecExpr.transientInit();
+      childVecExpr.transientInit(conf);
     }
   }
 

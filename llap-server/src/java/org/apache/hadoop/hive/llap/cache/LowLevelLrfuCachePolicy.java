@@ -21,7 +21,7 @@ package org.apache.hadoop.hive.llap.cache;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.llap.LlapUtil;
@@ -42,7 +42,7 @@ import org.apache.hadoop.metrics2.impl.MsInfo;
  * that Subsumes the Least Recently Used (LRU) and Least Frequently Used (LFU) Policies".
  * Additionally, buffer locking has to be handled (locked buffer cannot be evicted).
  */
-public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
+public final class LowLevelLrfuCachePolicy extends ProactiveEvictingCachePolicy.Impl implements LowLevelCachePolicy {
   private final double lambda;
   private double f(long x) {
     return Math.pow(0.5, lambda * x);
@@ -67,7 +67,7 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
    * ONLY LIST REMOVAL is allowed under list lock.
    */
   private LlapCacheableBuffer[] heap;
-  private final Object heapLock = new Object();
+  private final ReentrantLock heapLock = new ReentrantLock();
   private final ReentrantLock listLock = new ReentrantLock();
   private LlapCacheableBuffer listHead, listTail;
   /** Number of elements. */
@@ -75,9 +75,15 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
   private final int maxHeapSize;
   private EvictionListener evictionListener;
   private final PolicyMetrics metrics;
+  private final ThreadLocal<LlapCacheableBuffer[]> threadLocalBuffers;
+  private final ThreadLocal<Integer> threadLocalCount;
+  private final int maxQueueSize;
 
   public LowLevelLrfuCachePolicy(int minBufferSize, long maxSize, Configuration conf) {
-    lambda = HiveConf.getFloatVar(conf, HiveConf.ConfVars.LLAP_LRFU_LAMBDA);
+    super(conf);
+    this.maxQueueSize = HiveConf.getIntVar(conf, HiveConf.ConfVars.LLAP_LRFU_BP_WRAPPER_SIZE);
+    this.lambda = HiveConf.getFloatVar(conf, HiveConf.ConfVars.LLAP_LRFU_LAMBDA);
+
     int maxBuffers = (int)Math.ceil((maxSize * 1.0) / minBufferSize);
     if (lambda == 0) {
       maxHeapSize = maxBuffers; // lrfuThreshold is +inf in this case
@@ -99,8 +105,14 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
 
     // register new metrics provider for this cache policy
     metrics = new PolicyMetrics(sessID);
-    LlapMetricsSystem.instance().register("LowLevelLrfuCachePolicy-" + MetricsUtils.getHostName(),
-                                          null, metrics);
+    LlapMetricsSystem.instance().register("LowLevelLrfuCachePolicy-" + MetricsUtils.getHostName(), null, metrics);
+    threadLocalBuffers = ThreadLocal.withInitial(() -> new LlapCacheableBuffer[maxQueueSize]);
+    threadLocalCount = ThreadLocal.withInitial(() -> 0);
+  }
+
+  @Override
+  public void evictProactively() {
+    evictOrPurge(false);
   }
 
   @Override
@@ -140,11 +152,51 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
 
   @Override
   public void notifyUnlock(LlapCacheableBuffer buffer) {
-    long time = timer.incrementAndGet();
-    if (LlapIoImpl.CACHE_LOGGER.isTraceEnabled()) {
-      LlapIoImpl.CACHE_LOGGER.trace("Touching {} at {}", buffer, time);
+    // In the very rare chance that a buffer was marked but then accessed again we remove the mark from it
+    // - except if instant deallocation is turned on of course -
+    if (proactiveEvictionEnabled && !instantProactiveEviction) {
+      buffer.removeProactiveEvictionMark();
     }
-    synchronized (heapLock) {
+    int count = threadLocalCount.get();
+    final LlapCacheableBuffer[] cacheableBuffers = threadLocalBuffers.get() ;
+    if (count < maxQueueSize) {
+      cacheableBuffers[count] = buffer;
+      threadLocalCount.set(++count);
+    }
+    if (count <= maxQueueSize / 2) {
+      // case too early to flush
+      return;
+    }
+
+    if (count == maxQueueSize) {
+      // case we have to flush thus block on heap lock
+      heapLock.lock();
+      try {
+        doNotifyUnderHeapLock(count, cacheableBuffers);
+      } finally {
+        threadLocalCount.set(0);
+        heapLock.unlock();
+      }
+      return;
+    }
+    if (heapLock.tryLock()) {
+      try {
+        doNotifyUnderHeapLock(count, cacheableBuffers);
+      } finally {
+        threadLocalCount.set(0);
+        heapLock.unlock();
+      }
+    }
+  }
+
+  private void doNotifyUnderHeapLock(int count, LlapCacheableBuffer[] cacheableBuffers) {
+    LlapCacheableBuffer buffer;
+    for (int i = 0; i < count; i++) {
+      buffer = cacheableBuffers[i];
+      long time = timer.incrementAndGet();
+      if (LlapIoImpl.CACHE_LOGGER.isTraceEnabled()) {
+        LlapIoImpl.CACHE_LOGGER.trace("Touching {} at {}", buffer, time);
+      }
       // First, update buffer priority - we have just been using it.
       buffer.priority = (buffer.lastUpdate == -1) ? F0
           : touchPriority(time, buffer.lastUpdate, buffer.priority);
@@ -197,52 +249,115 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
     this.evictionListener = listener;
   }
 
-  @Override
-  public long purge() {
+  private long evictOrPurge(boolean isPurge) {
     long evicted = 0;
-    LlapCacheableBuffer oldTail = null;
+    LlapCacheableBuffer oldTail;
     listLock.lock();
     try {
       LlapCacheableBuffer current = listTail;
+      LlapCacheableBuffer lockedHead = null;
+      LlapCacheableBuffer lockedTail = null;
       oldTail = listTail;
       while (current != null) {
-        boolean canEvict = LlapCacheableBuffer.INVALIDATE_OK == current.invalidate();
+        // Case for when there is proactive eviction, but current buffer is not marked -> thus need to be kept
+        if (!isPurge && !current.isMarkedForEviction()) {
+          LlapCacheableBuffer newCurrent = current.prev;
+          oldTail = removeFromLocalList(oldTail, current);
+
+          current.indexInHeap = LlapCacheableBuffer.IN_LIST;
+          if (lockedHead != null) {
+            current.next = lockedHead;
+            lockedHead.prev = current;
+            lockedHead = current;
+          } else {
+            lockedHead = current;
+            lockedTail = current;
+            current.next = null;
+          }
+
+          current = newCurrent;
+          continue;
+        }
+        int invalidateResult = current.invalidate();
         current.indexInHeap = LlapCacheableBuffer.NOT_IN_CACHE;
-        if (canEvict) {
+        if (invalidateResult == LlapCacheableBuffer.INVALIDATE_OK) {
           current = current.prev;
-        } else {
+        }
+        if (invalidateResult == LlapCacheableBuffer.INVALIDATE_ALREADY_INVALID && instantProactiveEviction &&
+            current.isMarkedForEviction()) {
+          // Found a marked and instantly deallocated buffer. If this is a purge we need to do a proper cleanup of
+          // this buffer. If this is a proactive sweep, cleanup will be done later in this method.
+          if (isPurge) {
+            evictionListener.notifyProactivelyEvicted(current);
+          } else {
+            current = current.prev;
+            continue;
+          }
+        }
+
+        // Runs if invalidation didn't succeed due to a non-proactive eviction cause (e.g. buffer is locked and
+        // currently being used). Also runs if there was proactive eviction (+instant dealloc) and this is a purge run.
+        // In either case we need to remove this buffer from the list of to-be-removed buffers.
+        if (invalidateResult != LlapCacheableBuffer.INVALIDATE_OK) {
           // Remove from the list.
           LlapCacheableBuffer newCurrent = current.prev;
           oldTail = removeFromLocalList(oldTail, current);
           current = newCurrent;
         }
       }
-      listHead = null;
-      listTail = null;
+      listHead = lockedHead;
+      listTail = lockedTail;
     } finally {
       listLock.unlock();
     }
 
-    LlapCacheableBuffer[] oldHeap = null;
-    int oldHeapSize = -1;
-    synchronized (heapLock) {
+    LlapCacheableBuffer[] oldHeap;
+    int oldHeapSize;
+    heapLock.lock();
+    try {
       oldHeap = heap;
       oldHeapSize = heapSize;
       heap = new LlapCacheableBuffer[maxHeapSize];
       heapSize = 0;
       for (int i = 0; i < oldHeapSize; ++i) {
         LlapCacheableBuffer result = oldHeap[i];
+        // Case for when there is proactive eviction, but current buffer is not marked -> thus need to be kept
+        if (!isPurge && !result.isMarkedForEviction()) {
+          oldHeap[i] = null;
+          result.indexInHeap = heapSize;
+          heapifyUpUnderLock(result, result.lastUpdate);
+          ++heapSize;
+          continue;
+        }
+
         result.indexInHeap = LlapCacheableBuffer.NOT_IN_CACHE;
         int invalidateResult = result.invalidate();
         if (invalidateResult != LlapCacheableBuffer.INVALIDATE_OK) {
-          oldHeap[i] = null; // Removed from heap without evicting.
+          if (invalidateResult == LlapCacheableBuffer.INVALIDATE_ALREADY_INVALID && instantProactiveEviction &&
+              result.isMarkedForEviction()) {
+            // Found a marked and instantly deallocated buffer. If this is a purge we need to do a proper cleanup of
+            // this buffer. If this is a proactive sweep cleanup will be done later in this method.
+            if (isPurge) {
+              oldHeap[i] = null;
+              evictionListener.notifyProactivelyEvicted(result);
+            }
+          } else {
+            // Other - non proactive eviction relating cases
+            oldHeap[i] = null; // Removed from heap without evicting.
+          }
         }
       }
+    } finally {
+      heapLock.unlock();
     }
     LlapCacheableBuffer current = oldTail;
     while (current != null) {
       evicted += current.getMemoryUsage();
-      evictionListener.notifyEvicted(current);
+      if (isPurge) {
+        evictionListener.notifyEvicted(current);
+      } else {
+        evictionListener.notifyProactivelyEvicted(current);
+      }
       current = current.prev;
     }
     for (int i = 0; i < oldHeapSize; ++i) {
@@ -251,11 +366,25 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
         continue;
       }
       evicted += current.getMemoryUsage();
-      evictionListener.notifyEvicted(current);
+      if (isPurge) {
+        evictionListener.notifyEvicted(current);
+      } else {
+        evictionListener.notifyProactivelyEvicted(current);
+      }
     }
-    LlapIoImpl.LOG.info("PURGE: evicted {} from LRFU policy",
-        LlapUtil.humanReadableByteCount(evicted));
+    if (isPurge) {
+      LlapIoImpl.LOG.info("PURGE: evicted {} from LRFU policy",
+          LlapUtil.humanReadableByteCount(evicted));
+    } else {
+      LlapIoImpl.LOG.info("PROACTIVE_EVICTION: evicted {} from LRFU policy",
+          LlapUtil.humanReadableByteCount(evicted));
+    }
     return evicted;
+  }
+
+  @Override
+  public long purge() {
+    return evictOrPurge(true);
   }
 
   private static LlapCacheableBuffer removeFromLocalList(
@@ -285,9 +414,12 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
     // there's a small number of buffers and they all live in the heap).
     long time = timer.get();
     while (evicted < memoryToReserve) {
-      LlapCacheableBuffer buffer = null;
-      synchronized (heapLock) {
+      LlapCacheableBuffer buffer;
+      heapLock.lock();
+      try {
         buffer = evictFromHeapUnderLock(time);
+      } finally {
+        heapLock.unlock();
       }
       if (buffer == null) {
         return evicted;
@@ -300,7 +432,7 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
 
   private long evictFromList(long memoryToReserve) {
     long evicted = 0;
-    LlapCacheableBuffer nextCandidate = null, firstCandidate = null;
+    LlapCacheableBuffer nextCandidate, firstCandidate;
     listLock.lock();
     // We assume that there are no locked blocks in the list; or if they are, they can be dropped.
     // Therefore we always evict one contiguous sequence from the tail. We can find it in one pass,
@@ -309,7 +441,8 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
       nextCandidate = listTail;
       firstCandidate = listTail;
       while (evicted < memoryToReserve && nextCandidate != null) {
-        if (LlapCacheableBuffer.INVALIDATE_OK != nextCandidate.invalidate()) {
+        int invalidateResult = nextCandidate.invalidate();
+        if (LlapCacheableBuffer.INVALIDATE_OK != invalidateResult) {
           // Locked, or invalidated, buffer was in the list - just drop it;
           // will be re-added on unlock.
           LlapCacheableBuffer lockedBuffer = nextCandidate;
@@ -318,6 +451,11 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
           }
           nextCandidate = nextCandidate.prev;
           removeFromListUnderLock(lockedBuffer);
+          if (instantProactiveEviction && LlapCacheableBuffer.INVALIDATE_ALREADY_INVALID == invalidateResult &&
+              lockedBuffer.isMarkedForEviction()) {
+            // Cleanup an already marked and deallocated buffer - this call is needed for administration purposes
+            evictionListener.notifyProactivelyEvicted(lockedBuffer);
+          }
           continue;
         }
         // Update the state to removed-from-list, so that parallel notifyUnlock doesn't modify us.
@@ -397,6 +535,11 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
         newRoot.lastUpdate = time;
       }
       heapifyDownUnderLock(newRoot, time);
+    }
+    if (instantProactiveEviction && LlapCacheableBuffer.INVALIDATE_ALREADY_INVALID == invalidateResult &&
+        result.isMarkedForEviction()) {
+      // Cleanup an already marked and deallocated buffer - this call is needed for administration purposes
+      evictionListener.notifyProactivelyEvicted(result);
     }
     // Otherwise we just removed a locked/invalid item from heap; we continue.
     return canEvict ? result : null;
@@ -702,7 +845,8 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
       long lockedMeta = 0L;   // number of bytes in locked metadata buffers
 
       // aggregate values on the heap
-      synchronized (heapLock) {
+      heapLock.lock();
+      try {
         for (int heapIdx = 0; heapIdx < heapSize; ++heapIdx) {
           LlapCacheableBuffer buff = heap[heapIdx];
 
@@ -720,6 +864,8 @@ public class LowLevelLrfuCachePolicy implements LowLevelCachePolicy {
             }
           }
         }
+      } finally {
+        heapLock.unlock();
       }
 
       // aggregate values on the evicition short list

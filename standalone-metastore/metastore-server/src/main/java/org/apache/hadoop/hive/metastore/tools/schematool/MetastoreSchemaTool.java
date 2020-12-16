@@ -20,8 +20,9 @@ package org.apache.hadoop.hive.metastore.tools.schematool;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.cli.OptionGroup;
 import org.apache.commons.cli.ParseException;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.output.NullOutputStream;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.metastore.HiveMetaException;
@@ -41,6 +42,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.URI;
@@ -111,7 +113,7 @@ public class MetastoreSchemaTool {
     this.metaStoreSchemaInfo = MetaStoreSchemaInfoFactory.get(conf, metastoreHome, dbType);
     // If the dbType is "hive", this is setting up the information schema in Hive.
     // We will set the default jdbc url and driver.
-    // It is overriden by command line options if passed (-url and -driver
+    // It is overridden by command line options if passed (-url and -driver)
     if (dbType.equalsIgnoreCase(HiveSchemaHelper.DB_HIVE)) {
       this.url = HiveSchemaHelper.EMBEDDED_HS2_URL;
       this.driver = HiveSchemaHelper.HIVE_JDBC_DRIVER;
@@ -196,8 +198,9 @@ public class MetastoreSchemaTool {
     return verbose;
   }
 
-  protected void setVerbose(boolean verbose) {
+  public MetastoreSchemaTool setVerbose(boolean verbose) {
     this.verbose = verbose;
+    return this;
   }
 
   protected void setDbOpts(String dbOpts) {
@@ -302,7 +305,9 @@ public class MetastoreSchemaTool {
 
   // Generate the beeline args per hive conf and execute the given script
   protected void execSql(String sqlScriptFile) throws IOException {
-    CommandBuilder builder = new CommandBuilder(conf, url, driver, userName, passWord, sqlScriptFile);
+    CommandBuilder builder =
+        new CommandBuilder(conf, url, driver, userName, passWord, sqlScriptFile)
+            .setVerbose(verbose);
 
     // run the script using SqlLine
     SqlLine sqlLine = new SqlLine();
@@ -351,6 +356,7 @@ public class MetastoreSchemaTool {
     protected final String sqlScriptFile;
     protected final String driver;
     protected final String url;
+    private boolean verbose = false;
 
     protected CommandBuilder(Configuration conf, String url, String driver, String userName,
                              String password, String sqlScriptFile) throws IOException {
@@ -363,12 +369,19 @@ public class MetastoreSchemaTool {
       this.sqlScriptFile = sqlScriptFile;
     }
 
+    public CommandBuilder setVerbose(boolean verbose) {
+      this.verbose = verbose;
+      return this;
+    }
+
     public String[] buildToRun() throws IOException {
       return argsWith(password);
     }
 
     public String buildToLog() throws IOException {
-      logScript();
+      if (verbose) {
+        logScript();
+      }
       return StringUtils.join(argsWith(PASSWD_MASK), " ");
     }
 
@@ -412,6 +425,21 @@ public class MetastoreSchemaTool {
     return run(findHomeDir(), args, null, MetastoreConf.newMetastoreConf());
   }
 
+  @VisibleForTesting
+  public final int runScript(String[] args, InputStream scriptStream) {
+    try {
+      init(findHomeDir(), args, null, MetastoreConf.newMetastoreConf());
+      // Cannot run script directly from input stream thus copy is necessary.
+      File scriptFile = File.createTempFile("schemaToolTmpScript", "sql");
+      scriptFile.deleteOnExit();
+      FileUtils.copyToFile(scriptStream, scriptFile);
+      execSql(scriptFile.getAbsolutePath());
+      return 0;
+    } catch (HiveMetaException | IOException e) {
+      throw new RuntimeException("Failed to run script " + scriptStream, e);
+    }
+  }
+  
   public int run(String metastoreHome, String[] args, OptionGroup additionalOptions,
                  Configuration conf) {
     try {
@@ -431,12 +459,18 @@ public class MetastoreSchemaTool {
         task = new SchemaToolTaskCreateCatalog();
       } else if (cmdLine.hasOption("alterCatalog")) {
         task = new SchemaToolTaskAlterCatalog();
+      } else if (cmdLine.hasOption("mergeCatalog")) {
+        task = new SchemaToolTaskMergeCatalog();
       } else if (cmdLine.hasOption("moveDatabase")) {
         task = new SchemaToolTaskMoveDatabase();
       } else if (cmdLine.hasOption("moveTable")) {
         task = new SchemaToolTaskMoveTable();
       } else if (cmdLine.hasOption("createUser")) {
         task = new SchemaToolTaskCreateUser();
+      } else if (cmdLine.hasOption("dropAllDatabases")) {
+        task = new SchemaToolTaskDrop();
+      } else if (cmdLine.hasOption("createLogsTable")) {
+        task = new SchemaToolTaskCreateLogsTable();
       } else {
         throw new HiveMetaException("No task defined!");
       }
@@ -456,10 +490,12 @@ public class MetastoreSchemaTool {
           logAndPrintToError("SQL Error code: " + ((SQLException) t).getErrorCode());
         }
       }
-      if (cmdLine.hasOption("verbose")) {
-        e.printStackTrace();
-      } else {
-        logAndPrintToError("Use --verbose for detailed stacktrace.");
+      if (cmdLine != null) {
+        if (cmdLine.hasOption("verbose")) {
+          e.printStackTrace();
+        } else {
+          logAndPrintToError("Use --verbose for detailed stacktrace.");
+        }
       }
       logAndPrintToError("*** schemaTool failed ***");
       return 1;

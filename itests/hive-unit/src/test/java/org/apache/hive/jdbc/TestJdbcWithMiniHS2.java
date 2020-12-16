@@ -29,6 +29,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
@@ -43,8 +44,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Base64;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -58,7 +61,7 @@ import java.util.concurrent.TimeoutException;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
@@ -86,6 +89,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 import static org.apache.hadoop.hive.metastore.ReplChangeManager.SOURCE_OF_REPLICATION;
 
+@org.junit.Ignore("HIVE-23925")
 public class TestJdbcWithMiniHS2 {
   private static MiniHS2 miniHS2 = null;
   private static String dataFileDir;
@@ -106,6 +110,7 @@ public class TestJdbcWithMiniHS2 {
     HiveConf conf = new HiveConf();
     dataFileDir = conf.get("test.data.files").replace('\\', '/').replace("c:", "");
     kvDataFilePath = new Path(dataFileDir, "kv1.txt");
+
     try {
       startMiniHS2(conf);
     } catch (Exception e) {
@@ -1312,6 +1317,19 @@ public class TestJdbcWithMiniHS2 {
     assertEquals(3, res.getInt(1));
     assertFalse("no more results", res.next());
 
+    //try creating same function again which should fail with AlreadyExistsException
+    String createSameFunctionAgain =
+            "CREATE FUNCTION example_add AS '" + testUdfClassName + "' USING JAR '" + jarFilePath + "'";
+    try {
+      stmt.execute(createSameFunctionAgain);
+    }catch (Exception e){
+      assertTrue("recreating same function failed with AlreadyExistsException ", e.getMessage().contains("AlreadyExistsException"));
+    }
+
+    // Call describe to see if function still available in registry
+    res = stmt.executeQuery("DESCRIBE FUNCTION " + testDbName + ".example_add");
+    checkForNotExist(res);
+
     // A new connection should be able to call describe/use function without issue
     Connection conn2 = getConnection(testDbName);
     Statement stmt2 = conn2.createStatement();
@@ -1439,7 +1457,8 @@ public class TestJdbcWithMiniHS2 {
         TestJdbcWithMiniHS2.class.getCanonicalName().toLowerCase().replace('.', '_') + "_"
             + System.currentTimeMillis();
     String testPathName = System.getProperty("test.warehouse.dir", "/tmp") + Path.SEPARATOR + tid;
-    Path testPath = new Path(testPathName);
+    Path testPath = new Path(testPathName + Path.SEPARATOR
+            + Base64.getEncoder().encodeToString(testDbName.toLowerCase().getBytes(StandardCharsets.UTF_8)));
     FileSystem fs = testPath.getFileSystem(new HiveConf());
     Statement stmt = conDefault.createStatement();
     try {
@@ -1483,30 +1502,11 @@ public class TestJdbcWithMiniHS2 {
 
   @Test
   public void testFetchSize() throws Exception {
-    // Test setting fetch size below max
     Connection fsConn = getConnection(miniHS2.getJdbcURL("default", "fetchSize=50", ""),
       System.getProperty("user.name"), "bar");
     Statement stmt = fsConn.createStatement();
-    stmt.execute("set hive.server2.thrift.resultset.serialize.in.tasks=true");
-    int fetchSize = stmt.getFetchSize();
-    assertEquals(50, fetchSize);
-    stmt.close();
-    fsConn.close();
-    // Test setting fetch size above max
-    fsConn = getConnection(
-      miniHS2.getJdbcURL(
-        "default",
-        "fetchSize=" + (miniHS2.getHiveConf().getIntVar(
-          HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_MAX_FETCH_SIZE) + 1),
-        ""),
-      System.getProperty("user.name"), "bar");
-    stmt = fsConn.createStatement();
-    stmt.execute("set hive.server2.thrift.resultset.serialize.in.tasks=true");
-    fetchSize = stmt.getFetchSize();
-    assertEquals(
-      miniHS2.getHiveConf().getIntVar(
-        HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_MAX_FETCH_SIZE),
-      fetchSize);
+    stmt.execute("set");
+    assertEquals(50, stmt.getFetchSize());
     stmt.close();
     fsConn.close();
   }
@@ -1662,5 +1662,54 @@ public class TestJdbcWithMiniHS2 {
       }
     }
     return extendedDescription;
+  }
+
+  @Test
+  public void testCustomPathsForCTLV() throws Exception {
+    try (Statement stmt = conTestDb.createStatement()) {
+      // Initialize
+      stmt.execute("CREATE TABLE emp_table (id int, name string, salary int)");
+      stmt.execute("insert into emp_table values(1,'aaaaa',20000)");
+      stmt.execute("CREATE VIEW emp_view AS SELECT * FROM emp_table WHERE salary>10000");
+      String customPath = System.getProperty("test.tmp.dir") + "/custom";
+
+      //Test External CTLV
+      String extPath = customPath + "/emp_ext_table";
+      stmt.execute("CREATE EXTERNAL TABLE emp_ext_table like emp_view STORED AS PARQUET LOCATION '" + extPath + "'");
+      assertTrue(getDetailedTableDescription(stmt, "emp_ext_table").contains(extPath));
+
+      //Test Managed CTLV
+      String mndPath = customPath + "/emp_mm_table";
+      stmt.execute("CREATE TABLE emp_mm_table like emp_view STORED AS ORC LOCATION '" + mndPath + "'");
+      assertTrue(getDetailedTableDescription(stmt, "emp_mm_table").contains(mndPath));
+    }
+  }
+
+  @Test
+  public void testInterruptPollingState() throws Exception {
+    ExecutorService pool = Executors.newFixedThreadPool(1);
+    final CountDownLatch latch = new CountDownLatch(1);
+    final Object[] results = new Object[2];
+    results[0] = false;
+    Future future = pool.submit(new Callable<Void>() {
+      @Override
+      public Void call() {
+        try (Statement stmt = conTestDb.createStatement()) {
+          stmt.execute("create temporary function sleepMsUDF as '" + SleepMsUDF.class.getName() + "'");
+          stmt.execute("SELECT sleepMsUDF(1, 10000)");
+          results[0] = true;
+        } catch (Exception e) {
+          results[1] = e;
+        } finally {
+          latch.countDown();
+        }
+        return null;
+      }
+    });
+    Thread.sleep(2000);
+    future.cancel(true);
+    latch.await();
+    assertEquals(false, results[0]);
+    assertEquals("Interrupted while polling on the operation status", ((Exception)results[1]).getMessage());
   }
 }

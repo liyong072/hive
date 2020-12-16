@@ -40,7 +40,6 @@ import org.apache.hadoop.hive.serde2.ByteStream.Output;
 import org.apache.hadoop.hive.serde2.ByteStream.RandomAccessOutput;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeSpec;
-import org.apache.hadoop.hive.serde2.SerDeStats;
 import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.io.ByteWritable;
 import org.apache.hadoop.hive.serde2.io.DateWritableV2;
@@ -180,45 +179,10 @@ public class BinarySortableSerDe extends AbstractSerDe {
       row.add(null);
     }
 
-    // Get the sort order
-    String columnSortOrder = tbl
-        .getProperty(serdeConstants.SERIALIZATION_SORT_ORDER);
     columnSortOrderIsDesc = new boolean[columnNames.size()];
-    for (int i = 0; i < columnSortOrderIsDesc.length; i++) {
-      columnSortOrderIsDesc[i] = (columnSortOrder != null && columnSortOrder
-          .charAt(i) == '-');
-    }
-
-    // Null first/last
-    String columnNullOrder = tbl
-        .getProperty(serdeConstants.SERIALIZATION_NULL_SORT_ORDER);
     columnNullMarker = new byte[columnNames.size()];
     columnNotNullMarker = new byte[columnNames.size()];
-    for (int i = 0; i < columnSortOrderIsDesc.length; i++) {
-      if (columnSortOrderIsDesc[i]) {
-        // Descending
-        if (columnNullOrder != null && columnNullOrder.charAt(i) == 'a') {
-          // Null first
-          columnNullMarker[i] = ONE;
-          columnNotNullMarker[i] = ZERO;
-        } else {
-          // Null last (default for descending order)
-          columnNullMarker[i] = ZERO;
-          columnNotNullMarker[i] = ONE;
-        }
-      } else {
-        // Ascending
-        if (columnNullOrder != null && columnNullOrder.charAt(i) == 'z') {
-          // Null last
-          columnNullMarker[i] = ONE;
-          columnNotNullMarker[i] = ZERO;
-        } else {
-          // Null first (default for ascending order)
-          columnNullMarker[i] = ZERO;
-          columnNotNullMarker[i] = ONE;
-        }
-      }
-    }
+    BinarySortableUtils.fillOrderArrays(tbl, columnSortOrderIsDesc, columnNullMarker, columnNotNullMarker);
   }
 
   @Override
@@ -1137,12 +1101,6 @@ public class BinarySortableSerDe extends AbstractSerDe {
           buffer,
           scratchBuffer, index, scratchBuffer.length - index,
           signum == -1 ? !invert : invert);
-  }
-
-  @Override
-  public SerDeStats getSerDeStats() {
-    // no support for statistics
-    return null;
   }
 
   public static void serializeStruct(Output byteStream, Object[] fieldData,

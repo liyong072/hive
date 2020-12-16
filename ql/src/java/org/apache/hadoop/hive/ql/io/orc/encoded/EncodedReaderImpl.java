@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.common.Pool;
 import org.apache.hadoop.hive.common.Pool.PoolObjectHelper;
 import org.apache.hadoop.hive.common.io.Allocator;
+import org.apache.hadoop.hive.common.io.CacheTag;
 import org.apache.hadoop.hive.common.io.DataCache;
 import org.apache.hadoop.hive.common.io.DiskRange;
 import org.apache.hadoop.hive.common.io.DiskRangeList;
@@ -41,7 +42,6 @@ import org.apache.hadoop.hive.common.io.DiskRangeList.CreateHelper;
 import org.apache.hadoop.hive.common.io.DiskRangeList.MutateHelper;
 import org.apache.hadoop.hive.common.io.encoded.EncodedColumnBatch.ColumnStreamData;
 import org.apache.hadoop.hive.common.io.encoded.MemoryBuffer;
-import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.orc.CompressionCodec;
 import org.apache.orc.CompressionKind;
 import org.apache.orc.DataReader;
@@ -65,14 +65,13 @@ import org.apache.orc.impl.BufferChunk;
 import org.apache.hadoop.hive.ql.io.orc.encoded.IoTrace.RangesSrc;
 import org.apache.hadoop.hive.ql.io.orc.encoded.Reader.OrcEncodedColumnBatch;
 import org.apache.hadoop.hive.ql.io.orc.encoded.Reader.PoolFactory;
-import org.apache.hadoop.io.compress.zlib.ZlibDecompressor;
-import org.apache.hadoop.io.compress.zlib.ZlibDecompressor.ZlibDirectDecompressor;
+import org.apache.hive.common.util.CleanerUtil;
 import org.apache.orc.OrcProto;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.CodedInputStream;
 
-import sun.misc.Cleaner;
+import static org.apache.hadoop.hive.llap.LlapHiveUtils.throwIfCacheOnlyRead;
 
 
 /**
@@ -109,17 +108,6 @@ import sun.misc.Cleaner;
 //       schema evolution/ACID schema considerations should be on higher level.
 class EncodedReaderImpl implements EncodedReader {
   public static final Logger LOG = LoggerFactory.getLogger(EncodedReaderImpl.class);
-  private static Field cleanerField;
-  static {
-    try {
-      // TODO: To make it work for JDK9 use CleanerUtil from https://issues.apache.org/jira/browse/HADOOP-12760
-      final Class<?> dbClazz = Class.forName("java.nio.DirectByteBuffer");
-      cleanerField = dbClazz.getDeclaredField("cleaner");
-      cleanerField.setAccessible(true);
-    } catch (Throwable t) {
-      cleanerField = null;
-    }
-  }
   private static final Object POOLS_CREATION_LOCK = new Object();
   private static Pools POOLS;
   private static class Pools {
@@ -148,14 +136,15 @@ class EncodedReaderImpl implements EncodedReader {
   private final IoTrace trace;
   private final TypeDescription fileSchema;
   private final WriterVersion version;
-  private final String tag;
+  private final CacheTag tag;
   private AtomicBoolean isStopped;
   private StoppableAllocator allocator;
+  private final boolean isReadCacheOnly;
 
   public EncodedReaderImpl(Object fileKey, List<OrcProto.Type> types,
       TypeDescription fileSchema, org.apache.orc.CompressionKind kind, WriterVersion version,
       int bufferSize, long strideRate, DataCache cacheWrapper, DataReader dataReader,
-      PoolFactory pf, IoTrace trace, boolean useCodecPool, String tag) throws IOException {
+      PoolFactory pf, IoTrace trace, boolean useCodecPool, CacheTag tag, boolean isReadCacheOnly) throws IOException {
     this.fileKey = fileKey;
     this.compressionKind = kind;
     this.isCompressed = kind != org.apache.orc.CompressionKind.NONE;
@@ -172,6 +161,7 @@ class EncodedReaderImpl implements EncodedReader {
     this.dataReader = dataReader;
     this.trace = trace;
     this.tag = tag;
+    this.isReadCacheOnly = isReadCacheOnly;
     if (POOLS != null) return;
     if (pf == null) {
       pf = new NoopPoolFactory();
@@ -592,15 +582,18 @@ class EncodedReaderImpl implements EncodedReader {
       long stripeOffset, boolean hasFileId, IdentityHashMap<ByteBuffer, Boolean> toRelease)
           throws IOException {
     DiskRangeList.MutateHelper toRead = new DiskRangeList.MutateHelper(listToRead);
-    if (LOG.isInfoEnabled()) {
-      LOG.info("Resulting disk ranges to read (file " + fileKey + "): "
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Resulting disk ranges to read (file " + fileKey + "): "
           + RecordReaderUtils.stringifyDiskRanges(toRead.next));
     }
     BooleanRef isAllInCache = new BooleanRef();
     if (hasFileId) {
       cacheWrapper.getFileData(fileKey, toRead.next, stripeOffset, CC_FACTORY, isAllInCache);
-      if (LOG.isInfoEnabled()) {
-        LOG.info("Disk ranges after cache (found everything " + isAllInCache.value + "; file "
+      if (!isAllInCache.value) {
+        throwIfCacheOnlyRead(isReadCacheOnly);
+      }
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Disk ranges after cache (found everything " + isAllInCache.value + "; file "
             + fileKey + ", base offset " + stripeOffset  + "): "
             + RecordReaderUtils.stringifyDiskRanges(toRead.next));
       }
@@ -622,7 +615,6 @@ class EncodedReaderImpl implements EncodedReader {
         }
         dataReader.readFileData(toRead.next, stripeOffset,
             cacheWrapper.getAllocator().isDirectAlloc());
-        toRelease = new IdentityHashMap<>();
         DiskRangeList drl = toRead.next;
         while (drl != null) {
           if (drl instanceof BufferChunk) {
@@ -1718,19 +1710,14 @@ class EncodedReaderImpl implements EncodedReader {
       dataReader.releaseBuffer(bb);
       return;
     }
-    Field localCf = cleanerField;
-    if (!bb.isDirect() || localCf == null) return;
+    if (!bb.isDirect() || !CleanerUtil.UNMAP_SUPPORTED) {
+      return;
+    }
     try {
-      Cleaner cleaner = (Cleaner) localCf.get(bb);
-      if (cleaner != null) {
-        cleaner.clean();
-      } else {
-        LOG.debug("Unable to clean a buffer using cleaner - no cleaner");
-      }
+      CleanerUtil.getCleaner().freeBuffer(bb);
     } catch (Exception e) {
       // leave it for GC to clean up
-      LOG.warn("Unable to clean direct buffers using Cleaner.");
-      cleanerField = null;
+      LOG.warn("Unable to clean direct buffers using Cleaner");
     }
   }
 
@@ -2078,8 +2065,8 @@ class EncodedReaderImpl implements EncodedReader {
         releaseBuffers(toRelease.keySet(), true);
         toRelease.clear();
       }
-      if (LOG.isInfoEnabled()) {
-        LOG.info("Disk ranges after pre-read (file " + fileKey + ", base offset "
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Disk ranges after pre-read (file " + fileKey + ", base offset "
             + stripeOffset + "): " + RecordReaderUtils.stringifyDiskRanges(toRead.next));
       }
       iter = toRead.next; // Reset the iter to start.

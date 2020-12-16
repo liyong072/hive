@@ -18,67 +18,9 @@
 
 package org.apache.hive.jdbc;
 
-import org.apache.hadoop.hive.metastore.security.DelegationTokenIdentifier;
-import org.apache.hadoop.io.Text;
-import org.apache.hadoop.security.Credentials;
-import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.security.token.TokenIdentifier;
-import org.apache.hive.service.rpc.thrift.TSetClientInfoResp;
+import static org.apache.hadoop.hive.conf.Constants.MODE;
+import static org.apache.hive.service.cli.operation.hplsql.HplSqlQueryExecutor.HPLSQL;
 
-import org.apache.hive.service.rpc.thrift.TSetClientInfoReq;
-import org.apache.commons.lang.StringUtils;
-import org.apache.hadoop.hive.common.auth.HiveAuthUtils;
-import org.apache.hadoop.hive.shims.ShimLoader;
-import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
-import org.apache.hive.service.auth.HiveAuthConstants;
-import org.apache.hive.service.auth.KerberosSaslHelper;
-import org.apache.hive.service.auth.PlainSaslHelper;
-import org.apache.hive.service.auth.SaslQOP;
-import org.apache.hive.service.cli.session.SessionUtils;
-import org.apache.hive.service.cli.thrift.EmbeddedThriftBinaryCLIService;
-import org.apache.hive.service.rpc.thrift.TCLIService;
-import org.apache.hive.service.rpc.thrift.TCancelDelegationTokenReq;
-import org.apache.hive.service.rpc.thrift.TCancelDelegationTokenResp;
-import org.apache.hive.service.rpc.thrift.TCloseSessionReq;
-import org.apache.hive.service.rpc.thrift.TGetDelegationTokenReq;
-import org.apache.hive.service.rpc.thrift.TGetDelegationTokenResp;
-import org.apache.hive.service.rpc.thrift.TOpenSessionReq;
-import org.apache.hive.service.rpc.thrift.TOpenSessionResp;
-import org.apache.hive.service.rpc.thrift.TProtocolVersion;
-import org.apache.hive.service.rpc.thrift.TRenewDelegationTokenReq;
-import org.apache.hive.service.rpc.thrift.TRenewDelegationTokenResp;
-import org.apache.hive.service.rpc.thrift.TSessionHandle;
-import org.apache.http.HttpRequestInterceptor;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.CookieStore;
-import org.apache.http.client.HttpRequestRetryHandler;
-import org.apache.http.client.ServiceUnavailableRetryStrategy;
-import org.apache.http.config.Registry;
-import org.apache.http.config.RegistryBuilder;
-import org.apache.http.conn.socket.ConnectionSocketFactory;
-import org.apache.http.conn.ssl.DefaultHostnameVerifier;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
-import org.apache.http.impl.client.BasicCookieStore;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.conn.BasicHttpClientConnectionManager;
-import org.apache.http.protocol.HttpContext;
-import org.apache.http.ssl.SSLContexts;
-import org.apache.thrift.TException;
-import org.apache.thrift.protocol.TBinaryProtocol;
-import org.apache.thrift.transport.THttpClient;
-import org.apache.thrift.transport.TTransport;
-import org.apache.thrift.transport.TTransportException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManagerFactory;
-import javax.security.auth.Subject;
-import javax.security.sasl.Sasl;
-import javax.security.sasl.SaslException;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.File;
@@ -122,6 +64,69 @@ import java.util.Properties;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Stream;
+
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
+import javax.security.auth.Subject;
+import javax.security.sasl.Sasl;
+import javax.security.sasl.SaslException;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.hive.common.auth.HiveAuthUtils;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.security.token.TokenIdentifier;
+import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
+import org.apache.hive.service.auth.HiveAuthConstants;
+import org.apache.hive.service.auth.KerberosSaslHelper;
+import org.apache.hive.service.auth.PlainSaslHelper;
+import org.apache.hive.service.auth.SaslQOP;
+import org.apache.hive.service.cli.session.SessionUtils;
+import org.apache.hive.service.rpc.thrift.TCLIService;
+import org.apache.hive.service.rpc.thrift.TCancelDelegationTokenReq;
+import org.apache.hive.service.rpc.thrift.TCancelDelegationTokenResp;
+import org.apache.hive.service.rpc.thrift.TCloseSessionReq;
+import org.apache.hive.service.rpc.thrift.TGetDelegationTokenReq;
+import org.apache.hive.service.rpc.thrift.TGetDelegationTokenResp;
+import org.apache.hive.service.rpc.thrift.TOpenSessionReq;
+import org.apache.hive.service.rpc.thrift.TOpenSessionResp;
+import org.apache.hive.service.rpc.thrift.TProtocolVersion;
+import org.apache.hive.service.rpc.thrift.TRenewDelegationTokenReq;
+import org.apache.hive.service.rpc.thrift.TRenewDelegationTokenResp;
+import org.apache.hive.service.rpc.thrift.TSessionHandle;
+import org.apache.hive.service.rpc.thrift.TSetClientInfoReq;
+import org.apache.hive.service.rpc.thrift.TSetClientInfoResp;
+import org.apache.http.HttpRequestInterceptor;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.CookieStore;
+import org.apache.http.client.HttpRequestRetryHandler;
+import org.apache.http.client.ServiceUnavailableRetryStrategy;
+import org.apache.http.config.Registry;
+import org.apache.http.config.RegistryBuilder;
+import org.apache.http.conn.socket.ConnectionSocketFactory;
+import org.apache.http.conn.ssl.DefaultHostnameVerifier;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
+import org.apache.http.impl.client.BasicCookieStore;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.BasicHttpClientConnectionManager;
+import org.apache.http.protocol.HttpContext;
+import org.apache.http.ssl.SSLContexts;
+import org.apache.thrift.TException;
+import org.apache.thrift.protocol.TBinaryProtocol;
+import org.apache.thrift.transport.THttpClient;
+import org.apache.thrift.transport.TTransport;
+import org.apache.thrift.transport.TTransportException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.annotations.VisibleForTesting;
 
 /**
  * HiveConnection.
@@ -129,7 +134,6 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class HiveConnection implements java.sql.Connection {
   public static final Logger LOG = LoggerFactory.getLogger(HiveConnection.class.getName());
-
   private String jdbcUriString;
   private String host;
   private int port;
@@ -146,7 +150,8 @@ public class HiveConnection implements java.sql.Connection {
   private final List<TProtocolVersion> supportedProtocols = new LinkedList<TProtocolVersion>();
   private int loginTimeout = 0;
   private TProtocolVersion protocol;
-  private int fetchSize = HiveStatement.DEFAULT_FETCH_SIZE;
+  private final int initFetchSize;
+  private int defaultFetchSize;
   private String initFile = null;
   private String wmPool = null, wmApp = null;
   private Properties clientInfo;
@@ -168,7 +173,7 @@ public class HiveConnection implements java.sql.Connection {
     }
     return ZooKeeperHiveClientHelper.getDirectParamsList(params);
   }
-  
+
   public static List<String> getAllUrlStrings(String zookeeperBasedHS2Url) throws Exception {
     List<String> jdbcUrls = new ArrayList<>();
     List<JdbcConnectionParams> allConnectionParams = getAllUrls(zookeeperBasedHS2Url);
@@ -182,7 +187,7 @@ public class HiveConnection implements java.sql.Connection {
   }
 
   private static String makeDirectJDBCUrlFromConnectionParams(JdbcConnectionParams cp) {
-    // Direct JDBC Url format: 
+    // Direct JDBC Url format:
     // jdbc:hive2://<host1>:<port1>/dbName;sess_var_list?hive_conf_list#hive_var_list
     StringBuilder url = new StringBuilder("");
     if (cp != null) {
@@ -242,6 +247,13 @@ public class HiveConnection implements java.sql.Connection {
     return url.toString();
   }
 
+  @VisibleForTesting
+  public HiveConnection() {
+    sessConfMap = null;
+    isEmbeddedMode = true;
+    initFetchSize = 0;
+  }
+
   public HiveConnection(String uri, Properties info) throws SQLException {
     setupLoginTimeout();
     try {
@@ -264,16 +276,17 @@ public class HiveConnection implements java.sql.Connection {
     port = connParams.getPort();
     isEmbeddedMode = connParams.isEmbeddedMode();
 
-    if (sessConfMap.containsKey(JdbcConnectionParams.FETCH_SIZE)) {
-      fetchSize = Integer.parseInt(sessConfMap.get(JdbcConnectionParams.FETCH_SIZE));
-    }
+    initFetchSize = Integer.parseInt(sessConfMap.getOrDefault(JdbcConnectionParams.FETCH_SIZE, "0"));
+
     if (sessConfMap.containsKey(JdbcConnectionParams.INIT_FILE)) {
       initFile = sessConfMap.get(JdbcConnectionParams.INIT_FILE);
     }
     wmPool = sessConfMap.get(JdbcConnectionParams.WM_POOL);
     for (String application : JdbcConnectionParams.APPLICATION) {
       wmApp = sessConfMap.get(application);
-      if (wmApp != null) break;
+      if (wmApp != null) {
+        break;
+      }
     }
 
     // add supported protocols
@@ -289,19 +302,22 @@ public class HiveConnection implements java.sql.Connection {
     supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V10);
 
     if (isEmbeddedMode) {
-      EmbeddedThriftBinaryCLIService embeddedClient = new EmbeddedThriftBinaryCLIService();
-      embeddedClient.init(null, connParams.getHiveConfs());
-      client = embeddedClient;
+      client = EmbeddedCLIServicePortal.get(connParams.getHiveConfs());
       connParams.getHiveConfs().clear();
       // open client session
       openSession();
       executeInitSql();
     } else {
       int maxRetries = 1;
+      long retryInterval = 1000L;
       try {
         String strRetries = sessConfMap.get(JdbcConnectionParams.RETRIES);
         if (StringUtils.isNotBlank(strRetries)) {
           maxRetries = Integer.parseInt(strRetries);
+        }
+        String strRetryInterval = sessConfMap.get(JdbcConnectionParams.RETRY_INTERVAL);
+        if(StringUtils.isNotBlank(strRetryInterval)){
+          retryInterval = Long.parseLong(strRetryInterval);
         }
       } catch(NumberFormatException e) { // Ignore the exception
       }
@@ -343,7 +359,12 @@ public class HiveConnection implements java.sql.Connection {
           if (numRetries >= maxRetries) {
             throw new SQLException(errMsg + e.getMessage(), " 08S01", e);
           } else {
-            LOG.warn(warnMsg + e.getMessage() + " Retrying " + numRetries + " of " + maxRetries);
+            LOG.warn(warnMsg + e.getMessage() + " Retrying " + numRetries + " of " + maxRetries+" with retry interval "+retryInterval+"ms");
+            try {
+              Thread.sleep(retryInterval);
+            } catch (InterruptedException ex) {
+              //Ignore
+            }
           }
         }
       }
@@ -526,19 +547,21 @@ public class HiveConnection implements java.sql.Connection {
     if (isCookieEnabled) {
       // Create a http client with a retry mechanism when the server returns a status code of 401.
       httpClientBuilder =
-          HttpClients.custom().setServiceUnavailableRetryStrategy(
+          HttpClients.custom().setDefaultCookieStore(cookieStore).setServiceUnavailableRetryStrategy(
               new ServiceUnavailableRetryStrategy() {
                 @Override
                 public boolean retryRequest(final HttpResponse response, final int executionCount,
                     final HttpContext context) {
                   int statusCode = response.getStatusLine().getStatusCode();
-                  boolean ret = statusCode == 401 && executionCount <= 1;
+                  boolean sentCredentials = context.getAttribute(Utils.HIVE_SERVER2_SENT_CREDENTIALS) != null &&
+                      context.getAttribute(Utils.HIVE_SERVER2_SENT_CREDENTIALS).equals(Utils.HIVE_SERVER2_CONST_TRUE);
+                  boolean ret = statusCode == 401 && executionCount <= 1 && !sentCredentials;
 
                   // Set the context attribute to true which will be interpreted by the request
                   // interceptor
                   if (ret) {
                     context.setAttribute(Utils.HIVE_SERVER2_RETRY_KEY,
-                        Utils.HIVE_SERVER2_RETRY_TRUE);
+                        Utils.HIVE_SERVER2_CONST_TRUE);
                   }
                   return ret;
                 }
@@ -598,7 +621,11 @@ public class HiveConnection implements java.sql.Connection {
           socketFactory = SSLConnectionSocketFactory.getSocketFactory();
         } else {
           // Pick trust store config from the given path
-          sslTrustStore = KeyStore.getInstance(JdbcConnectionParams.SSL_TRUST_STORE_TYPE);
+          String trustStoreType = sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE_TYPE);
+          if (trustStoreType == null || trustStoreType.isEmpty()) {
+            trustStoreType = KeyStore.getDefaultType();
+          }
+          sslTrustStore = KeyStore.getInstance(trustStoreType);
           try (FileInputStream fis = new FileInputStream(sslTrustStorePath)) {
             sslTrustStore.load(fis, sslTrustStorePassword.toCharArray());
           }
@@ -641,8 +668,18 @@ public class HiveConnection implements java.sql.Connection {
       if (sslTrustStore == null || sslTrustStore.isEmpty()) {
         transport = HiveAuthUtils.getSSLSocket(host, port, loginTimeout);
       } else {
+        String trustStoreType =
+                sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE_TYPE);
+        if (trustStoreType == null) {
+          trustStoreType = "";
+        }
+        String trustStoreAlgorithm =
+                sessConfMap.get(JdbcConnectionParams.SSL_TRUST_MANAGER_FACTORY_ALGORITHM);
+        if (trustStoreAlgorithm == null) {
+          trustStoreAlgorithm = "";
+        }
         transport = HiveAuthUtils.getSSLSocket(host, port, loginTimeout,
-            sslTrustStore, sslTrustStorePassword);
+            sslTrustStore, sslTrustStorePassword, trustStoreType, trustStoreAlgorithm);
       }
     } else {
       // get non-SSL socket transport
@@ -685,23 +722,24 @@ public class HiveConnection implements java.sql.Connection {
           saslProps.put(Sasl.QOP, "auth-conf,auth-int,auth");
         }
         saslProps.put(Sasl.SERVER_AUTH, "true");
-        if (sessConfMap.containsKey(JdbcConnectionParams.AUTH_PRINCIPAL)) {
-          transport = KerberosSaslHelper.getKerberosTransport(
-              sessConfMap.get(JdbcConnectionParams.AUTH_PRINCIPAL), host,
-              socketTransport, saslProps, assumeSubject);
-        } else {
+        String tokenStr = null;
+        if (JdbcConnectionParams.AUTH_TOKEN.equals(sessConfMap.get(JdbcConnectionParams.AUTH_TYPE))) {
           // If there's a delegation token available then use token based connection
-          String tokenStr = getClientDelegationToken(sessConfMap);
-          if (tokenStr != null) {
-            transport = KerberosSaslHelper.getTokenTransport(tokenStr,
-                host, socketTransport, saslProps);
-          } else {
-            // we are using PLAIN Sasl connection with user/password
-            String userName = getUserName();
-            String passwd = getPassword();
-            // Overlay the SASL transport on top of the base socket transport (SSL or non-SSL)
-            transport = PlainSaslHelper.getPlainTransport(userName, passwd, socketTransport);
-          }
+          tokenStr = getClientDelegationToken(sessConfMap);
+        }
+        if (tokenStr != null) {
+          transport = KerberosSaslHelper.getTokenTransport(tokenStr,
+                  host, socketTransport, saslProps);
+        } else if(sessConfMap.containsKey(JdbcConnectionParams.AUTH_PRINCIPAL)){
+          transport = KerberosSaslHelper.getKerberosTransport(
+                  sessConfMap.get(JdbcConnectionParams.AUTH_PRINCIPAL), host,
+                  socketTransport, saslProps, assumeSubject);
+        } else {
+          // we are using PLAIN Sasl connection with user/password
+          String userName = getUserName();
+          String passwd = getPassword();
+          // Overlay the SASL transport on top of the base socket transport (SSL or non-SSL)
+          transport = PlainSaslHelper.getPlainTransport(userName, passwd, socketTransport);
         }
       } else {
         // Raw socket connection (non-sasl)
@@ -739,7 +777,11 @@ public class HiveConnection implements java.sql.Connection {
       String trustStorePath = sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE);
       String trustStorePassword = sessConfMap.get(
         JdbcConnectionParams.SSL_TRUST_STORE_PASSWORD);
-      KeyStore sslTrustStore = KeyStore.getInstance(JdbcConnectionParams.SSL_TRUST_STORE_TYPE);
+      String trustStoreType = sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE_TYPE);
+      if (trustStoreType == null || trustStoreType.isEmpty()) {
+        trustStoreType = KeyStore.getDefaultType();
+      }
+      KeyStore sslTrustStore = KeyStore.getInstance(trustStoreType);
 
       if (trustStorePath == null || trustStorePath.isEmpty()) {
         throw new IllegalArgumentException(JdbcConnectionParams.SSL_TRUST_STORE
@@ -824,9 +866,6 @@ public class HiveConnection implements java.sql.Connection {
     }
     // switch the database
     openConf.put("use:database", connParams.getDbName());
-    // set the fetchSize
-    openConf.put("set:hiveconf:hive.server2.thrift.resultset.default.fetch.size",
-      Integer.toString(fetchSize));
     if (wmPool != null) {
       openConf.put("set:hivevar:wmpool", wmPool);
     }
@@ -835,11 +874,20 @@ public class HiveConnection implements java.sql.Connection {
     }
 
     // set the session configuration
-    Map<String, String> sessVars = connParams.getSessionVars();
-    if (sessVars.containsKey(HiveAuthConstants.HS2_PROXY_USER)) {
+    if (sessConfMap.containsKey(HiveAuthConstants.HS2_PROXY_USER)) {
       openConf.put(HiveAuthConstants.HS2_PROXY_USER,
-          sessVars.get(HiveAuthConstants.HS2_PROXY_USER));
+          sessConfMap.get(HiveAuthConstants.HS2_PROXY_USER));
     }
+
+    // set create external purge table by default
+    if (sessConfMap.containsKey(JdbcConnectionParams.CREATE_TABLE_AS_EXTERNAL)) {
+      openConf.put("set:hiveconf:hive.create.as.external.legacy",
+          sessConfMap.get(JdbcConnectionParams.CREATE_TABLE_AS_EXTERNAL).toLowerCase());
+    }
+    if (isHplSqlMode()) {
+      openConf.put("set:hivevar:mode", HPLSQL);
+    }
+
     openReq.setConfiguration(openConf);
 
     // Store the user name in the open request in case no non-sasl authentication
@@ -851,6 +899,13 @@ public class HiveConnection implements java.sql.Connection {
     try {
       TOpenSessionResp openResp = client.OpenSession(openReq);
 
+      // Populate a given configuration from HS2 server HiveConf, only if that configuration
+      // is not already present in Connection parameter HiveConf i.e., client side configuration
+      // takes precedence over the server side configuration.
+      Map<String, String> serverHiveConf = openResp.getConfiguration();
+
+      updateServerHiveConf(serverHiveConf, connParams);
+
       // validate connection
       Utils.verifySuccess(openResp.getStatus());
       if (!supportedProtocols.contains(openResp.getServerProtocolVersion())) {
@@ -859,18 +914,39 @@ public class HiveConnection implements java.sql.Connection {
       protocol = openResp.getServerProtocolVersion();
       sessHandle = openResp.getSessionHandle();
 
-      // Update fetchSize if modified by server
-      String serverFetchSize =
-        openResp.getConfiguration().get("hive.server2.thrift.resultset.default.fetch.size");
-      if (serverFetchSize != null) {
-        fetchSize = Integer.parseInt(serverFetchSize);
+      final String serverFetchSizeString =
+          openResp.getConfiguration().get(ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_DEFAULT_FETCH_SIZE.varname);
+      if (serverFetchSizeString == null) {
+        throw new IllegalStateException("Server returned a null default fetch size. Check that "
+            + ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_DEFAULT_FETCH_SIZE.varname + " is configured correctly.");
+      }
+
+      this.defaultFetchSize = Integer.parseInt(serverFetchSizeString);
+      if (this.defaultFetchSize <= 0) {
+        throw new IllegalStateException("Default fetch size must be greater than 0");
       }
     } catch (TException e) {
-      LOG.error("Error opening session", e);
-      throw new SQLException("Could not establish connection to "
-          + jdbcUriString + ": " + e.getMessage(), " 08S01", e);
+      throw new SQLException("Could not establish connection to " + jdbcUriString + ": " + e.getMessage(), " 08S01", e);
     }
     isClosed = false;
+  }
+
+  public boolean isHplSqlMode() {
+    return HPLSQL.equalsIgnoreCase(sessConfMap.getOrDefault(MODE, ""));
+  }
+
+  @VisibleForTesting
+  public void updateServerHiveConf(Map<String, String> serverHiveConf, JdbcConnectionParams connParams) {
+    if (serverHiveConf != null) {
+      // Iterate over all Server configurations.
+      Stream.of(ConfVars.values()).forEach(conf -> {
+        String key = JdbcConnectionParams.HIVE_CONF_PREFIX + conf.varname;
+        // Update Server HiveConf, only if a given configuration is not already set from the client.
+        if (serverHiveConf.containsKey(conf.varname) && !connParams.getHiveConfs().containsKey(key)) {
+          connParams.getHiveConfs().put(key, serverHiveConf.get(conf.varname));
+        }
+      });
+    }
   }
 
   /**
@@ -1099,7 +1175,7 @@ public class HiveConnection implements java.sql.Connection {
     if (isClosed) {
       throw new SQLException("Can't create Statement, connection is closed");
     }
-    return new HiveStatement(this, client, sessHandle, fetchSize);
+    return new HiveStatement(this, client, sessHandle, false, initFetchSize, defaultFetchSize);
   }
 
   /*
@@ -1119,8 +1195,8 @@ public class HiveConnection implements java.sql.Connection {
       throw new SQLException("Statement with resultset type " + resultSetType +
           " is not supported", "HYC00"); // Optional feature not implemented
     }
-    return new HiveStatement(this, client, sessHandle,
-        resultSetType == ResultSet.TYPE_SCROLL_INSENSITIVE, fetchSize);
+    return new HiveStatement(this, client, sessHandle, resultSetType == ResultSet.TYPE_SCROLL_INSENSITIVE,
+        initFetchSize, defaultFetchSize);
   }
 
   /*
@@ -1190,7 +1266,9 @@ public class HiveConnection implements java.sql.Connection {
 
   @Override
   public String getClientInfo(String name) throws SQLException {
-    if (clientInfo == null) return null;
+    if (clientInfo == null) {
+      return null;
+    }
     return clientInfo.getProperty(name);
   }
 
@@ -1494,8 +1572,11 @@ public class HiveConnection implements java.sql.Connection {
     if (!autoCommit) {
       LOG.warn("Request to set autoCommit to false; Hive does not support autoCommit=false.");
       SQLWarning warning = new SQLWarning("Hive does not support autoCommit=false");
-      if (warningChain == null) warningChain = warning;
-      else warningChain.setNextWarning(warning);
+      if (warningChain == null) {
+        warningChain = warning;
+      } else {
+        warningChain.setNextWarning(warning);
+      }
     }
   }
 
@@ -1548,7 +1629,9 @@ public class HiveConnection implements java.sql.Connection {
     Map<String, String> map = new HashMap<>();
     if (clientInfo != null) {
       for (Entry<Object, Object> e : clientInfo.entrySet()) {
-        if (e.getKey() == null || e.getValue() == null) continue;
+        if (e.getKey() == null || e.getValue() == null) {
+          continue;
+        }
         map.put(e.getKey().toString(), e.getValue().toString());
       }
     }
@@ -1687,6 +1770,14 @@ public class HiveConnection implements java.sql.Connection {
 
   public TProtocolVersion getProtocol() {
     return protocol;
+  }
+
+  public JdbcConnectionParams getConnParams() {
+    return connParams;
+  }
+
+  public JdbcConnectionParams setConnParams(JdbcConnectionParams jdbcConnectionParams) {
+    return connParams = jdbcConnectionParams;
   }
 
   public static TCLIService.Iface newSynchronizedClient(

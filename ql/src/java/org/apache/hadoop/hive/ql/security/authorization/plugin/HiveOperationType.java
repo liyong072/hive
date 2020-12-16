@@ -38,9 +38,11 @@ public enum HiveOperationType {
   SWITCHDATABASE,
   LOCKDB,
   UNLOCKDB,
-  DROPTABLE ,
+  DROPTABLE,
   DESCTABLE,
   DESCFUNCTION,
+  PREPARE,
+  EXECUTE,
   MSCK,
   ALTERTABLE_ADDCOLS,
   ALTERTABLE_REPLACECOLS,
@@ -76,7 +78,6 @@ public enum HiveOperationType {
   SHOW_CREATEDATABASE,
   SHOW_CREATETABLE,
   SHOWFUNCTIONS,
-  SHOWINDEXES,
   SHOWPARTITIONS,
   SHOWLOCKS,
   SHOWCONF,
@@ -91,11 +92,7 @@ public enum HiveOperationType {
   CREATE_MATERIALIZED_VIEW,
   DROPVIEW,
   DROP_MATERIALIZED_VIEW,
-  CREATEINDEX,
-  DROPINDEX,
-  ALTERINDEX_REBUILD,
   ALTERVIEW_PROPERTIES,
-  DROPVIEW_PROPERTIES,
   LOCKTABLE,
   UNLOCKTABLE,
   CREATEROLE,
@@ -118,7 +115,6 @@ public enum HiveOperationType {
   TRUNCATETABLE,
   CREATETABLE_AS_SELECT,
   QUERY,
-  ALTERINDEX_PROPS,
   ALTERDATABASE,
   ALTERDATABASE_OWNER,
   ALTERDATABASE_LOCATION,
@@ -151,6 +147,9 @@ public enum HiveOperationType {
   DROP_MAPPING,
   LLAP_CLUSTER_INFO,
   LLAP_CACHE_PURGE,
+  CREATE_SCHEDULED_QUERY,
+  ALTER_SCHEDULED_QUERY,
+  DROP_SCHEDULED_QUERY,
 
   // ==== Hive command operation types starts here ==== //
   SET,
@@ -177,7 +176,7 @@ public enum HiveOperationType {
   GET_FUNCTIONS, // getFunctions(String catalog, String schemaPattern, String functionNamePattern)
   GET_SCHEMAS, // getSchemas()
   GET_TABLES, // getTables(String catalog, String schemaPattern, String tableNamePattern, String[] types)
-  GET_TABLETYPES,// getTableTypes()
+  GET_TABLETYPES, // getTableTypes()
   GET_TYPEINFO // getTypeInfo()
   // ==== HiveServer2 metadata api types ends here ==== //
 

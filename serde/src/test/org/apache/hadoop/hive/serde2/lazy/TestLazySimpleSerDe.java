@@ -18,13 +18,13 @@
 package org.apache.hadoop.hive.serde2.lazy;
 
 import java.io.IOException;
+import java.util.Base64;
 import java.util.List;
 import java.util.Properties;
 import java.util.Random;
 
-import junit.framework.TestCase;
 
-import org.apache.commons.codec.binary.Base64;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.ByteStream;
@@ -46,16 +46,18 @@ import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.junit.Test;
+import static org.junit.Assert.assertEquals;
 
 /**
  * TestLazySimpleSerDe.
  *
  */
-public class TestLazySimpleSerDe extends TestCase {
+public class TestLazySimpleSerDe {
 
   /**
    * Test the LazySimpleSerDe class.
    */
+  @Test
   public void testLazySimpleSerDe() throws Throwable {
     try {
       // Create the SerDe
@@ -74,7 +76,9 @@ public class TestLazySimpleSerDe extends TestCase {
       Text t = new Text("123\t456\t789\t1000\t5.3\thive and hadoop\t1.\tNULL\t");
       t.append(new byte[]{(byte)Integer.parseInt("10111111", 2)}, 0, 1);
       StringBuilder sb = new StringBuilder("123\t456\t789\t1000\t5.3\thive and hadoop\t1\tNULL\t");
-      String s = sb.append(new String(Base64.encodeBase64(new byte[]{(byte)Integer.parseInt("10111111", 2)}))).toString();
+      String s = sb.append(
+          Base64.getEncoder().withoutPadding().encodeToString(new byte[] { (byte) Integer.parseInt("10111111", 2) }))
+          .toString();
       Object[] expectedFieldsData = {new ByteWritable((byte) 123),
           new ShortWritable((short) 456), new IntWritable(789),
           new LongWritable(1000), new DoubleWritable(5.3),
@@ -92,6 +96,7 @@ public class TestLazySimpleSerDe extends TestCase {
   /**
    * Test the LazySimpleSerDe class with LastColumnTakesRest option.
    */
+  @Test
   public void testLazySimpleSerDeLastColumnTakesRest() throws Throwable {
     try {
       // Create the SerDe
@@ -121,6 +126,7 @@ public class TestLazySimpleSerDe extends TestCase {
   /**
    * Test the LazySimpleSerDe class with extra columns.
    */
+  @Test
   public void testLazySimpleSerDeExtraColumns() throws Throwable {
     try {
       // Create the SerDe
@@ -149,6 +155,7 @@ public class TestLazySimpleSerDe extends TestCase {
   /**
    * Test the LazySimpleSerDe class with missing columns.
    */
+  @Test
   public void testLazySimpleSerDeMissingColumns() throws Throwable {
     try {
       // Create the SerDe

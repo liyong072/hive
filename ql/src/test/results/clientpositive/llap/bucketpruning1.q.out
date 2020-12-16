@@ -42,27 +42,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: (key = 1) (type: boolean)
                   buckets included: [13,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key = 1) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 1 (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -111,27 +113,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: (key = 16) (type: boolean)
                   buckets included: [3,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key = 16) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 16 (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -180,27 +184,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: (key = 17) (type: boolean)
                   buckets included: [12,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key = 17) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 17 (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -249,27 +255,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: (key = 17) (type: boolean)
                   buckets included: [12,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key = 17) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 17 (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -318,27 +326,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: (key = 11) (type: boolean)
                   buckets included: [5,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key = 11) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 11 (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -387,27 +397,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: ((key = 1) and (ds = '2008-04-08')) (type: boolean)
                   buckets included: [13,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key = 1)) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key = 1) and (ds = '2008-04-08')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 1 (type: int), value (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 182 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 182 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -456,27 +468,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: ((key = 1) and (ds = '2008-04-08') and (value = 'One')) (type: boolean)
                   buckets included: [13,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key = 1) and (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key = 1) and (ds = '2008-04-08') and (value = 'One')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 1 (type: int), 'One' (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -525,27 +539,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: ((value = 'One') and (key = 1) and (ds = '2008-04-08')) (type: boolean)
                   buckets included: [13,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key = 1) and (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((value = 'One') and (key = 1) and (ds = '2008-04-08')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 1 (type: int), 'One' (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -576,6 +592,9 @@ select * from srcbucket_pruned where key in (2,3)
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, `value`, `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` IN (2, 3)
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -591,27 +610,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: (key) IN (2, 3) (type: boolean)
                   buckets included: [4,6,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key) IN (2, 3) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -642,6 +663,9 @@ select * from srcbucket_pruned where key in (2,3) and ds='2008-04-08'
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, `value`, CAST('2008-04-08' AS STRING) AS `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` IN (2, 3) AND `ds` = '2008-04-08'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -657,27 +681,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: ((key) IN (2, 3) and (ds = '2008-04-08')) (type: boolean)
                   buckets included: [4,6,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key) IN (2, 3)) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key) IN (2, 3) and (ds = '2008-04-08')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 178 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 178 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -708,6 +734,9 @@ select * from srcbucket_pruned where key in (2,3) and ds='2008-04-08' and value=
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, CAST('One' AS STRING) AS `value`, CAST('2008-04-08' AS STRING) AS `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` IN (2, 3) AND `ds` = '2008-04-08' AND `value` = 'One'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -723,27 +752,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: ((key) IN (2, 3) and (ds = '2008-04-08') and (value = 'One')) (type: boolean)
                   buckets included: [4,6,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key) IN (2, 3) and (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key) IN (2, 3) and (ds = '2008-04-08') and (value = 'One')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), 'One' (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -774,6 +805,9 @@ select * from srcbucket_pruned where value='One' and key in (2,3) and ds='2008-0
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, CAST('One' AS STRING) AS `value`, CAST('2008-04-08' AS STRING) AS `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `value` = 'One' AND `key` IN (2, 3) AND `ds` = '2008-04-08'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -787,29 +821,31 @@ STAGE PLANS:
             Map Operator Tree:
                 TableScan
                   alias: srcbucket_pruned
-                  filterExpr: ((key) IN (2, 3) and (value = 'One') and (ds = '2008-04-08')) (type: boolean)
+                  filterExpr: ((value = 'One') and (key) IN (2, 3) and (ds = '2008-04-08')) (type: boolean)
                   buckets included: [4,6,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key) IN (2, 3) and (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((value = 'One') and (key) IN (2, 3) and (ds = '2008-04-08')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), 'One' (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -840,6 +876,9 @@ select * from srcbucket_pruned where (key=1 or key=2) and ds='2008-04-08'
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, `value`, CAST('2008-04-08' AS STRING) AS `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` IN (1, 2) AND `ds` = '2008-04-08'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -855,27 +894,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: ((key) IN (1, 2) and (ds = '2008-04-08')) (type: boolean)
                   buckets included: [4,13,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key) IN (1, 2)) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key) IN (1, 2) and (ds = '2008-04-08')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 178 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 178 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -906,6 +947,9 @@ select * from srcbucket_pruned where (key=1 or key=2) and value = 'One' and ds='
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, CAST('One' AS STRING) AS `value`, CAST('2008-04-08' AS STRING) AS `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` IN (1, 2) AND `value` = 'One' AND `ds` = '2008-04-08'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -921,27 +965,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: ((key) IN (1, 2) and (value = 'One') and (ds = '2008-04-08')) (type: boolean)
                   buckets included: [4,13,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key) IN (1, 2) and (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key) IN (1, 2) and (value = 'One') and (ds = '2008-04-08')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), 'One' (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -990,27 +1036,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: (key = -15) (type: boolean)
                   buckets included: [6,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key = -15) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: -15 (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1041,6 +1089,9 @@ select * from srcbucket_pruned where key in (1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, `value`, `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -1056,27 +1107,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: (key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) (type: boolean)
                   buckets included: [1,3,4,5,6,8,11,12,13,15,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1107,6 +1160,9 @@ select * from srcbucket_pruned where key in (1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, `value`, CAST('2008-04-08' AS STRING) AS `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) AND `ds` = '2008-04-08'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -1122,27 +1178,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: ((key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) and (ds = '2008-04-08')) (type: boolean)
                   buckets included: [1,3,4,5,6,8,11,12,13,15,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) and (ds = '2008-04-08')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 178 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 178 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1173,6 +1231,9 @@ select * from srcbucket_pruned where key in (1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, CAST('One' AS STRING) AS `value`, CAST('2008-04-08' AS STRING) AS `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) AND `ds` = '2008-04-08' AND `value` = 'One'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -1188,27 +1249,29 @@ STAGE PLANS:
                   alias: srcbucket_pruned
                   filterExpr: ((key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) and (ds = '2008-04-08') and (value = 'One')) (type: boolean)
                   buckets included: [1,3,4,5,6,8,11,12,13,15,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) and (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) and (ds = '2008-04-08') and (value = 'One')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), 'One' (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1239,6 +1302,9 @@ select * from srcbucket_pruned where value='One' and key in (1,2,3,4,5,6,7,8,9,1
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, CAST('One' AS STRING) AS `value`, CAST('2008-04-08' AS STRING) AS `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `value` = 'One' AND `key` IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) AND `ds` = '2008-04-08'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -1252,29 +1318,31 @@ STAGE PLANS:
             Map Operator Tree:
                 TableScan
                   alias: srcbucket_pruned
-                  filterExpr: ((key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) and (value = 'One') and (ds = '2008-04-08')) (type: boolean)
+                  filterExpr: ((value = 'One') and (key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) and (ds = '2008-04-08')) (type: boolean)
                   buckets included: [1,3,4,5,6,8,11,12,13,15,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) and (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((value = 'One') and (key) IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) and (ds = '2008-04-08')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), 'One' (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 185 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 181 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1307,7 +1375,7 @@ POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
 OPTIMIZED SQL: SELECT `key`, `value`, `ds`
 FROM `default`.`srcbucket_pruned`
-WHERE `key` = 1 AND `ds` = '2008-04-08' OR `key` = 2
+WHERE `key` = 2 OR `key` = 1 AND `ds` = '2008-04-08'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -1321,28 +1389,30 @@ STAGE PLANS:
             Map Operator Tree:
                 TableScan
                   alias: srcbucket_pruned
-                  filterExpr: (((key = 1) and (ds = '2008-04-08')) or (key = 2)) (type: boolean)
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  filterExpr: ((key = 2) or ((key = 1) and (ds = '2008-04-08'))) (type: boolean)
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: (((key = 1) and (ds = '2008-04-08')) or (key = 2)) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key = 2) or ((key = 1) and (ds = '2008-04-08'))) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1373,6 +1443,9 @@ select * from srcbucket_pruned where key = 1 and ds='2008-04-08' and (value='One
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT CAST(1 AS INTEGER) AS `key`, `value`, CAST('2008-04-08' AS STRING) AS `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` = 1 AND `ds` = '2008-04-08' AND `value` IN ('One', 'Two')
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -1386,29 +1459,31 @@ STAGE PLANS:
             Map Operator Tree:
                 TableScan
                   alias: srcbucket_pruned
-                  filterExpr: ((value) IN ('One', 'Two') and (key = 1) and (ds = '2008-04-08')) (type: boolean)
+                  filterExpr: ((key = 1) and (ds = '2008-04-08') and (value) IN ('One', 'Two')) (type: boolean)
                   buckets included: [13,] of 16
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: ((ds = '2008-04-08') and (key = 1) and (value) IN ('One', 'Two')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key = 1) and (ds = '2008-04-08') and (value) IN ('One', 'Two')) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 1 (type: int), value (type: string), '2008-04-08' (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 182 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 282 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 182 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1456,27 +1531,29 @@ STAGE PLANS:
                 TableScan
                   alias: srcbucket_pruned
                   filterExpr: ((key = 1) or (value = 'One') or ((key = 2) and (value = 'Two'))) (type: boolean)
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
-                    predicate: (((key = 2) and (value = 'Two')) or (key = 1) or (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    predicate: ((key = 1) or (value = 'One') or ((key = 2) and (value = 'Two'))) (type: boolean)
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1509,58 +1586,14 @@ POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
 OPTIMIZED SQL: SELECT `key`, `value`, `ds`
 FROM `default`.`srcbucket_pruned`
-WHERE NULL
+LIMIT 0
 STAGE DEPENDENCIES:
-  Stage-1 is a root stage
-  Stage-0 depends on stages: Stage-1
+  Stage-0 is a root stage
 
 STAGE PLANS:
-  Stage: Stage-1
-    Tez
-#### A masked pattern was here ####
-      Vertices:
-        Map 1 
-            Map Operator Tree:
-                TableScan
-                  alias: srcbucket_pruned
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
-                  GatherStats: false
-                  Filter Operator
-                    isSamplingPred: false
-                    predicate: false (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
-                    Select Operator
-                      expressions: key (type: int), value (type: string), ds (type: string)
-                      outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
-                      File Output Operator
-                        compressed: false
-                        GlobalTableId: 0
-#### A masked pattern was here ####
-                        NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
-#### A masked pattern was here ####
-                        table:
-                            input format: org.apache.hadoop.mapred.SequenceFileInputFormat
-                            output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
-                            properties:
-                              columns _col0,_col1,_col2
-                              columns.types int:string:string
-                              escape.delim \
-                              hive.serialization.extend.additional.nesting.levels true
-                              serialization.escape.crlf true
-                              serialization.format 1
-                              serialization.lib org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe
-                            serde: org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe
-                        TotalFiles: 1
-                        GatherStats: false
-                        MultiFileSpray: false
-            Execution mode: vectorized, llap
-            LLAP IO: unknown
-
   Stage: Stage-0
     Fetch Operator
-      limit: -1
+      limit: 0
       Processor Tree:
         ListSink
 
@@ -1591,27 +1624,29 @@ STAGE PLANS:
                 TableScan
                   alias: srcbucket_pruned
                   filterExpr: ((key = 1) or (value = 'One')) (type: boolean)
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: ((key = 1) or (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1642,6 +1677,9 @@ select * from srcbucket_pruned where key = 1 or value = "One" or key = 2
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_pruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, `value`, `ds`
+FROM `default`.`srcbucket_pruned`
+WHERE `key` IN (1, 2) OR `value` = 'One'
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -1656,27 +1694,29 @@ STAGE PLANS:
                 TableScan
                   alias: srcbucket_pruned
                   filterExpr: ((key) IN (1, 2) or (value = 'One')) (type: boolean)
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: ((key) IN (1, 2) or (value = 'One')) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1707,6 +1747,9 @@ select * from srcbucket_unpruned where key in (3, 5)
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@srcbucket_unpruned
 #### A masked pattern was here ####
+OPTIMIZED SQL: SELECT `key`, `value`, `ds`
+FROM `default`.`srcbucket_unpruned`
+WHERE `key` IN (3, 5)
 STAGE DEPENDENCIES:
   Stage-1 is a root stage
   Stage-0 depends on stages: Stage-1
@@ -1721,27 +1764,29 @@ STAGE PLANS:
                 TableScan
                   alias: srcbucket_unpruned
                   filterExpr: (key) IN (3, 5) (type: boolean)
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key) IN (3, 5) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \
@@ -1789,27 +1834,29 @@ STAGE PLANS:
                 TableScan
                   alias: srcbucket_unpruned
                   filterExpr: (key = 1) (type: boolean)
-                  Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                   GatherStats: false
                   Filter Operator
                     isSamplingPred: false
                     predicate: (key = 1) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 1 Data size: 268 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: 1 (type: int), value (type: string), ds (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
                       File Output Operator
+                        bucketingVersion: 2
                         compressed: false
                         GlobalTableId: 0
 #### A masked pattern was here ####
                         NumFilesPerFileSink: 1
-                        Statistics: Num rows: 1 Data size: 372 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 1 Data size: 272 Basic stats: COMPLETE Column stats: COMPLETE
 #### A masked pattern was here ####
                         table:
                             input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                             output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
                             properties:
+                              bucketing_version -1
                               columns _col0,_col1,_col2
                               columns.types int:string:string
                               escape.delim \

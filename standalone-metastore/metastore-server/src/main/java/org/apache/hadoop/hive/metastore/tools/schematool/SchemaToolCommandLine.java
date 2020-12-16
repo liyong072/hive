@@ -47,6 +47,9 @@ public class SchemaToolCommandLine {
         .withDescription("Schema initialization to a version")
         .create("initSchemaTo");
     Option initOrUpgradeSchemaOpt = new Option("initOrUpgradeSchema", "Initialize or upgrade schema to latest version");
+    Option dropDbOpt = new Option("dropAllDatabases", "Drop all Hive databases (with CASCADE). " +
+            "This will remove all managed data!");
+    Option yesOpt = new Option("yes", "Don't ask for confirmation when using -dropAllDatabases.");
     Option validateOpt = new Option("validate", "Validate the database");
     Option createCatalog = OptionBuilder
         .hasArg()
@@ -56,6 +59,11 @@ public class SchemaToolCommandLine {
         .hasArg()
         .withDescription("Alter a catalog, requires --catalogLocation and/or --catalogDescription parameter as well")
         .create("alterCatalog");
+    Option mergeCatalog = OptionBuilder
+        .hasArg()
+        .withDescription("Merge databases from a catalog into other, Argument is the source catalog name " +
+            "Requires --toCatalog to indicate the destination catalog")
+        .create("mergeCatalog");
     Option moveDatabase = OptionBuilder
         .hasArg()
         .withDescription("Move a database between catalogs.  Argument is the database name. " +
@@ -69,6 +77,10 @@ public class SchemaToolCommandLine {
         .create("moveTable");
     Option createUserOpt = new Option("createUser", "Create the Hive user, set hiveUser to the db" +
         " admin user and the hive password to the db admin password with this");
+    Option createLogsTable = OptionBuilder
+      .hasArg()
+      .withDescription("Create table for Hive warehouse/compute logs")
+      .create("createLogsTable");
 
     OptionGroup optGroup = new OptionGroup();
     optGroup
@@ -77,14 +89,17 @@ public class SchemaToolCommandLine {
       .addOption(upgradeOpt)
       .addOption(upgradeFromOpt)
       .addOption(initOpt)
+      .addOption(dropDbOpt)
       .addOption(initToOpt)
       .addOption(initOrUpgradeSchemaOpt)
       .addOption(validateOpt)
       .addOption(createCatalog)
       .addOption(alterCatalog)
+      .addOption(mergeCatalog)
       .addOption(moveDatabase)
       .addOption(moveTable)
-      .addOption(createUserOpt);
+      .addOption(createUserOpt)
+      .addOption(createLogsTable);
     optGroup.setRequired(true);
 
     Option userNameOpt = OptionBuilder.withArgName("user")
@@ -161,6 +176,9 @@ public class SchemaToolCommandLine {
         .withDescription("Database a moving table is going to.  This is " +
             "required if you are moving a table.")
         .create("toDatabase");
+    Option retentionPeriod = OptionBuilder.hasArg()
+      .withDescription("Specify logs table retention period")
+      .create("retentionPeriod");
 
     Options options = new Options();
     options.addOption(help);
@@ -185,6 +203,8 @@ public class SchemaToolCommandLine {
     options.addOption(hiveUserOpt);
     options.addOption(hivePasswdOpt);
     options.addOption(hiveDbOpt);
+    options.addOption(yesOpt);
+    options.addOption(retentionPeriod);
     if (additionalOptions != null) options.addOptionGroup(additionalOptions);
 
     return options;
@@ -256,6 +276,11 @@ public class SchemaToolCommandLine {
       printAndExit("ifNotExists may be set only for createCatalog");
     }
 
+    if (cl.hasOption("mergeCatalog") &&
+        (!cl.hasOption("toCatalog"))) {
+      printAndExit("mergeCatalog and toCatalog must be set for mergeCatalog");
+    }
+
     if (cl.hasOption("moveDatabase") &&
         (!cl.hasOption("fromCatalog") || !cl.hasOption("toCatalog"))) {
       printAndExit("fromCatalog and toCatalog must be set for moveDatabase");
@@ -267,7 +292,7 @@ public class SchemaToolCommandLine {
       printAndExit("fromCatalog, toCatalog, fromDatabase and toDatabase must be set for moveTable");
     }
 
-    if ((!cl.hasOption("moveDatabase") && !cl.hasOption("moveTable")) &&
+    if ((!cl.hasOption("moveDatabase") && !cl.hasOption("moveTable") && !cl.hasOption("mergeCatalog")) &&
         (cl.hasOption("fromCatalog") || cl.hasOption("toCatalog"))) {
       printAndExit("fromCatalog and toCatalog may be set only for moveDatabase and moveTable");
     }
@@ -275,6 +300,14 @@ public class SchemaToolCommandLine {
     if (!cl.hasOption("moveTable") &&
         (cl.hasOption("fromDatabase") || cl.hasOption("toDatabase"))) {
       printAndExit("fromDatabase and toDatabase may be set only for moveTable");
+    }
+
+    if (cl.hasOption("dropAllDatabases") && !HiveSchemaHelper.DB_HIVE.equals(dbType)) {
+      printAndExit("dropAllDatabases can only be used with dbType=hive");
+    }
+
+    if (cl.hasOption("yes") && !cl.hasOption("dropAllDatabases")) {
+      printAndExit("yes can only be used with dropAllDatabases");
     }
   }
 

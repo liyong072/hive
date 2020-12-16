@@ -68,6 +68,8 @@ public class AvroSerdeUtils {
     SCHEMA_NAME("avro.schema.name"),
     SCHEMA_DOC("avro.schema.doc"),
     AVRO_SERDE_SCHEMA("avro.serde.schema"),
+    AVRO_SERDE_TYPE("avro.serde.type"),
+    AVRO_SERDE_SKIP_BYTES("avro.serde.skip.bytes"),
     SCHEMA_RETRIEVER("avro.schema.retriever");
 
     private final String propName;
@@ -319,6 +321,18 @@ public class AvroSerdeUtils {
           // Ignore
         }
       }
+    }
+  }
+
+  public static int getIntFromSchema(Schema schema, String name) {
+    Object obj = schema.getObjectProp(name);
+    if (obj instanceof String) {
+      return Integer.parseInt((String) obj);
+    } else if (obj instanceof Integer) {
+      return (int) obj;
+    } else {
+      throw new IllegalArgumentException("Expect integer or string value from property " + name
+        + " but found type " + obj.getClass().getName());
     }
   }
 

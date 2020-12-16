@@ -27,7 +27,6 @@ import java.util.regex.Pattern;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.serde.serdeConstants;
-import org.apache.hadoop.hive.serde2.*;
 import org.apache.hadoop.hive.serde2.lazy.ByteArrayRef;
 import org.apache.hadoop.hive.serde2.lazy.LazyFactory;
 import org.apache.hadoop.hive.serde2.lazy.LazyStruct;
@@ -68,6 +67,10 @@ public class MultiDelimitSerDe extends AbstractEncodingAwareSerDe {
   private static final byte[] DEFAULT_SEPARATORS = {(byte) 1, (byte) 2, (byte) 3};
   // Due to HIVE-6404, define our own constant
   private static final String COLLECTION_DELIM = "collection.delim";
+
+  // actual delimiter(fieldDelimited) is replaced by REPLACEMENT_DELIM in row.
+  public static final String REPLACEMENT_DELIM_SEQUENCE = "\1";
+  public static final int REPLACEMENT_DELIM_LENGTH = REPLACEMENT_DELIM_SEQUENCE.getBytes().length;
 
   private int numColumns;
   private String fieldDelimited;
@@ -136,7 +139,7 @@ public class MultiDelimitSerDe extends AbstractEncodingAwareSerDe {
   }
 
 
-  @Override 
+  @Override
   public Object doDeserialize(Writable blob) throws SerDeException {
     if (byteArrayRef == null) {
       byteArrayRef = new ByteArrayRef();
@@ -154,7 +157,7 @@ public class MultiDelimitSerDe extends AbstractEncodingAwareSerDe {
     } else {
       throw new SerDeException(getClass() + ": expects either BytesWritable or Text object!");
     }
-    byteArrayRef.setData(rowStr.replaceAll(Pattern.quote(fieldDelimited), "\1").getBytes());
+    byteArrayRef.setData(rowStr.replaceAll(Pattern.quote(fieldDelimited), REPLACEMENT_DELIM_SEQUENCE).getBytes());
     cachedLazyStruct.init(byteArrayRef, 0, byteArrayRef.getData().length);
     // use the multi-char delimiter to parse the lazy struct
     cachedLazyStruct.parseMultiDelimit(rowStr.getBytes(), fieldDelimited.getBytes());
@@ -297,12 +300,6 @@ public class MultiDelimitSerDe extends AbstractEncodingAwareSerDe {
   protected Text transformToUTF8(Writable blob) {
     Text text = (Text) blob;
     return SerDeUtils.transformTextToUTF8(text, this.charset);
-  }
-
-  @Override
-  public SerDeStats getSerDeStats() {
-    // no support for statistics
-    return null;
   }
 
 }

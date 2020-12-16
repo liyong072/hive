@@ -36,7 +36,6 @@ import org.apache.hadoop.hive.metastore.utils.MetaStoreServerUtils.ColStatsObjWi
 import org.apache.thrift.TException;
 
 public interface RawStore extends Configurable {
-
   /***
    * Annotation to skip retries
    */
@@ -280,7 +279,6 @@ public interface RawStore extends Configurable {
    * @param dbName database name.
    * @param tableName table name.
    * @param part_vals partition values for this table.
-   * @param txnId transaction id of the calling transaction
    * @param writeIdList string format of valid writeId transaction list
    * @return the partition.
    * @throws MetaException error reading from RDBMS.
@@ -393,10 +391,20 @@ public interface RawStore extends Configurable {
    * @param dbName database to search in
    * @param pattern pattern to match
    * @param tableType type of table to look for
+   * @param limit Maximum number of tables to return (undeterministic set)
    * @return list of table names, if any
    * @throws MetaException failure in querying the RDBMS
    */
-  List<String> getTables(String catName, String dbName, String pattern, TableType tableType)
+  List<String> getTables(String catName, String dbName, String pattern, TableType tableType, int limit)
+      throws MetaException;
+
+  /**
+   * Retrieve all materialized views.
+   * @return all materialized views in a catalog
+   * @throws MetaException error querying the RDBMS
+   * @throws NoSuchObjectException no such database
+   */
+  List<Table> getAllMaterializedViewObjectsForRewriting(String catName)
       throws MetaException;
 
   /**
@@ -437,6 +445,22 @@ public interface RawStore extends Configurable {
       throws MetaException, UnknownDBException;
 
   /**
+   * @param catName catalog name
+   * @param dbname
+   *        The name of the database from which to retrieve the tables
+   * @param tableNames
+   *        The names of the tables to retrieve.
+   * @param projectionSpec
+   *        Projection Specification containing the columns that need to be returned.
+   * @return A list of the tables retrievable from the database
+   *          whose names are in the list tableNames.
+   *         If there are duplicate names, only one instance of the table will be returned
+   * @throws MetaException failure in querying the RDBMS.
+   */
+  List<Table> getTableObjectsByName(String catName, String dbname, List<String> tableNames,
+                                    GetProjectionsSpec projectionSpec) throws MetaException, UnknownDBException;
+
+  /**
    * Get all tables in a database.
    * @param catName catalog name.
    * @param dbName database name.
@@ -472,6 +496,22 @@ public interface RawStore extends Configurable {
    */
   List<String> listPartitionNames(String catName, String db_name,
       String tbl_name, short max_parts) throws MetaException;
+
+  /**
+   * Get a partial or complete list of names for partitions of a table.
+   * @param catName catalog name.
+   * @param dbName database name.
+   * @param tblName table name.
+   * @param defaultPartName default partition name.
+   * @param exprBytes expression for filtering resulting list, serialized from ExprNodeDesc.
+   * @param order ordered the resulting list.
+   * @param maxParts maximum number of partitions to retrieve, -1 for all.
+   * @return list of partition names.
+   * @throws MetaException there was an error accessing the RDBMS
+   */
+  List<String> listPartitionNames(String catName, String dbName, String tblName,
+      String defaultPartName, byte[] exprBytes, String order,
+      short maxParts) throws MetaException, NoSuchObjectException;
 
   /**
    * Get a list of partition values as one big struct.
@@ -517,9 +557,8 @@ public interface RawStore extends Configurable {
    * @param new_parts list of new partitions.  The order must match the old partitions described in
    *                  part_vals_list.  Each of these should be a complete copy of the new
    *                  partition, not just the pieces to update.
-   * @param txnId transaction id of the transaction that called this method.
-   * @param writeIdList valid write id list of the transaction on the current table
-   * @param writeid write id of the transaction for the table
+   * @param writeId write id of the transaction for the table
+   * @param queryValidWriteIds valid write id list of the transaction on the current table
    * @return
    * @throws InvalidObjectException One of the indicated partitions does not exist.
    * @throws MetaException error accessing the RDBMS.
@@ -573,7 +612,7 @@ public interface RawStore extends Configurable {
    * @throws NoSuchObjectException when table isn't found
    */
   List<Partition> getPartitionSpecsByFilterAndProjection(Table table,
-      GetPartitionsProjectionSpec projectionSpec, GetPartitionsFilterSpec filterSpec)
+      GetProjectionsSpec projectionSpec, GetPartitionsFilterSpec filterSpec)
       throws MetaException, NoSuchObjectException;
   /**
    * Get partitions using an already parsed expression.
@@ -908,7 +947,6 @@ public interface RawStore extends Configurable {
    * @throws MetaException error accessing the RDBMS.
    * @throws InvalidObjectException the stats object is invalid
    * @throws InvalidInputException unable to record the stats for the table
-   * @throws TException
    */
   Map<String, String> updatePartitionColumnStatistics(ColumnStatistics statsObj,
      List<String> partVals, String validWriteIds, long writeId)
@@ -926,7 +964,7 @@ public interface RawStore extends Configurable {
    * @throws MetaException error accessing the RDBMS
    *
    */
-  ColumnStatistics getTableColumnStatistics(String catName, String dbName, String tableName,
+  List<ColumnStatistics> getTableColumnStatistics(String catName, String dbName, String tableName,
     List<String> colName) throws MetaException, NoSuchObjectException;
 
   /**
@@ -936,7 +974,23 @@ public interface RawStore extends Configurable {
    * @param dbName name of the database, defaults to current database
    * @param tableName name of the table
    * @param colName names of the columns for which statistics is requested
-   * @param txnId transaction id of the calling transaction
+   * @param engine engine requesting the statistics
+   * @return Relevant column statistics for the column for the given table
+   * @throws NoSuchObjectException No such table
+   * @throws MetaException error accessing the RDBMS
+   *
+   */
+  ColumnStatistics getTableColumnStatistics(String catName, String dbName, String tableName,
+    List<String> colName, String engine) throws MetaException, NoSuchObjectException;
+
+  /**
+   * Returns the relevant column statistics for a given column in a given table in a given database
+   * if such statistics exist.
+   * @param catName catalog name.
+   * @param dbName name of the database, defaults to current database
+   * @param tableName name of the table
+   * @param colName names of the columns for which statistics is requested
+   * @param engine engine requesting the statistics
    * @param writeIdList string format of valid writeId transaction list
    * @return Relevant column statistics for the column for the given table
    * @throws NoSuchObjectException No such table
@@ -945,7 +999,7 @@ public interface RawStore extends Configurable {
    */
   ColumnStatistics getTableColumnStatistics(
     String catName, String dbName, String tableName,
-    List<String> colName, String writeIdList)
+    List<String> colName, String engine, String writeIdList)
       throws MetaException, NoSuchObjectException;
 
   /**
@@ -959,8 +1013,8 @@ public interface RawStore extends Configurable {
    * @throws MetaException error accessing the RDBMS
    * @throws NoSuchObjectException no such partition.
    */
-  List<ColumnStatistics> getPartitionColumnStatistics(
-     String catName, String dbName, String tblName, List<String> partNames, List<String> colNames)
+  List<List<ColumnStatistics>> getPartitionColumnStatistics(
+      String catName, String dbName, String tblName, List<String> partNames, List<String> colNames)
       throws MetaException, NoSuchObjectException;
 
   /**
@@ -970,7 +1024,23 @@ public interface RawStore extends Configurable {
    * @param tblName table name.
    * @param partNames list of partition names.  These are names so must be key1=val1[/key2=val2...]
    * @param colNames list of columns to get stats for
-   * @param txnId transaction id of the calling transaction
+   * @param engine engine requesting the statistics
+   * @return list of statistics objects
+   * @throws MetaException error accessing the RDBMS
+   * @throws NoSuchObjectException no such partition.
+   */
+  List<ColumnStatistics> getPartitionColumnStatistics(
+     String catName, String dbName, String tblName, List<String> partNames, List<String> colNames,
+     String engine) throws MetaException, NoSuchObjectException;
+
+  /**
+   * Get statistics for a partition for a set of columns.
+   * @param catName catalog name.
+   * @param dbName database name.
+   * @param tblName table name.
+   * @param partNames list of partition names.  These are names so must be key1=val1[/key2=val2...]
+   * @param colNames list of columns to get stats for
+   * @param engine engine requesting the statistics
    * @param writeIdList string format of valid writeId transaction list
    * @return list of statistics objects
    * @throws MetaException error accessing the RDBMS
@@ -979,7 +1049,7 @@ public interface RawStore extends Configurable {
   List<ColumnStatistics> getPartitionColumnStatistics(
       String catName, String dbName, String tblName,
       List<String> partNames, List<String> colNames,
-      String writeIdList)
+      String engine, String writeIdList)
       throws MetaException, NoSuchObjectException;
 
   /**
@@ -992,6 +1062,7 @@ public interface RawStore extends Configurable {
    * @param partName partition name.
    * @param partVals partition values.
    * @param colName column name.
+   * @param engine engine for which we want to delete statistics
    * @return Boolean indicating the outcome of the operation
    * @throws NoSuchObjectException no such partition
    * @throws MetaException error access the RDBMS
@@ -999,7 +1070,7 @@ public interface RawStore extends Configurable {
    * @throws InvalidInputException bad input, such as null table or database name.
    */
   boolean deletePartitionColumnStatistics(String catName, String dbName, String tableName,
-      String partName, List<String> partVals, String colName)
+      String partName, List<String> partVals, String colName, String engine)
       throws NoSuchObjectException, MetaException, InvalidObjectException, InvalidInputException;
 
   /**
@@ -1008,6 +1079,7 @@ public interface RawStore extends Configurable {
    * @param dbName database name
    * @param tableName table name
    * @param colName column name.  Null to delete stats for all columns in the table.
+   * @param engine engine for which we want to delete statistics
    * @return true if the statistics were deleted.
    * @throws NoSuchObjectException no such table or column.
    * @throws MetaException error access the RDBMS.
@@ -1015,7 +1087,7 @@ public interface RawStore extends Configurable {
    * @throws InvalidInputException bad inputs, such as null table name.
    */
   boolean deleteTableColumnStatistics(String catName, String dbName, String tableName,
-                                      String colName)
+    String colName, String engine)
     throws NoSuchObjectException, MetaException, InvalidObjectException, InvalidInputException;
 
   long cleanupEvents();
@@ -1218,12 +1290,13 @@ public interface RawStore extends Configurable {
    * @param partNames list of partition names.  These are the names of the partitions, not
    *                  values.
    * @param colNames list of column names
+   * @param engine engine requesting the statistics
    * @return aggregated stats
    * @throws MetaException error accessing RDBMS
    * @throws NoSuchObjectException no such table or partition
    */
   AggrStats get_aggr_stats_for(String catName, String dbName, String tblName,
-    List<String> partNames, List<String> colNames) throws MetaException, NoSuchObjectException;
+    List<String> partNames, List<String> colNames, String engine) throws MetaException, NoSuchObjectException;
 
   /**
    * Get aggregated stats for a table or partition(s).
@@ -1233,7 +1306,7 @@ public interface RawStore extends Configurable {
    * @param partNames list of partition names.  These are the names of the partitions, not
    *                  values.
    * @param colNames list of column names
-   * @param txnId transaction id of the calling transaction
+   * @param engine engine requesting the statistics
    * @param writeIdList string format of valid writeId transaction list
    * @return aggregated stats
    * @throws MetaException error accessing RDBMS
@@ -1241,7 +1314,7 @@ public interface RawStore extends Configurable {
    */
   AggrStats get_aggr_stats_for(String catName, String dbName, String tblName,
     List<String> partNames, List<String> colNames,
-    String writeIdList)
+    String engine, String writeIdList)
       throws MetaException, NoSuchObjectException;
 
   /**
@@ -1255,7 +1328,7 @@ public interface RawStore extends Configurable {
   List<ColStatsObjWithSourceInfo> getPartitionColStatsForDatabase(String catName, String dbName)
       throws MetaException, NoSuchObjectException;
 
-  /**
+    /**
    * Get the next notification event.
    * @param rqst Request containing information on the last processed notification.
    * @return list of notifications, sorted by eventId
@@ -1429,22 +1502,25 @@ public interface RawStore extends Configurable {
                                                    String tbl_name) throws MetaException;
 
   /**
+   * Get all constraints of the table
+   * @param catName catalog name
+   * @param dbName database name
+   * @param tblName table name
+   * @return all constraints for this table
+   * @throws MetaException error accessing the RDBMS
+   */
+  SQLAllTableConstraints getAllTableConstraints(String catName, String dbName, String tblName)
+      throws MetaException, NoSuchObjectException;
+
+  /**
    * Create a table with constraints
    * @param tbl table definition
-   * @param primaryKeys primary key definition, or null
-   * @param foreignKeys foreign key definition, or null
-   * @param uniqueConstraints unique constraints definition, or null
-   * @param notNullConstraints not null constraints definition, or null
-   * @param defaultConstraints default values definition, or null
+   * @param constraints wrapper of all table constraints
    * @return list of constraint names
    * @throws InvalidObjectException one of the provided objects is malformed.
    * @throws MetaException error accessing the RDBMS
    */
-  List<String> createTableWithConstraints(Table tbl, List<SQLPrimaryKey> primaryKeys,
-    List<SQLForeignKey> foreignKeys, List<SQLUniqueConstraint> uniqueConstraints,
-    List<SQLNotNullConstraint> notNullConstraints,
-    List<SQLDefaultConstraint> defaultConstraints,
-    List<SQLCheckConstraint> checkConstraints) throws InvalidObjectException, MetaException;
+  SQLAllTableConstraints createTableWithConstraints(Table tbl, SQLAllTableConstraints constraints) throws InvalidObjectException, MetaException;
 
   /**
    * Drop a constraint, any constraint.  I have no idea why add and get each have separate
@@ -1481,7 +1557,7 @@ public interface RawStore extends Configurable {
    * @throws InvalidObjectException The SQLPrimaryKeys list is malformed
    * @throws MetaException error accessing the RDMBS
    */
-  List<String> addPrimaryKeys(List<SQLPrimaryKey> pks) throws InvalidObjectException, MetaException;
+  List<SQLPrimaryKey> addPrimaryKeys(List<SQLPrimaryKey> pks) throws InvalidObjectException, MetaException;
 
   /**
    * Add a foreign key to a table.
@@ -1490,7 +1566,7 @@ public interface RawStore extends Configurable {
    * @throws InvalidObjectException the specification is malformed.
    * @throws MetaException error accessing the RDBMS.
    */
-  List<String> addForeignKeys(List<SQLForeignKey> fks) throws InvalidObjectException, MetaException;
+  List<SQLForeignKey> addForeignKeys(List<SQLForeignKey> fks) throws InvalidObjectException, MetaException;
 
   /**
    * Add unique constraints to a table.
@@ -1499,7 +1575,7 @@ public interface RawStore extends Configurable {
    * @throws InvalidObjectException the specification is malformed.
    * @throws MetaException error accessing the RDBMS.
    */
-  List<String> addUniqueConstraints(List<SQLUniqueConstraint> uks) throws InvalidObjectException, MetaException;
+  List<SQLUniqueConstraint> addUniqueConstraints(List<SQLUniqueConstraint> uks) throws InvalidObjectException, MetaException;
 
   /**
    * Add not null constraints to a table.
@@ -1508,29 +1584,29 @@ public interface RawStore extends Configurable {
    * @throws InvalidObjectException the specification is malformed.
    * @throws MetaException error accessing the RDBMS.
    */
-  List<String> addNotNullConstraints(List<SQLNotNullConstraint> nns) throws InvalidObjectException, MetaException;
+  List<SQLNotNullConstraint> addNotNullConstraints(List<SQLNotNullConstraint> nns) throws InvalidObjectException, MetaException;
 
   /**
-   * Add default values to a table definition
+   * Add default values to a table definition.
    * @param dv list of default values
    * @return constraint names
    * @throws InvalidObjectException the specification is malformed.
    * @throws MetaException error accessing the RDBMS.
    */
-  List<String> addDefaultConstraints(List<SQLDefaultConstraint> dv)
+  List<SQLDefaultConstraint> addDefaultConstraints(List<SQLDefaultConstraint> dv)
       throws InvalidObjectException, MetaException;
 
   /**
-   * Add check constraints to a table
+   * Add check constraints to a table.
    * @param cc check constraints to add
    * @return list of constraint names
    * @throws InvalidObjectException the specification is malformed
    * @throws MetaException error accessing the RDBMS
    */
-  List<String> addCheckConstraints(List<SQLCheckConstraint> cc) throws InvalidObjectException, MetaException;
+  List<SQLCheckConstraint> addCheckConstraints(List<SQLCheckConstraint> cc) throws InvalidObjectException, MetaException;
 
   /**
-   * Gets the unique id of the backing datastore for the metadata
+   * Gets the unique id of the backing datastore for the metadata.
    * @return
    * @throws MetaException
    */
@@ -1601,7 +1677,7 @@ public interface RawStore extends Configurable {
       NoSuchObjectException;
 
   /**
-   * Alter an existing ISchema.  This assumes the caller has already checked that such a schema
+   * Alter an existing ISchema.  This assumes the caller has already checked that such a schema.
    * exists.
    * @param schemaName name of the schema
    * @param newSchema new schema object
@@ -1619,7 +1695,8 @@ public interface RawStore extends Configurable {
   ISchema getISchema(ISchemaName schemaName) throws MetaException;
 
   /**
-   * Drop an ISchema.  This does not check whether there are valid versions of the schema in
+   * Drop an ISchema.
+   * This does not check whether there are valid versions of the schema in
    * existence, it assumes the caller has already done that.
    * @param schemaName schema descriptor
    * @throws NoSuchObjectException no schema of this name exists
@@ -1640,7 +1717,8 @@ public interface RawStore extends Configurable {
       throws AlreadyExistsException, InvalidObjectException, NoSuchObjectException, MetaException;
 
   /**
-   * Alter a schema version.  Note that the Thrift interface only supports changing the serde
+   * Alter a schema version.
+   * Note that the Thrift interface only supports changing the serde
    * mapping and states.  This method does not guarantee it will check anymore than that.  This
    * method does not understand the state transitions and just assumes that the new state it is
    * passed is reasonable.
@@ -1669,7 +1747,7 @@ public interface RawStore extends Configurable {
   SchemaVersion getLatestSchemaVersion(ISchemaName schemaName) throws MetaException;
 
   /**
-   * Get all of the versions of a schema
+   * Get all of the versions of a schema.
    * @param schemaName name of the schema
    * @return all versions of the schema
    * @throws MetaException general database exception
@@ -1677,7 +1755,8 @@ public interface RawStore extends Configurable {
   List<SchemaVersion> getAllSchemaVersion(ISchemaName schemaName) throws MetaException;
 
   /**
-   * Find all SchemaVersion objects that match a query.  The query will select all SchemaVersions
+   * Find all SchemaVersion objects that match a query.
+   * The query will select all SchemaVersions
    * that are equal to all of the non-null passed in arguments.  That is, if arguments
    * colName='name', colNamespace=null, type='string' are passed in, then all schemas that have
    * a column with colName 'name' and type 'string' will be returned.
@@ -1704,7 +1783,7 @@ public interface RawStore extends Configurable {
   void dropSchemaVersion(SchemaVersionDescriptor version) throws NoSuchObjectException, MetaException;
 
   /**
-   * Get serde information
+   * Get serde information.
    * @param serDeName name of the SerDe
    * @return the SerDe, or null if there is no such serde
    * @throws NoSuchObjectException no serde with this name exists
@@ -1713,7 +1792,7 @@ public interface RawStore extends Configurable {
   SerDeInfo getSerDeInfo(String serDeName) throws NoSuchObjectException, MetaException;
 
   /**
-   * Add a serde
+   * Add a serde.
    * @param serde serde to add
    * @throws AlreadyExistsException a serde of this name already exists
    * @throws MetaException general database exception
@@ -1749,4 +1828,67 @@ public interface RawStore extends Configurable {
    * @param tableName the name of the table for which the dump is being taken
    */
   List<WriteEventInfo> getAllWriteEventInfo(long txnId, String dbName, String tableName) throws MetaException;
+
+  /**
+   * Checking if table is part of a materialized view.
+   * @param catName catalog the table is in
+   * @param dbName database the table is in
+   * @param tblName table name
+   * @return list of materialized views that uses the table
+   */
+  List<String> isPartOfMaterializedView(String catName, String dbName, String tblName);
+
+  /**
+   * Returns details about a scheduled query by name.
+   *
+   * @throws NoSuchObjectException if an object by the given name dosen't exists.
+   */
+  ScheduledQuery getScheduledQuery(ScheduledQueryKey scheduleKey) throws MetaException, NoSuchObjectException;
+
+  /**
+   * Carries out maintenance of scheduled queries (insert/update/drop).
+   */
+  void scheduledQueryMaintenance(ScheduledQueryMaintenanceRequest request)
+      throws MetaException, NoSuchObjectException, AlreadyExistsException, InvalidInputException;
+
+  /**
+   * Checks whenever a query is available for execution.
+   *
+   * @return optionally a scheduled query to be processed.
+   */
+  ScheduledQueryPollResponse scheduledQueryPoll(ScheduledQueryPollRequest request) throws MetaException;
+
+  /**
+   * Registers the progress a scheduled query being executed.
+   */
+  void scheduledQueryProgress(ScheduledQueryProgressInfo info)
+      throws MetaException, NoSuchObjectException, InvalidOperationException;
+
+  /**
+   * Add the replication metrics and progress info.
+   * @param replicationMetricList
+   */
+  void addReplicationMetrics(ReplicationMetricList replicationMetricList);
+
+  /**
+   * Gets the replication metrics and progress info.
+   * @param replicationMetricsRequest
+   */
+  ReplicationMetricList getReplicationMetrics(GetReplicationMetricsRequest replicationMetricsRequest);
+
+  int deleteReplicationMetrics(int maxRetainSecs);
+
+  int deleteScheduledExecutions(int maxRetainSecs);
+
+  int markScheduledExecutionsTimedOut(int timeoutSecs) throws InvalidOperationException, MetaException;
+
+  void deleteAllPartitionColumnStatistics(TableName tn, String writeIdList);
+
+  void createOrUpdateStoredProcedure(StoredProcedure proc) throws NoSuchObjectException, MetaException;
+
+  StoredProcedure getStoredProcedure(String catName, String db, String name) throws MetaException, NoSuchObjectException;
+
+  void dropStoredProcedure(String catName, String dbName, String funcName) throws MetaException, NoSuchObjectException;
+
+  List<String> getAllStoredProcedures(ListStoredProcedureRequest request);
 }
