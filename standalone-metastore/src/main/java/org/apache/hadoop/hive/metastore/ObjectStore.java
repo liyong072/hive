@@ -231,6 +231,7 @@ import org.slf4j.LoggerFactory;
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -703,17 +704,31 @@ public class ObjectStore implements RawStore, Configurable {
   }
 
   /**
-   * Opens a new one or the one already created Every call of this function must
-   * have corresponding commit or rollback function call
+   * Opens a new one or the one already created. Every call of this function must
+   * have corresponding commit or rollback function call.
    *
    * @return an active transaction
    */
-
   @Override
   public boolean openTransaction() {
+    return openTransaction(null);
+  }
+
+  /**
+   * Opens a new one or the one already created. Every call of this function must
+   * have corresponding commit or rollback function call.
+   *
+   * @param isolationLevel The transaction isolation level. Only possible to set on the first call.
+   * @return an active transaction
+   */
+  @Override
+  public boolean openTransaction(String isolationLevel) {
     openTrasactionCalls++;
     if (openTrasactionCalls == 1) {
       currentTransaction = pm.currentTransaction();
+      if (isolationLevel != null) {
+        currentTransaction.setIsolationLevel(isolationLevel);
+      }
       currentTransaction.begin();
       transactionStatus = TXN_STATUS.OPEN;
     } else {
@@ -723,11 +738,40 @@ public class ObjectStore implements RawStore, Configurable {
         throw new RuntimeException("openTransaction called in an interior"
             + " transaction scope, but currentTransaction is not active.");
       }
+
+      // Can not change the isolation level on an already open transaction
+      if (isolationLevel != null && !isolationLevel.equals(currentTransaction.getIsolationLevel())) {
+        throw new RuntimeException("Can not set isolation level on an open transaction");
+      }
     }
 
     boolean result = currentTransaction.isActive();
-    debugLog("Open transaction: count = " + openTrasactionCalls + ", isActive = " + result);
+    debugLog("Open transaction: count = " + openTrasactionCalls + ", isActive = " + result + ", isolationLevel = "
+            + currentTransaction.getIsolationLevel());
     return result;
+  }
+
+  @Override
+  public long updateParameterWithExpectedValue(Table table, String key, String expectedValue, String newValue)
+      throws MetaException, NoSuchObjectException {
+    return new GetHelper<Long>(table.getCatName(), table.getDbName(), table.getTableName(), true, false) {
+
+      @Override
+      protected String describeResult() {
+        return "Affected rows";
+      }
+
+      @Override
+      protected Long getSqlResult(GetHelper<Long> ctx) throws MetaException {
+        return directSql.updateTableParam(table, key, expectedValue, newValue);
+      }
+
+      @Override
+      protected Long getJdoResult(GetHelper<Long> ctx) throws MetaException, NoSuchObjectException {
+        throw new UnsupportedOperationException(
+            "Cannot update parameter with JDO, make sure direct SQL is enabled");
+      }
+    }.run(false);
   }
 
   /**
@@ -2018,12 +2062,12 @@ public class ObjectStore implements RawStore, Configurable {
     // accordingly
     String tableType = tbl.getTableType();
     boolean isExternal = Boolean.parseBoolean(tbl.getParameters().get("EXTERNAL"));
-    if (TableType.MANAGED_TABLE.toString().equals(tableType)) {
+    if (TableType.MANAGED_TABLE.toString().equalsIgnoreCase(tableType)) {
       if (isExternal) {
         tableType = TableType.EXTERNAL_TABLE.toString();
       }
     }
-    if (TableType.EXTERNAL_TABLE.toString().equals(tableType)) {
+    if (TableType.EXTERNAL_TABLE.toString().equalsIgnoreCase(tableType)) {
       if (!isExternal) {
         tableType = TableType.MANAGED_TABLE.toString();
       }
@@ -3177,6 +3221,27 @@ public class ObjectStore implements RawStore, Configurable {
     return (Collection) query.executeWithArray(dbName, catName, tableName, partNameMatcher);
   }
 
+  /**
+   * If partVals all the values are empty strings, it means we are returning
+   * all the partitions and hence we can attempt to use a directSQL equivalent API which
+   * is considerably faster.
+   * @param partVals The partitions values used to filter out the partitions.
+   * @return true only when partVals is non-empty and contains only empty strings,
+   * otherwise false. If user or groups is valid then returns false since the directSQL
+   * doesn't support partition privileges.
+   */
+  private boolean canTryDirectSQL(List<String> partVals) {
+    if (partVals.isEmpty()) {
+      return false;
+    }
+    for (String val : partVals) {
+      if (val != null && !val.isEmpty()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @Override
   public List<Partition> listPartitionsPsWithAuth(String catName, String db_name, String tbl_name,
       List<String> part_vals, short max_parts, String userName, List<String> groupNames)
@@ -3187,24 +3252,38 @@ public class ObjectStore implements RawStore, Configurable {
 
     try {
       openTransaction();
-      LOG.debug("executing listPartitionNamesPsWithAuth");
-      Collection parts = getPartitionPsQueryResults(catName, db_name, tbl_name,
-          part_vals, max_parts, null, queryWrapper);
+
       MTable mtbl = getMTable(catName, db_name, tbl_name);
+      if (mtbl == null) {
+        throw new NoSuchObjectException(db_name +  "." + tbl_name + " table not found");
+      }
+      boolean getauth = null != userName && null != groupNames &&
+          "TRUE".equalsIgnoreCase(mtbl.getParameters().get("PARTITION_LEVEL_PRIVILEGE"));
+      if(!getauth && canTryDirectSQL(part_vals)) {
+        LOG.debug(
+            "Redirecting to directSQL enabled API: db: {} tbl: {} partVals: {}",
+            db_name, tbl_name, Joiner.on(',').join(part_vals));
+        return getPartitions(catName, db_name, tbl_name, -1);
+      }
+      LOG.debug("executing listPartitionNamesPsWithAuth");
+      Collection parts = getPartitionPsQueryResults(catName, db_name, tbl_name, part_vals,
+          max_parts, null, queryWrapper);
       for (Object o : parts) {
         Partition part = convertToPart((MPartition) o);
-        //set auth privileges
-        if (null != userName && null != groupNames &&
-            "TRUE".equalsIgnoreCase(mtbl.getParameters().get("PARTITION_LEVEL_PRIVILEGE"))) {
-          String partName = Warehouse.makePartName(this.convertToFieldSchemas(mtbl
-              .getPartitionKeys()), part.getValues());
-          PrincipalPrivilegeSet partAuth = getPartitionPrivilegeSet(catName, db_name,
-              tbl_name, partName, userName, groupNames);
+        if (getauth) {
+          // set auth privileges
+          String partName = Warehouse.makePartName(this.convertToFieldSchemas(mtbl.getPartitionKeys()), part.getValues());
+          PrincipalPrivilegeSet partAuth =
+              getPartitionPrivilegeSet(catName, db_name, tbl_name, partName, userName, groupNames);
           part.setPrivileges(partAuth);
         }
         partitions.add(part);
       }
       success = commitTransaction();
+    } catch (InvalidObjectException | NoSuchObjectException | MetaException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new MetaException(e.getMessage());
     } finally {
       rollbackAndCleanup(success, queryWrapper);
     }

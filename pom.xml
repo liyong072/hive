@@ -21,11 +21,11 @@
   </parent>
   <groupId>org.apache.hive</groupId>
   <artifactId>hive</artifactId>
-  <version>3.1.2-SNAPSHOT</version>
+  <version>3.1.3</version>
   <packaging>pom</packaging>
 
   <name>Hive</name>
-  <url>http://hive.apache.org</url>
+  <url>https://hive.apache.org</url>
   <prerequisites>
     <maven>2.2.1</maven>
   </prerequisites>
@@ -122,7 +122,7 @@
     <!-- Include arrow for LlapOutputFormatService -->
     <arrow.version>0.8.0</arrow.version>
     <avatica.version>1.11.0</avatica.version>
-    <avro.version>1.7.7</avro.version>
+    <avro.version>1.8.2</avro.version>
     <bonecp.version>0.8.0.RELEASE</bonecp.version>
     <calcite.version>1.16.0</calcite.version>
     <datanucleus-api-jdo.version>4.2.4</datanucleus-api-jdo.version>
@@ -130,13 +130,13 @@
     <datanucleus-rdbms.version>4.1.19</datanucleus-rdbms.version>
     <datanucleus-jdo.version>3.2.0-m3</datanucleus-jdo.version>
     <commons-cli.version>1.2</commons-cli.version>
-    <commons-codec.version>1.7</commons-codec.version>
+    <commons-codec.version>1.15</commons-codec.version>
     <commons-collections.version>3.2.2</commons-collections.version>
-    <commons-compress.version>1.9</commons-compress.version>
+    <commons-compress.version>1.19</commons-compress.version>
     <commons-exec.version>1.1</commons-exec.version>
-    <commons-io.version>2.4</commons-io.version>
+    <commons-io.version>2.6</commons-io.version>
     <commons-lang.version>2.6</commons-lang.version>
-    <commons-lang3.version>3.2</commons-lang3.version>
+    <commons-lang3.version>3.9</commons-lang3.version>
     <commons-pool.version>1.5.4</commons-pool.version>
     <commons-dbcp.version>1.4</commons-dbcp.version>
     <derby.version>10.14.1.0</derby.version>
@@ -156,10 +156,10 @@
     <disruptor.version>3.3.7</disruptor.version>
     <hikaricp.version>2.6.1</hikaricp.version>
     <!-- httpcomponents are not always in version sync -->
-    <httpcomponents.client.version>4.5.2</httpcomponents.client.version>
-    <httpcomponents.core.version>4.4.4</httpcomponents.core.version>
+    <httpcomponents.client.version>4.5.13</httpcomponents.client.version>
+    <httpcomponents.core.version>4.4.13</httpcomponents.core.version>
     <ivy.version>2.4.0</ivy.version>
-    <jackson.version>2.9.5</jackson.version>
+    <jackson.version>2.12.0</jackson.version>
     <jamon.plugin.version>2.3.4</jamon.plugin.version>
     <jamon-runtime.version>2.3.1</jamon-runtime.version>
     <javaewah.version>0.3.2</javaewah.version>
@@ -173,7 +173,7 @@
     <!-- Glassfish jersey is included for Spark client test only -->
     <glassfish.jersey.version>2.22.2</glassfish.jersey.version>
     <jline.version>2.12</jline.version>
-    <jms.version>1.1</jms.version>
+    <jms.version>2.0.2</jms.version>
     <joda.version>2.9.9</joda.version>
     <jodd.version>3.5.2</jodd.version>
     <json.version>1.8</json.version>
@@ -181,9 +181,9 @@
     <kryo.version>3.0.3</kryo.version>
     <libfb303.version>0.9.3</libfb303.version>
     <libthrift.version>0.9.3</libthrift.version>
-    <log4j2.version>2.10.0</log4j2.version>
+    <log4j2.version>2.17.1</log4j2.version>
     <opencsv.version>2.3</opencsv.version>
-    <orc.version>1.5.1</orc.version>
+    <orc.version>1.5.8</orc.version>
     <mockito-all.version>1.10.19</mockito-all.version>
     <mina.version>2.0.0-M5</mina.version>
     <netty.version>4.1.17.Final</netty.version>
@@ -204,7 +204,7 @@
     <tempus-fugit.version>1.1</tempus-fugit.version>
     <snappy.version>1.1.4</snappy.version>
     <wadl-resourcedoc-doclet.version>1.4</wadl-resourcedoc-doclet.version>
-    <velocity.version>1.5</velocity.version>
+    <velocity.version>2.3</velocity.version>
     <xerces.version>2.9.1</xerces.version>
     <zookeeper.version>3.4.6</zookeeper.version>
     <jpam.version>1.1</jpam.version>
@@ -216,49 +216,15 @@
   </properties>
 
   <repositories>
-   <!-- This needs to be removed before checking in-->
     <repository>
-      <id>datanucleus</id>
-      <name>datanucleus maven repository</name>
-      <url>http://www.datanucleus.org/downloads/maven2</url>
+      <id>central</id>
+      <name>central</name>
+      <url>https://repo.maven.apache.org/maven2</url>
       <layout>default</layout>
       <releases>
         <enabled>true</enabled>
         <checksumPolicy>warn</checksumPolicy>
       </releases>
-      <snapshots>
-        <enabled>false</enabled>
-      </snapshots>
-    </repository>
-    <repository>
-      <id>glassfish-repository</id>
-      <url>http://maven.glassfish.org/content/groups/glassfish</url>
-      <releases>
-        <enabled>false</enabled>
-      </releases>
-      <snapshots>
-        <enabled>false</enabled>
-      </snapshots>
-    </repository>
-    <repository>
-      <id>glassfish-repo-archive</id>
-      <url>http://maven.glassfish.org/content/groups/glassfish</url>
-      <releases>
-        <enabled>false</enabled>
-      </releases>
-      <snapshots>
-        <enabled>false</enabled>
-      </snapshots>
-     </repository>
-     <repository>
-       <id>sonatype-snapshot</id>
-       <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-       <releases>
-         <enabled>false</enabled>
-       </releases>
-       <snapshots>
-         <enabled>false</enabled>
-       </snapshots>
     </repository>
   </repositories>
 
@@ -511,7 +477,7 @@
       </dependency>
       <dependency>
         <groupId>org.apache.velocity</groupId>
-        <artifactId>velocity</artifactId>
+        <artifactId>velocity-engine-core</artifactId>
         <version>${velocity.version}</version>
       </dependency>
       <dependency>
@@ -1575,11 +1541,4 @@
       </modules>
     </profile>
   </profiles>
-  <distributionManagement>
-    <repository>
-      <id>${repoid}</id>
-      <name>${reponame}</name>
-      <url>${repourl}</url>
-    </repository>
-  </distributionManagement>
 </project>
