@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
@@ -48,7 +49,7 @@ public abstract class VectorMapJoinFastBytesHashMap
 
   private long fullOuterNullKeyRefWord;
 
-  private static class NonMatchedBytesHashMapIterator extends VectorMapJoinFastNonMatchedIterator {
+  public static class NonMatchedBytesHashMapIterator extends VectorMapJoinFastNonMatchedIterator {
 
     private VectorMapJoinFastBytesHashMap hashMap;
 
@@ -152,15 +153,13 @@ public abstract class VectorMapJoinFastBytesHashMap
     return new NonMatchedBytesHashMapIterator(matchTracker, this);
   }
 
-  public void add(byte[] keyBytes, int keyStart, int keyLength, BytesWritable currentValue) {
+  public void add(byte[] keyBytes, int keyStart, int keyLength, BytesWritable currentValue, long hashCode) {
 
-    if (resizeThreshold <= keysAssigned) {
+    if (checkResize()) {
       expandAndRehash();
     }
 
-    long hashCode = HashCodeUtil.murmurHash(keyBytes, keyStart, keyLength);
-    int intHashCode = (int) hashCode;
-    int slot = (intHashCode & logicalHashBucketMask);
+    int slot = ((int) hashCode & logicalHashBucketMask);
     long probeSlot = slot;
     int i = 0;
     boolean isNewKey;

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.lazy.fast;
@@ -21,11 +22,11 @@ package org.apache.hadoop.hive.serde2.lazy.fast;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
+import java.util.Base64;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.hive.common.type.Date;
 import org.apache.hadoop.hive.serde2.io.DateWritableV2;
 import org.slf4j.Logger;
@@ -277,7 +278,7 @@ public final class LazySimpleSerializeWrite implements SerializeWrite {
     beginPrimitive();
     byte[] toEncode = new byte[v.length];
     System.arraycopy(v, 0, toEncode, 0, v.length);
-    byte[] toWrite = Base64.encodeBase64(toEncode);
+    byte[] toWrite = Base64.getEncoder().withoutPadding().encode(toEncode);
     output.write(toWrite, 0, toWrite.length);
     finishPrimitive();
   }
@@ -287,7 +288,7 @@ public final class LazySimpleSerializeWrite implements SerializeWrite {
     beginPrimitive();
     byte[] toEncode = new byte[length];
     System.arraycopy(v, start, toEncode, 0, length);
-    byte[] toWrite = Base64.encodeBase64(toEncode);
+    byte[] toWrite = Base64.getEncoder().withoutPadding().encode(toEncode);
     output.write(toWrite, 0, toWrite.length);
     finishPrimitive();
   }

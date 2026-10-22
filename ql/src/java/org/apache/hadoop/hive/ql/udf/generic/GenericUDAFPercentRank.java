@@ -9,14 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
+
+import static org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory.
+        writableDoubleObjectInspector;
 
 import java.util.ArrayList;
 
@@ -28,28 +32,30 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.serde2.io.DoubleWritable;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory;
-import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.io.IntWritable;
 
+@Description(
+        name = "percent_rank",
+        value = "_FUNC_(x) PERCENT_RANK is similar to CUME_DIST, but it uses rank values rather " +
+                "than row counts in its numerator. PERCENT_RANK of a row is calculated as: " +
+                "(rank of row in its partition - 1) / (number of rows in the partition - 1)")
 @WindowFunctionDescription(
-  description = @Description(
-    name = "percent_rank",
-    value = "_FUNC_(x) PERCENT_RANK is similar to CUME_DIST, but it uses rank values rather " +
-            "than row counts in its numerator. PERCENT_RANK of a row is calculated as: " +
-            "(rank of row in its partition - 1) / (number of rows in the partition - 1)"
-  ),
-  supportsWindow = false,
-  pivotResult = true,
-  rankingFunction = true,
-  impliesOrder = true
-)
+        supportsWindow = false,
+        pivotResult = true,
+        rankingFunction = true,
+        orderedAggregate = true)
 public class GenericUDAFPercentRank extends GenericUDAFRank {
 
   static final Logger LOG = LoggerFactory.getLogger(GenericUDAFPercentRank.class.getName());
 
   @Override
-  protected GenericUDAFAbstractRankEvaluator createEvaluator() {
+  protected GenericUDAFAbstractRankEvaluator createWindowingEvaluator() {
     return new GenericUDAFPercentRankEvaluator();
+  }
+
+  @Override
+  protected GenericUDAFHypotheticalSetRankEvaluator createHypotheticalSetEvaluator() {
+    return new GenericUDAFHypotheticalSetPercentRankEvaluator();
   }
 
   public static class GenericUDAFPercentRankEvaluator extends GenericUDAFAbstractRankEvaluator {
@@ -58,7 +64,7 @@ public class GenericUDAFPercentRank extends GenericUDAFRank {
     public ObjectInspector init(Mode m, ObjectInspector[] parameters) throws HiveException {
       super.init(m, parameters);
       return ObjectInspectorFactory.getStandardListObjectInspector(
-        PrimitiveObjectInspectorFactory.writableDoubleObjectInspector);
+        writableDoubleObjectInspector);
     }
 
     @Override
@@ -76,6 +82,24 @@ public class GenericUDAFPercentRank extends GenericUDAFRank {
       }
 
       return pranks;
+    }
+  }
+
+  /**
+   * Evaluator for calculating the percent rank.
+   * SELECT percent_rank(expression1[, expressionn]*) WITHIN GROUP (ORDER BY col1[, coln]*)
+   * Implementation is based on hypothetical rank calculation: rank - 1 / count
+   */
+  public static class GenericUDAFHypotheticalSetPercentRankEvaluator extends GenericUDAFHypotheticalSetRankEvaluator {
+
+    public GenericUDAFHypotheticalSetPercentRankEvaluator() {
+      super(false, PARTIAL_RANK_OI, writableDoubleObjectInspector);
+    }
+
+    @Override
+    public Object terminate(AggregationBuffer agg) throws HiveException {
+      HypotheticalSetRankBuffer rankBuffer = (HypotheticalSetRankBuffer) agg;
+      return new DoubleWritable(((double)rankBuffer.rank) / rankBuffer.rowCount);
     }
   }
 }

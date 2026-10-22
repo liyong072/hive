@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.tez;
@@ -26,7 +27,7 @@ import org.apache.hadoop.hive.ql.parse.RuntimeValuesInfo;
 import org.apache.hadoop.hive.ql.plan.BaseWork;
 import org.apache.hadoop.hive.common.NoDynamicValuesException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
-import org.apache.hadoop.hive.serde2.Deserializer;
+import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.util.ReflectionUtils;
@@ -104,9 +105,9 @@ public class DynamicValueRegistryTez implements DynamicValueRegistry {
       RuntimeValuesInfo runtimeValuesInfo = rct.baseWork.getInputSourceToRuntimeValuesInfo().get(inputSourceName);
 
       // Setup deserializer/obj inspectors for the incoming data source
-      Deserializer deserializer = ReflectionUtils.newInstance(runtimeValuesInfo.getTableDesc().getDeserializerClass(), null);
-      deserializer.initialize(rct.conf, runtimeValuesInfo.getTableDesc().getProperties());
-      ObjectInspector inspector = deserializer.getObjectInspector();
+      AbstractSerDe serDe = ReflectionUtils.newInstance(runtimeValuesInfo.getTableDesc().getSerDeClass(), null);
+      serDe.initialize(rct.conf, runtimeValuesInfo.getTableDesc().getProperties(), null);
+      ObjectInspector inspector = serDe.getObjectInspector();
 
       // Set up col expressions for the dynamic values using this input
       List<ExprNodeEvaluator> colExprEvaluators = new ArrayList<ExprNodeEvaluator>();
@@ -124,7 +125,7 @@ public class DynamicValueRegistryTez implements DynamicValueRegistry {
       KeyValueReader kvReader = (KeyValueReader) runtimeValueInput.getReader();
       long rowCount = 0;
       while (kvReader.next()) {
-        Object row = deserializer.deserialize((Writable) kvReader.getCurrentValue());
+        Object row = serDe.deserialize((Writable) kvReader.getCurrentValue());
         rowCount++;
         for (int colIdx = 0; colIdx < colExprEvaluators.size(); ++colIdx) {
           // Read each expression and save it to the value registry

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -57,24 +58,27 @@ public class VectorMapJoinDesc extends AbstractVectorDesc  {
     BYTE,
     SHORT,
     INT,
+    DATE,
     LONG,
     STRING,
     MULTI_KEY;
 
     public PrimitiveTypeInfo getPrimitiveTypeInfo() {
       switch (this) {
+      case NONE:
+        return TypeInfoFactory.voidTypeInfo;
       case BOOLEAN:
         return TypeInfoFactory.booleanTypeInfo;
       case BYTE:
         return TypeInfoFactory.byteTypeInfo;
+      case SHORT:
+        return TypeInfoFactory.shortTypeInfo;
+      case DATE:
+        return TypeInfoFactory.dateTypeInfo;
       case INT:
         return TypeInfoFactory.intTypeInfo;
       case LONG:
         return TypeInfoFactory.longTypeInfo;
-      case NONE:
-        return TypeInfoFactory.voidTypeInfo;
-      case SHORT:
-        return TypeInfoFactory.shortTypeInfo;
       case STRING:
         return TypeInfoFactory.stringTypeInfo;
       case MULTI_KEY:
@@ -89,7 +93,8 @@ public class VectorMapJoinDesc extends AbstractVectorDesc  {
     INNER_BIG_ONLY,
     LEFT_SEMI,
     OUTER,
-    FULL_OUTER
+    FULL_OUTER,
+    LEFT_ANTI
   }
 
   private HashTableImplementationType hashTableImplementationType;

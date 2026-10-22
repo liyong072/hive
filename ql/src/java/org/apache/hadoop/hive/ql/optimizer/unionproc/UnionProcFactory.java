@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.unionproc;
 
@@ -32,7 +33,7 @@ import org.apache.hadoop.hive.ql.exec.RowSchema;
 import org.apache.hadoop.hive.ql.exec.UnionOperator;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.optimizer.unionproc.UnionProcContext.UnionParseContext;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -65,7 +66,7 @@ public final class UnionProcFactory {
   /**
    * MapRed subquery followed by Union.
    */
-  public static class MapRedUnion implements NodeProcessor {
+  public static class MapRedUnion implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -90,7 +91,7 @@ public final class UnionProcFactory {
   /**
    * Map-only subquery followed by Union.
    */
-  public static class MapUnion implements NodeProcessor {
+  public static class MapUnion implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -115,7 +116,7 @@ public final class UnionProcFactory {
   /**
    * Union subquery followed by Union.
    */
-  public static class UnknownUnion implements NodeProcessor {
+  public static class UnknownUnion implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -173,7 +174,7 @@ public final class UnionProcFactory {
    *   select * from (subq1 where filter union all subq2 where filter ...)x;
    * and then optimized.
    */
-  public static class UnionNoProcessFile implements NodeProcessor {
+  public static class UnionNoProcessFile implements SemanticNodeProcessor {
 
     private void pushOperatorsAboveUnion(UnionOperator union,
       Stack<Node> stack, int pos) throws SemanticException {
@@ -310,7 +311,7 @@ public final class UnionProcFactory {
   /**
    * Default processor.
    */
-  public static class NoUnion implements NodeProcessor {
+  public static class NoUnion implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -319,23 +320,23 @@ public final class UnionProcFactory {
     }
   }
 
-  public static NodeProcessor getMapRedUnion() {
+  public static SemanticNodeProcessor getMapRedUnion() {
     return new MapRedUnion();
   }
 
-  public static NodeProcessor getMapUnion() {
+  public static SemanticNodeProcessor getMapUnion() {
     return new MapUnion();
   }
 
-  public static NodeProcessor getUnknownUnion() {
+  public static SemanticNodeProcessor getUnknownUnion() {
     return new UnknownUnion();
   }
 
-  public static NodeProcessor getNoUnion() {
+  public static SemanticNodeProcessor getNoUnion() {
     return new NoUnion();
   }
 
-  public static NodeProcessor getUnionNoProcessFile() {
+  public static SemanticNodeProcessor getUnionNoProcessFile() {
     return new UnionNoProcessFile();
   }
 }

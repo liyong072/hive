@@ -9,17 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.accumulo.predicate;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -28,7 +30,6 @@ import java.util.Set;
 
 import org.apache.accumulo.core.client.IteratorSetting;
 import org.apache.accumulo.core.data.Range;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.accumulo.columns.ColumnEncoding;
 import org.apache.hadoop.hive.accumulo.columns.ColumnMapper;
@@ -52,11 +53,11 @@ import org.apache.hadoop.hive.ql.index.IndexPredicateAnalyzer;
 import org.apache.hadoop.hive.ql.index.IndexSearchCondition;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.metadata.HiveStoragePredicateHandler.DecomposedPredicate;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
@@ -134,7 +135,7 @@ public class AccumuloPredicateHandler {
    *
    * @param udfType
    *          GenericUDF classname to lookup matching CompareOpt
-   * @return Class<? extends CompareOpt/>
+   * @return Class&lt;? extends CompareOpt/&gt;
    */
   public Class<? extends CompareOp> getCompareOpClass(String udfType)
       throws NoSuchCompareOpException {
@@ -166,7 +167,7 @@ public class AccumuloPredicateHandler {
    *
    * @param type
    *          String hive column lookup matching PrimitiveCompare
-   * @return Class<? extends ></?>
+   * @return Class&lt;? extends &gt;&lt;/?&gt;
    */
   public Class<? extends PrimitiveComparison> getPrimitiveComparisonClass(String type)
       throws NoSuchPrimitiveComparisonException {
@@ -242,7 +243,7 @@ public class AccumuloPredicateHandler {
   }
 
   /**
-   * Encapsulates the traversal over some {@link ExprNodeDesc} tree for the generation of Accumuluo.
+   * Encapsulates the traversal over some {@link ExprNodeDesc} tree for the generation of Accumulo.
    * Ranges using expressions involving the Accumulo rowid-mapped Hive column.
    *
    * @param conf
@@ -260,9 +261,9 @@ public class AccumuloPredicateHandler {
                                   String hiveRowIdColumnName, ExprNodeDesc root) {
     AccumuloRangeGenerator rangeGenerator = new AccumuloRangeGenerator(conf, handler,
         columnMapper.getRowIdMapping(), hiveRowIdColumnName);
-    Dispatcher disp = new DefaultRuleDispatcher(rangeGenerator,
-        Collections.<Rule, NodeProcessor> emptyMap(), null);
-    GraphWalker ogw = new DefaultGraphWalker(disp);
+    SemanticDispatcher disp = new DefaultRuleDispatcher(rangeGenerator,
+        Collections.<SemanticRule, SemanticNodeProcessor> emptyMap(), null);
+    SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
     List<Node> roots = new ArrayList<Node>();
     roots.add(root);
     HashMap<Node, Object> nodeOutput = new HashMap<Node, Object>();
@@ -320,9 +321,7 @@ public class AccumuloPredicateHandler {
         itrs.add(toSetting(mapping, sc, binaryEncodedRow));
       }
     }
-    if (LOG.isInfoEnabled()) {
-      LOG.info("num iterators = " + itrs.size());
-    }
+    LOG.info("num iterators = " + itrs.size());
     return itrs;
   }
 
@@ -362,8 +361,7 @@ public class AccumuloPredicateHandler {
     is.addOption(PrimitiveComparisonFilter.P_COMPARE_CLASS, tuple.getpCompare().getClass()
         .getName());
     is.addOption(PrimitiveComparisonFilter.COMPARE_OPT_CLASS, tuple.getcOpt().getClass().getName());
-    is.addOption(PrimitiveComparisonFilter.CONST_VAL,
-        new String(Base64.encodeBase64(tuple.getConstVal())));
+    is.addOption(PrimitiveComparisonFilter.CONST_VAL, Base64.getEncoder().encodeToString(tuple.getConstVal()));
     is.addOption(PrimitiveComparisonFilter.COLUMN, accumuloColumnMapping.serialize());
 
     return is;

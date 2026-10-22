@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 /*
@@ -66,26 +67,31 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.ResourceBundle;
 import java.util.ServiceLoader;
 import java.util.Set;
-import java.util.SortedSet;
 import java.util.StringTokenizer;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.GnuParser;
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
-import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.hive.conf.Constants;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.io.IOUtils;
+import org.apache.hadoop.util.ExitUtil;
 import org.apache.hive.beeline.cli.CliOptionsProcessor;
 import org.apache.hive.beeline.hs2connection.BeelineConfFileParseException;
 import org.apache.hive.beeline.hs2connection.BeelineSiteParseException;
@@ -94,7 +100,9 @@ import org.apache.hive.beeline.hs2connection.HS2ConnectionFileParser;
 import org.apache.hive.beeline.hs2connection.HS2ConnectionFileUtils;
 import org.apache.hive.beeline.hs2connection.HiveSiteHS2ConnectionFileParser;
 import org.apache.hive.beeline.hs2connection.UserHS2ConnectionFileParser;
+import org.apache.hive.common.util.MatchingStringsCompleter;
 import org.apache.hive.common.util.ShutdownHookManager;
+import org.apache.hive.common.util.HiveStringUtils;
 import org.apache.hive.jdbc.HiveConnection;
 import org.apache.hive.jdbc.JdbcUriParseException;
 import org.apache.hive.jdbc.Utils;
@@ -103,11 +111,19 @@ import org.apache.thrift.transport.TTransportException;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import jline.console.ConsoleReader;
-import jline.console.completer.Completer;
-import jline.console.completer.FileNameCompleter;
-import jline.console.completer.StringsCompleter;
-import jline.console.history.FileHistory;
+import org.jline.reader.Completer;
+import org.jline.reader.EndOfFileException;
+import org.jline.reader.History;
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.reader.impl.DefaultParser;
+import org.jline.reader.impl.LineReaderImpl;
+import org.jline.reader.impl.history.DefaultHistory;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
+
+import static org.jline.builtins.Completers.FileNameCompleter;
+
 
 /**
  * A console SQL shell with command completion.
@@ -144,14 +160,14 @@ public class BeeLine implements Closeable {
   private OutputFile recordOutputFile = null;
   private PrintStream outputStream = new PrintStream(System.out, true);
   private PrintStream errorStream = new PrintStream(System.err, true);
-  private InputStream inputStream = System.in;
-  private ConsoleReader consoleReader;
+  private LineReader lineReader;
+  private final List<Terminal> terminalsToClose = new ArrayList<>();
   private List<String> batch = null;
   private final Reflector reflector = new Reflector(this);
   private String dbName = null;
   private String currentDatabase = null;
 
-  private FileHistory history;
+  private History history;
   // Indicates if this instance of beeline is running in compatibility mode, or beeline mode
   private boolean isBeeLine = true;
 
@@ -186,6 +202,8 @@ public class BeeLine implements Closeable {
       "tsv", new DeprecatedSeparatedValuesOutputFormat(this, '\t'),
       "xmlattr", new XMLAttributeOutputFormat(this),
       "xmlelements", new XMLElementOutputFormat(this),
+      "json", new JSONOutputFormat(this),
+      "jsonfile", new JSONFileOutputFormat(this),
   });
 
   private List<String> supportedLocalDriver =
@@ -195,19 +213,19 @@ public class BeeLine implements Closeable {
       new ReflectiveCommandHandler(this, new String[] {"quit", "done", "exit"},
           null),
       new ReflectiveCommandHandler(this, new String[] {"connect", "open"},
-          new Completer[] {new StringsCompleter(getConnectionURLExamples())}),
+          new Completer[] {new MatchingStringsCompleter(getConnectionURLExamples())}),
       new ReflectiveCommandHandler(this, new String[] {"describe"},
-          new Completer[] {new TableNameCompletor(this)}),
+          new Completer[] {new TableNameCompleter(this)}),
       new ReflectiveCommandHandler(this, new String[] {"indexes"},
-          new Completer[] {new TableNameCompletor(this)}),
+          new Completer[] {new TableNameCompleter(this)}),
       new ReflectiveCommandHandler(this, new String[] {"primarykeys"},
-          new Completer[] {new TableNameCompletor(this)}),
+          new Completer[] {new TableNameCompleter(this)}),
       new ReflectiveCommandHandler(this, new String[] {"exportedkeys"},
-          new Completer[] {new TableNameCompletor(this)}),
+          new Completer[] {new TableNameCompleter(this)}),
       new ReflectiveCommandHandler(this, new String[] {"manual"},
           null),
       new ReflectiveCommandHandler(this, new String[] {"importedkeys"},
-          new Completer[] {new TableNameCompletor(this)}),
+          new Completer[] {new TableNameCompleter(this)}),
       new ReflectiveCommandHandler(this, new String[] {"procedures"},
           null),
       new ReflectiveCommandHandler(this, new String[] {"tables"},
@@ -215,16 +233,16 @@ public class BeeLine implements Closeable {
       new ReflectiveCommandHandler(this, new String[] {"typeinfo"},
           null),
       new ReflectiveCommandHandler(this, new String[] {"columns"},
-          new Completer[] {new TableNameCompletor(this)}),
+          new Completer[] {new TableNameCompleter(this)}),
       new ReflectiveCommandHandler(this, new String[] {"reconnect"},
           null),
       new ReflectiveCommandHandler(this, new String[] {"dropall"},
-          new Completer[] {new TableNameCompletor(this)}),
+          new Completer[] {new TableNameCompleter(this)}),
       new ReflectiveCommandHandler(this, new String[] {"history"},
           null),
       new ReflectiveCommandHandler(this, new String[] {"metadata"},
           new Completer[] {
-              new StringsCompleter(getMetadataMethodNames())}),
+              new MatchingStringsCompleter(getMetadataMethodNames())}),
       new ReflectiveCommandHandler(this, new String[] {"nativesql"},
           null),
       new ReflectiveCommandHandler(this, new String[] {"dbinfo"},
@@ -254,9 +272,9 @@ public class BeeLine implements Closeable {
       new ReflectiveCommandHandler(this, new String[] {"closeall"},
           null),
       new ReflectiveCommandHandler(this, new String[] {"isolation"},
-          new Completer[] {new StringsCompleter(getIsolationLevels())}),
+          new Completer[] {new MatchingStringsCompleter(getIsolationLevels())}),
       new ReflectiveCommandHandler(this, new String[] {"outputformat"},
-          new Completer[] {new StringsCompleter(
+          new Completer[] {new MatchingStringsCompleter(
               formats.keySet().toArray(new String[0]))}),
       new ReflectiveCommandHandler(this, new String[] {"autocommit"},
           null),
@@ -292,17 +310,11 @@ public class BeeLine implements Closeable {
 
   private final Completer beeLineCommandCompleter = new BeeLineCommandCompleter(Arrays.asList(commandHandlers));
 
-  static final SortedSet<String> KNOWN_DRIVERS = new TreeSet<String>(Arrays.asList(
-      new String[] {
-          "org.apache.hive.jdbc.HiveDriver",
-          "org.apache.hadoop.hive.jdbc.HiveDriver",
-      }));
-
   static {
     try {
-      Class.forName("jline.console.ConsoleReader");
+      Class.forName("org.jline.reader.LineReader");
     } catch (Throwable t) {
-      throw new ExceptionInInitializerError("jline-missing");
+      throw new ExceptionInInitializerError("jline3-missing");
     }
   }
 
@@ -391,7 +403,7 @@ public class BeeLine implements Closeable {
         .withLongOpt("help")
         .withDescription("Display this message")
         .create('h'));
-    
+
     // -getUrlsFromBeelineSite
     options.addOption(OptionBuilder
         .withLongOpt("getUrlsFromBeelineSite")
@@ -424,7 +436,6 @@ public class BeeLine implements Closeable {
         .create());
   }
 
-
   static Manifest getManifest() throws IOException {
     URL base = BeeLine.class.getResource("/META-INF/MANIFEST.MF");
     URLConnection c = base.openConnection();
@@ -433,7 +444,6 @@ public class BeeLine implements Closeable {
     }
     return null;
   }
-
 
   String getManifestAttribute(String name) {
     try {
@@ -542,11 +552,16 @@ public class BeeLine implements Closeable {
   public static void mainWithInputRedirection(String[] args, InputStream inputStream)
       throws IOException {
     BeeLine beeLine = new BeeLine();
+    mainWithInputRedirection(args, inputStream, beeLine);
+  }
+
+  public static void mainWithInputRedirection(String[] args, InputStream inputStream, BeeLine beeLine)
+      throws IOException {
     try {
       int status = beeLine.begin(args, inputStream);
 
       if (!Boolean.getBoolean(BeeLineOpts.PROPERTY_NAME_EXIT)) {
-          System.exit(status);
+          ExitUtil.terminate(status);
       }
     } finally {
       beeLine.close();
@@ -560,19 +575,15 @@ public class BeeLine implements Closeable {
   public BeeLine(boolean isBeeLine) {
     this.isBeeLine = isBeeLine;
     this.signalHandler = new SunSignalHandler(this);
-    this.shutdownHook = new Runnable() {
-      @Override
-      public void run() {
-        try {
-          if (history != null) {
-            history.setMaxSize(getOpts().getMaxHistoryRows());
-            history.flush();
-          }
-        } catch (IOException e) {
-          error(e);
-        } finally {
-          close();
+    this.shutdownHook = () -> {
+      try {
+        if (history != null) {
+          history.save();
         }
+      } catch (IOException e) {
+        error(e);
+      } finally {
+        close();
       }
     };
   }
@@ -593,10 +604,10 @@ public class BeeLine implements Closeable {
 
   DatabaseMetaData getDatabaseMetaData() {
     if (getDatabaseConnections().current() == null) {
-      throw new IllegalArgumentException(loc("no-current-connection"));
+      throw new NoCurrentConnectionException(loc("no-current-connection"));
     }
     if (getDatabaseConnections().current().getDatabaseMetaData() == null) {
-      throw new IllegalArgumentException(loc("no-current-connection"));
+      throw new NoCurrentConnectionException(loc("no-current-connection"));
     }
     return getDatabaseConnections().current().getDatabaseMetaData();
   }
@@ -854,7 +865,7 @@ public class BeeLine implements Closeable {
       getOpts().setHelpAsked(true);
       return true;
     }
-    
+
     if (cl.hasOption("getUrlsFromBeelineSite")) {
       printBeelineSiteUrls();
       getOpts().setBeelineSiteUrlsAsked(true);
@@ -890,8 +901,12 @@ public class BeeLine implements Closeable {
     getOpts().setInitFiles(cl.getOptionValues("i"));
     getOpts().setScriptFile(cl.getOptionValue("f"));
 
-
     if (url != null) {
+      String hplSqlMode = Utils.parsePropertyFromUrl(url, Constants.MODE);
+      if ("HPLSQL".equalsIgnoreCase(hplSqlMode)) {
+        getOpts().setDelimiter("/");
+        getOpts().setEntireLineAsCommand(true);
+      }
       // Specifying username/password/driver explicitly will override the values from the url;
       // make sure we don't override the values present in the url with empty values.
       if (user == null) {
@@ -923,14 +938,12 @@ public class BeeLine implements Closeable {
     // load property file
     String propertyFile = cl.getOptionValue("property-file");
     if (propertyFile != null) {
-      try {
-        this.consoleReader = new ConsoleReader();
-      } catch (IOException e) {
-        handleException(e);
-      }
+      this.lineReader = LineReaderBuilder.builder().build();
       if (!dispatch("!properties " + propertyFile)) {
         exit = true;
         return false;
+      } else {
+        return true;
       }
     }
     return false;
@@ -965,7 +978,7 @@ public class BeeLine implements Closeable {
       }
     }
   }
-  
+
   private boolean isZkBasedUrl(String urlFromBeelineSite) {
     String zkJdbcUriParam = ("serviceDiscoveryMode=zooKeeper").toLowerCase();
     if (urlFromBeelineSite.toLowerCase().contains(zkJdbcUriParam)) {
@@ -1101,9 +1114,9 @@ public class BeeLine implements Closeable {
     //add shutdown hook to cleanup the beeline for smooth exit
     addBeelineShutdownHook();
 
-    //this method also initializes the consoleReader which is
+    //this method also initializes the lineReader which is
     //needed by initArgs for certain execution paths
-    ConsoleReader reader = initializeConsoleReader(inputStream);
+    LineReader interactiveLineReader = initializeLineReader(inputStream);
     if (isBeeLine) {
       int code = initArgs(args);
       if (code != 0) {
@@ -1131,7 +1144,9 @@ public class BeeLine implements Closeable {
     } catch (Exception e) {
       // ignore
     }
-    return execute(reader, false);
+    // at this point, begin phase is finished and beeline is ready for interactive commands
+    this.lineReader = interactiveLineReader;
+    return execute(interactiveLineReader, false);
   }
 
   /*
@@ -1324,9 +1339,18 @@ public class BeeLine implements Closeable {
         }
         fileStream = fs.open(path);
       } else {
-        fileStream = new FileInputStream(fileName);
+        org.apache.hadoop.fs.Path path = new org.apache.hadoop.fs.Path(fileName);
+        FileSystem fs;
+        Configuration conf = new Configuration();
+        if (!path.toUri().isAbsolute()) {
+          fs = FileSystem.getLocal(conf);
+          path = fs.makeQualified(path);
+        } else {
+          fs = FileSystem.get(path.toUri(), conf);
+        }
+        fileStream = fs.open(path);
       }
-      return execute(initializeConsoleReader(fileStream), !getOpts().getForce());
+      return executeFile(fileStream);
     } catch (Throwable t) {
       handleException(t);
       return ERRNO_OTHER;
@@ -1335,17 +1359,28 @@ public class BeeLine implements Closeable {
     }
   }
 
-  private int execute(ConsoleReader reader, boolean exitOnError) {
+  private int executeFile(InputStream fileStream) throws IOException {
+    // This assignment is necessary because other classes (like Commands) call BeeLine.readLine(prompt, mask)
+    // without needing to be aware of which type of reader is currently in use
+    this.lineReader = getFileLineReader(fileStream);
+    int retCode = execute(lineReader, !getOpts().getForce());
+    // nullify for clarity's sake, as this variable will later be assigned to the interactive line reader
+    lineReader = null;
+    return retCode;
+  }
+
+  @VisibleForTesting
+  int execute(LineReader reader, boolean exitOnError) {
     int lastExecutionResult = ERRNO_OK;
     Character mask = (System.getProperty("jline.terminal", "").equals("jline.UnsupportedTerminal")) ? null
-                       : ConsoleReader.NULL_MASK;
+                       : LineReaderImpl.NULL_MASK;
 
     while (!exit) {
       try {
         // Execute one instruction; terminate on executing a script if there is an error
         // in silent mode, prevent the query and prompt being echoed back to terminal
-        String line = (getOpts().isSilent() && getOpts().getScriptFile() != null) ? reader
-            .readLine(null, mask) : reader.readLine(getPrompt());
+        String line = (getOpts().isSilent() && getOpts().getScriptFile() != null) ? readLine(reader, null, mask) :
+            readLine(reader, getPrompt(), null);
 
         // trim line
         if (line != null) {
@@ -1360,7 +1395,6 @@ public class BeeLine implements Closeable {
         } else if (line != null) {
           lastExecutionResult = ERRNO_OK;
         }
-
       } catch (Throwable t) {
         handleException(t);
         return ERRNO_OTHER;
@@ -1369,17 +1403,44 @@ public class BeeLine implements Closeable {
     return lastExecutionResult;
   }
 
+  public String readLine(String prompt, Character mask) {
+    return readLine(getLineReader(), prompt, mask);
+  }
+
+  /**
+   * Reads a line with the given prompt and optional mask character.
+   * Starting with JLine3, an EndOfFileException is intentionally thrown upon reaching the end of the input stream.
+   * In interactive usage, this method returns the partial line entered before the exception to preserve existing
+   * behavior.
+   */
+  private String readLine(LineReader reader, String prompt, Character mask) {
+    try {
+      return reader.readLine(prompt, mask);
+    } catch (EndOfFileException eof) {
+      return eof.getPartialLine();
+    }
+  }
+
   @Override
   public void close() {
     commands.closeall(null);
+    terminalsToClose.forEach(t -> {
+      try {
+        t.close();
+      } catch (IOException e) {
+        info(String.format("Exception while closing terminal (name: %s, class: %s): %s", t.getName(),
+            t.getClass(), e.getMessage()));
+      }
+    });
   }
 
-  private void setupHistory() throws IOException {
+  @VisibleForTesting
+  void setupHistory() {
     if (this.history != null) {
        return;
     }
 
-    this.history = new FileHistory(new File(getOpts().getHistoryFile()));
+    this.history = new DefaultHistory();
   }
 
   private void addBeelineShutdownHook() throws IOException {
@@ -1387,40 +1448,107 @@ public class BeeLine implements Closeable {
     ShutdownHookManager.addShutdownHook(getShutdownHook());
   }
 
-  public ConsoleReader initializeConsoleReader(InputStream inputStream) throws IOException {
-    if (inputStream != null) {
-      // ### NOTE: fix for sf.net bug 879425.
-      // Working around an issue in jline-2.1.2, see https://github.com/jline/jline/issues/10
-      // by appending a newline to the end of inputstream
-      InputStream inputStreamAppendedNewline = new SequenceInputStream(inputStream,
-          new ByteArrayInputStream((new String("\n")).getBytes()));
-      consoleReader = new ConsoleReader(inputStreamAppendedNewline, getErrorStream());
-      consoleReader.setCopyPasteDetection(true); // jline will detect if <tab> is regular character
-    } else {
-      consoleReader = new ConsoleReader(getInputStream(), getErrorStream());
-    }
+  public LineReader getFileLineReader(InputStream inputStream) throws IOException {
+    final LineReaderBuilder builder = LineReaderBuilder.builder();
+    defaultParser(builder);
 
-    //disable the expandEvents for the purpose of backward compatibility
-    consoleReader.setExpandEvents(false);
+    builder.terminal(buildTerminal(prepareInputStream(inputStream)));
+
+    return builder.build();
+  }
+
+  public LineReader initializeLineReader(InputStream inputStream) throws IOException {
+    final LineReaderBuilder builder = LineReaderBuilder.builder();
+    defaultParser(builder);
+
+    Terminal lineReaderTerminal = buildTerminal(inputStream);
+    builder.terminal(lineReaderTerminal);
 
     try {
       // now set the output for the history
       if (this.history != null) {
-        consoleReader.setHistory(this.history);
-      } else {
-        consoleReader.setHistoryEnabled(false);
+        builder.history(this.history);
+        builder.variable(LineReader.HISTORY_FILE, new File(getOpts().getHistoryFile()));
+        builder.variable(LineReader.HISTORY_FILE_SIZE, getOpts().getMaxHistoryRows());
+        // in-memory keep more data, but at least 500 entries
+        builder.variable(LineReader.HISTORY_SIZE, Math.max(500, 3 * getOpts().getMaxHistoryRows()));
       }
     } catch (Exception e) {
       handleException(e);
     }
 
-    if (inputStream instanceof FileInputStream || inputStream instanceof FSDataInputStream) {
-      // from script.. no need to load history and no need of completer, either
-      return consoleReader;
-    }
+    builder.completer(new BeeLineCompleter(this));
+    lineReader = builder.build();
+    lineReader.unsetOpt(LineReader.Option.HISTORY_TIMESTAMPED);
+    // need to disable expansion, otherwise commands (starting with "!") will activate history items
+    lineReader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION);
 
-    consoleReader.addCompleter(new BeeLineCompleter(this));
-    return consoleReader;
+    if (this.history != null) {
+      this.history.attach(lineReader);
+    }
+    return lineReader;
+  }
+
+  private void defaultParser(LineReaderBuilder builder) {
+    DefaultParser parser = new DefaultParser() {
+      private String extraNameCharacters;
+
+      // delimiters for SQL statements are any
+      // non-letter-or-number characters, except
+      // underscore and characters that are specified
+      // by the database to be valid name identifiers.
+      @Override
+      public boolean isDelimiterChar(CharSequence buffer, int pos) {
+        char c = buffer.charAt(pos);
+        if (Character.isWhitespace(c)) {
+          return true;
+        }
+        return !(Character.isLetterOrDigit(c))
+            && c != '_'
+            && extraNameCharacters().indexOf(c) == -1;
+      }
+
+      private String extraNameCharacters() {
+        if (extraNameCharacters != null) {
+          return extraNameCharacters;
+        }
+        try {
+          extraNameCharacters =
+              getDatabaseMetaData() == null || getDatabaseMetaData().getExtraNameCharacters() == null ? ""
+                  : getDatabaseMetaData().getExtraNameCharacters();
+          return extraNameCharacters;
+        } catch (NoCurrentConnectionException noCurrentConnectionException) {
+          // this is not a problem at this point, will be tried again when a connection is present
+          debug("No current connection found while trying to retrieve extra name characters.");
+          return "";
+        } catch (SQLException e) {
+          throw new RuntimeException("Error while retrieving database extra characters", e);
+        }
+      }
+    };
+    // In JLine3, special characters (e.g., backslash) are handled by the terminal by default.
+    // This is not desired: we want to send the query string to HS2 exactly as entered, without interpretation.
+    parser.setEscapeChars(new char[]{});
+    builder.parser(parser);
+  }
+
+  private InputStream prepareInputStream(InputStream inputStream) {
+    if (inputStream != null) {
+      inputStream = new SequenceInputStream(inputStream,
+          new ByteArrayInputStream((new String("\n")).getBytes()));
+    }
+    return inputStream;
+  }
+
+  protected Terminal buildTerminal(InputStream inputStream) throws IOException {
+    Terminal terminal;
+    if (inputStream != null) { // typically when there is a file script to read from
+      terminal = TerminalBuilder.builder().streams(inputStream, getErrorStream()).build();
+    } else { // no input stream, normal operation: proper behavior needs a system terminal (which needs system streams)
+      terminal = TerminalBuilder.builder().system(true).dumb(false).streams(System.in, System.err).build();
+    }
+    this.terminalsToClose.add(terminal);
+    return terminal;
   }
 
   void usage() {
@@ -1470,15 +1598,12 @@ public class BeeLine implements Closeable {
       return true;
     }
 
-    if (line.trim().length() == 0) {
-      return true;
-    }
-
-    if (isComment(line)) {
-      return true;
-    }
-
+    line = HiveStringUtils.removeComments(line);
     line = line.trim();
+
+    if (line.isEmpty()) {
+      return true;
+    }
 
     // save it to the current script, if any
     if (scriptOutputFile != null) {
@@ -1809,7 +1934,7 @@ public class BeeLine implements Closeable {
     String prompt;
     // read prompt configuration and substitute variables.
     HiveConf conf = getCommands().getHiveConf(true);
-    prompt = conf.getVar(HiveConf.ConfVars.CLIPROMPT);
+    prompt = conf.getVar(HiveConf.ConfVars.CLI_PROMPT);
     prompt = getCommands().substituteVariables(conf, prompt);
     return prompt + getFormattedDb() + "> ";
   }
@@ -1869,7 +1994,7 @@ public class BeeLine implements Closeable {
    */
   int getSize(ResultSet rs) {
     try {
-      if (rs.getType() == rs.TYPE_FORWARD_ONLY) {
+      if (rs.getType() == ResultSet.TYPE_FORWARD_ONLY) {
         return -1;
       }
       rs.last();
@@ -2196,38 +2321,32 @@ public class BeeLine implements Closeable {
     }
   }
 
+  boolean scanForDriver(final String url) {
+    Objects.requireNonNull(url);
 
-  boolean scanForDriver(String url) {
     try {
-      // already registered
+      // Check drivers already registered
       if (findRegisteredDriver(url) != null) {
         return true;
       }
 
-      // first try known drivers...
-      scanDrivers(true);
+      // Scan classpath for drivers and load them
+      scanDrivers();
 
+      // Try to find the driver again given the newly loaded drivers
       if (findRegisteredDriver(url) != null) {
         return true;
       }
 
-      // now really scan...
-      scanDrivers(false);
-
-      if (findRegisteredDriver(url) != null) {
-        return true;
-      }
-
-      // find whether exists a local driver to accept the url
+      // Find whether exists a local driver to accept the URL
       if (findLocalDriver(url) != null) {
         return true;
       }
-
-      return false;
     } catch (Exception e) {
-      debug(e.toString());
-      return false;
+      return error(e);
     }
+
+    return false;
   }
 
 
@@ -2245,22 +2364,15 @@ public class BeeLine implements Closeable {
     return null;
   }
 
-  public Driver findLocalDriver(String url) throws Exception {
-    if(drivers == null){
-      return null;
-    }
+  public Driver findLocalDriver(String url) throws SQLException {
+    Objects.requireNonNull(url);
 
-    for (Driver d : drivers) {
-      try {
-        String clazzName = d.getClass().getName();
-        Driver driver = (Driver) Class.forName(clazzName, true,
-          Thread.currentThread().getContextClassLoader()).newInstance();
-        if (driver.acceptsURL(url) && isSupportedLocalDriver(driver)) {
-          return driver;
-        }
-      } catch (SQLException e) {
-        error(e);
-        throw new Exception(e);
+    Collection<Driver> currentDrivers = drivers == null ? Collections.emptyList() : drivers;
+    for (Driver driver : currentDrivers) {
+      // The 'driver' is already an instance from the ServiceLoader.
+      // We can use it directly without creating a new one via reflection.
+      if (driver.acceptsURL(url) && isSupportedLocalDriver(driver)) {
+        return driver;
       }
     }
     return null;
@@ -2280,23 +2392,17 @@ public class BeeLine implements Closeable {
     supportedLocalDriver.add(driverClazz);
   }
 
-  Driver[] scanDrivers(String line) throws IOException {
-    return scanDrivers(false);
-  }
-
-  Driver[] scanDrivers(boolean knownOnly) throws IOException {
-    long start = System.currentTimeMillis();
+  Collection<Driver> scanDrivers() throws IOException {
+    final long start = System.nanoTime();
 
     ServiceLoader<Driver> sqlDrivers = ServiceLoader.load(Driver.class);
 
-    Set<Driver> driverClasses = new HashSet<>();
+    Set<Driver> driverClasses = StreamSupport.stream(sqlDrivers.spliterator(), false).collect(Collectors.toSet());
 
-    for (Driver driver : sqlDrivers) {
-        driverClasses.add(driver);
-    }
-    info("scan complete in "
-        + (System.currentTimeMillis() - start) + "ms");
-    return driverClasses.toArray(new Driver[0]);
+    final long finish = System.nanoTime();
+
+    info("Driver scan complete in " + TimeUnit.NANOSECONDS.toMillis(finish - start) + "ms");
+    return Collections.unmodifiableSet(driverClasses);
   }
 
   // /////////////////////////////////////
@@ -2338,6 +2444,13 @@ public class BeeLine implements Closeable {
     if (signalHandler != null) {
       signalHandler.setStatement(stmnt);
     }
+
+    // If no fetch size is specified in beeline, let the driver figure it out
+    final int fetchSize = getOpts().getFetchSize();
+    if (fetchSize >= 0) {
+      stmnt.setFetchSize(fetchSize);
+    }
+
     return stmnt;
   }
 
@@ -2417,7 +2530,7 @@ public class BeeLine implements Closeable {
     return shutdownHook;
   }
 
-  Completer getCommandCompletor() {
+  Completer getCommandCompleter() {
     return beeLineCommandCompleter;
   }
 
@@ -2477,16 +2590,8 @@ public class BeeLine implements Closeable {
     return errorStream;
   }
 
-  InputStream getInputStream() {
-    return inputStream;
-  }
-
-  ConsoleReader getConsoleReader() {
-    return consoleReader;
-  }
-
-  void setConsoleReader(ConsoleReader reader) {
-    this.consoleReader = reader;
+  public LineReader getLineReader() {
+    return lineReader;
   }
 
   List<String> getBatch() {

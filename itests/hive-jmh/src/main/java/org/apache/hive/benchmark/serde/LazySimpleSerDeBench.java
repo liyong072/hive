@@ -1,15 +1,20 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.benchmark.serde;
 
@@ -50,13 +55,13 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class LazySimpleSerDeBench {
   /**
    * This test measures the performance for LazySimpleSerDe.
-   * <p/>
+   * <p>
    * This test uses JMH framework for benchmarking. You may execute this
    * benchmark tool using JMH command line in different ways:
-   * <p/>
+   * <p>
    * To run using default settings, use: 
    * $ java -cp target/benchmarks.jar org.apache.hive.benchmark.serde.LazySimpleSerDeBench
-   * <p/>
+   * <p>
    */
   public static final int DEFAULT_ITER_TIME = 1000000;
   public static final int DEFAULT_DATA_SIZE = 4096;

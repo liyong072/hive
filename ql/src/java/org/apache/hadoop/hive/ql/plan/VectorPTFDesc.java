@@ -9,45 +9,59 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.TreeSet;
 
-import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.hadoop.hive.common.type.DataTypePhysicalVariation;
 import org.apache.hadoop.hive.ql.exec.vector.ColumnVector.Type;
+import org.apache.hadoop.hive.ql.exec.vector.expressions.ConstantVectorExpression;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorExpression;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorBase;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorCount;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorBytesCountDistinct;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorCountStar;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDecimalAvg;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDecimalCountDistinct;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDecimalFirstValue;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDecimalLastValue;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDecimalMax;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDecimalMin;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDecimalSum;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorCumeDist;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDenseRank;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDoubleAvg;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDoubleCountDistinct;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDoubleFirstValue;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDoubleLastValue;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDoubleMax;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDoubleMin;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorDoubleSum;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorLag;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorLead;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorLongAvg;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorLongCountDistinct;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorLongFirstValue;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorLongLastValue;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorLongMax;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorLongMin;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorLongSum;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorNTile;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorPercentRank;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorRank;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorRowNumber;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorStreamingDecimalAvg;
@@ -62,6 +76,7 @@ import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorStreamingLong
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorStreamingLongMax;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorStreamingLongMin;
 import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorStreamingLongSum;
+import org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFEvaluatorTimestampCountDistinct;
 import org.apache.hadoop.hive.ql.parse.WindowingSpec.WindowType;
 import org.apache.hadoop.hive.ql.plan.ptf.WindowFrameDef;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
@@ -78,32 +93,44 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
 
   private static final long serialVersionUID = 1L;
 
-  public static enum SupportedFunctionType {
+  public enum SupportedFunctionType {
     ROW_NUMBER,
     RANK,
     DENSE_RANK,
+    PERCENT_RANK, 
+    CUME_DIST,
+    NTILE,
     MIN,
     MAX,
     SUM,
     AVG,
     FIRST_VALUE,
     LAST_VALUE,
-    COUNT
+    COUNT(true),
+    LEAD,
+    LAG;
+
+    private final boolean supportDistinct;
+
+    SupportedFunctionType() {
+      supportDistinct = false;
+    }
+
+    SupportedFunctionType(boolean supportDistinct) {
+      this.supportDistinct = supportDistinct;
+    }
+
+    public boolean isSupportDistinct() {
+      return supportDistinct;
+    }
   }
 
   public static HashMap<String, SupportedFunctionType> supportedFunctionsMap =
       new HashMap<String, SupportedFunctionType>();
   static {
-    supportedFunctionsMap.put("row_number", SupportedFunctionType.ROW_NUMBER);
-    supportedFunctionsMap.put("rank", SupportedFunctionType.RANK);
-    supportedFunctionsMap.put("dense_rank", SupportedFunctionType.DENSE_RANK);
-    supportedFunctionsMap.put("min", SupportedFunctionType.MIN);
-    supportedFunctionsMap.put("max", SupportedFunctionType.MAX);
-    supportedFunctionsMap.put("sum", SupportedFunctionType.SUM);
-    supportedFunctionsMap.put("avg", SupportedFunctionType.AVG);
-    supportedFunctionsMap.put("first_value", SupportedFunctionType.FIRST_VALUE);
-    supportedFunctionsMap.put("last_value", SupportedFunctionType.LAST_VALUE);
-    supportedFunctionsMap.put("count", SupportedFunctionType.COUNT);
+    for (SupportedFunctionType supportedFunctionType : SupportedFunctionType.values()) {
+      supportedFunctionsMap.put(supportedFunctionType.name().toLowerCase(), supportedFunctionType);
+    }
   }
   public static List<String> supportedFunctionNames = new ArrayList<String>();
   static {
@@ -112,11 +139,23 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
     supportedFunctionNames.addAll(treeSet);
   }
 
+  // Functions that do not depend on input columns.
+  public static final Set<SupportedFunctionType> COLUMN_AGNOSTIC_FUNCTIONS =
+      EnumSet.of(
+          SupportedFunctionType.RANK,
+          SupportedFunctionType.DENSE_RANK,
+          SupportedFunctionType.PERCENT_RANK,
+          SupportedFunctionType.CUME_DIST,
+          SupportedFunctionType.NTILE);
+
   private TypeInfo[] reducerBatchTypeInfos;
+  private DataTypePhysicalVariation[] reducerBatchDataTypePhysicalVariations;
 
   private boolean isPartitionOrderBy;
 
   private String[] evaluatorFunctionNames;
+  private boolean[] evaluatorsAreDistinct;
+  private boolean[] evaluatorsRespectNulls;
   private WindowFrameDef[] evaluatorWindowFrameDefs;
   private List<ExprNodeDesc>[] evaluatorInputExprNodeDescLists;
 
@@ -125,6 +164,7 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
 
   private String[] outputColumnNames;
   private TypeInfo[] outputTypeInfos;
+  private DataTypePhysicalVariation[] outputDataTypePhysicalVariations;
 
   private VectorPTFInfo vectorPTFInfo;
 
@@ -134,6 +174,8 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
     isPartitionOrderBy = false;
 
     evaluatorFunctionNames = null;
+    evaluatorsAreDistinct = null;
+    evaluatorsRespectNulls = null;
     evaluatorInputExprNodeDescLists = null;
 
     orderExprNodeDescs = null;
@@ -148,12 +190,22 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
 
   // We provide this public method to help EXPLAIN VECTORIZATION show the evaluator classes.
   public static VectorPTFEvaluatorBase getEvaluator(SupportedFunctionType functionType,
-      WindowFrameDef windowFrameDef, Type columnVectorType, VectorExpression inputVectorExpression,
-      int outputColumnNum) {
+      boolean isDistinct, boolean respectNulls, WindowFrameDef windowFrameDef, Type[] columnVectorTypes,
+      VectorExpression[] inputVectorExpressions, int outputColumnNum) {
 
-    final boolean isRowEndCurrent =
-        (windowFrameDef.getWindowType() == WindowType.ROWS &&
-         windowFrameDef.getEnd().isCurrentRow());
+    final boolean isRowEndCurrent = (windowFrameDef.getWindowType() == WindowType.ROWS
+        && windowFrameDef.getEnd().isCurrentRow());
+    /*
+     * we should only stream when the window start is unbounded and the end row is the current,
+     * because that's the way how streaming evaluation works: calculate from the very-first row then
+     * create result for the current row on the fly, so with other words: currently we cannot force
+     * a boundary on a streaming evaluator
+     */
+    final boolean canStream = windowFrameDef.getStart().isUnbounded() && isRowEndCurrent;
+
+    // most of the evaluators will use only first argument
+    VectorExpression inputVectorExpression = inputVectorExpressions[0];
+    Type columnVectorType = columnVectorTypes[0];
 
     VectorPTFEvaluatorBase evaluator;
     switch (functionType) {
@@ -167,24 +219,34 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
     case DENSE_RANK:
       evaluator = new VectorPTFEvaluatorDenseRank(windowFrameDef, outputColumnNum);
       break;
+    case PERCENT_RANK:
+      evaluator = new VectorPTFEvaluatorPercentRank(windowFrameDef, outputColumnNum);
+      break;
+    case CUME_DIST:
+      evaluator = new VectorPTFEvaluatorCumeDist(windowFrameDef, outputColumnNum);
+      break;
+    case NTILE:
+      evaluator = new VectorPTFEvaluatorNTile(windowFrameDef, inputVectorExpression,
+          outputColumnNum);
+      break;
     case MIN:
       switch (columnVectorType) {
       case LONG:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorLongMin(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingLongMin(
                 windowFrameDef, inputVectorExpression, outputColumnNum);
         break;
       case DOUBLE:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorDoubleMin(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingDoubleMin(
                 windowFrameDef, inputVectorExpression, outputColumnNum);
         break;
       case DECIMAL:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorDecimalMin(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingDecimalMin(
@@ -197,21 +259,21 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
     case MAX:
       switch (columnVectorType) {
       case LONG:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorLongMax(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingLongMax(
                 windowFrameDef, inputVectorExpression, outputColumnNum);
         break;
       case DOUBLE:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorDoubleMax(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingDoubleMax(
                 windowFrameDef, inputVectorExpression, outputColumnNum);
         break;
       case DECIMAL:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorDecimalMax(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingDecimalMax(
@@ -224,21 +286,21 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
     case SUM:
       switch (columnVectorType) {
       case LONG:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorLongSum(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingLongSum(
                 windowFrameDef, inputVectorExpression, outputColumnNum);
         break;
       case DOUBLE:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorDoubleSum(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingDoubleSum(
                 windowFrameDef, inputVectorExpression, outputColumnNum);
         break;
       case DECIMAL:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorDecimalSum(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingDecimalSum(
@@ -251,21 +313,21 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
     case AVG:
       switch (columnVectorType) {
       case LONG:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorLongAvg(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingLongAvg(
                 windowFrameDef, inputVectorExpression, outputColumnNum);
         break;
       case DOUBLE:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorDoubleAvg(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingDoubleAvg(
                 windowFrameDef, inputVectorExpression, outputColumnNum);
         break;
       case DECIMAL:
-        evaluator = !isRowEndCurrent ?
+        evaluator = !canStream ?
             new VectorPTFEvaluatorDecimalAvg(
                 windowFrameDef, inputVectorExpression, outputColumnNum) :
             new VectorPTFEvaluatorStreamingDecimalAvg(
@@ -309,38 +371,112 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
       if (inputVectorExpression == null) {
         evaluator = new VectorPTFEvaluatorCountStar(windowFrameDef, inputVectorExpression, outputColumnNum);
       } else {
-        evaluator = new VectorPTFEvaluatorCount(windowFrameDef, inputVectorExpression, outputColumnNum);
+        if (isDistinct) {
+          switch (columnVectorType) {
+          case BYTES:
+            evaluator = new VectorPTFEvaluatorBytesCountDistinct(windowFrameDef,
+                inputVectorExpression, outputColumnNum);
+            break;
+          case DECIMAL_64: //Decimal64ColumnVector is a LongColumnVector
+          case LONG:
+            evaluator = new VectorPTFEvaluatorLongCountDistinct(windowFrameDef,
+                inputVectorExpression, outputColumnNum);
+            break;
+          case DOUBLE:
+            evaluator = new VectorPTFEvaluatorDoubleCountDistinct(windowFrameDef,
+                inputVectorExpression, outputColumnNum);
+            break;
+          case DECIMAL:
+            evaluator = new VectorPTFEvaluatorDecimalCountDistinct(windowFrameDef,
+                inputVectorExpression, outputColumnNum);
+            break;
+          case TIMESTAMP:
+            evaluator = new VectorPTFEvaluatorTimestampCountDistinct(windowFrameDef,
+                inputVectorExpression, outputColumnNum);
+            break;
+          default:
+            throw new RuntimeException(
+                "Unexpected column type for ptf count distinct: " + columnVectorType);
+          }
+        } else {
+          evaluator =
+              new VectorPTFEvaluatorCount(windowFrameDef, inputVectorExpression, outputColumnNum);
+        }
+      }
+      break;
+    case LAG:
+      // lag(column, constant, ...)
+      int amt = inputVectorExpressions.length > 1
+        ? (int) ((ConstantVectorExpression) inputVectorExpressions[1]).getLongValue() : 1;
+
+      // lag(column, constant, constant/column)
+      VectorExpression defaultValueExpression =
+          inputVectorExpressions.length > 2 ? inputVectorExpressions[2] : null;
+      switch (columnVectorType) {
+      case LONG:
+      case DOUBLE:
+      case DECIMAL:
+        evaluator = new VectorPTFEvaluatorLag(windowFrameDef, inputVectorExpression,
+            outputColumnNum, columnVectorType, amt, defaultValueExpression);
+        break;
+      default:
+        throw new RuntimeException(
+            "Unexpected column vector type " + columnVectorType + " for " + functionType);
+      }
+      break;
+    case LEAD:
+      // lead(column, constant, ...)
+      amt = inputVectorExpressions.length > 1
+        ? (int) ((ConstantVectorExpression) inputVectorExpressions[1]).getLongValue() : 1;
+
+      // lead(column, constant, constant/column)
+      defaultValueExpression = inputVectorExpressions.length > 2 ? inputVectorExpressions[2] : null;
+      switch (columnVectorType) {
+      case LONG:
+      case DOUBLE:
+      case DECIMAL:
+        evaluator = new VectorPTFEvaluatorLead(windowFrameDef, inputVectorExpression,
+            outputColumnNum, columnVectorType, amt, defaultValueExpression);
+        break;
+      default:
+        throw new RuntimeException(
+            "Unexpected column vector type " + columnVectorType + " for " + functionType);
       }
       break;
     default:
       throw new RuntimeException("Unexpected function type " + functionType);
     }
+    evaluator.setRespectNulls(respectNulls);
     return evaluator;
   }
 
   public static VectorPTFEvaluatorBase[] getEvaluators(VectorPTFDesc vectorPTFDesc, VectorPTFInfo vectorPTFInfo) {
     String[] evaluatorFunctionNames = vectorPTFDesc.getEvaluatorFunctionNames();
+    boolean[] evaluatorsAreDistinct = vectorPTFDesc.getEvaluatorsAreDistinct();
+    boolean[] evaluatorsRespectNulls = vectorPTFDesc.getEvaluatorsRespectNulls();
     int evaluatorCount = evaluatorFunctionNames.length;
     WindowFrameDef[] evaluatorWindowFrameDefs = vectorPTFDesc.getEvaluatorWindowFrameDefs();
-    VectorExpression[] evaluatorInputExpressions = vectorPTFInfo.getEvaluatorInputExpressions();
-    Type[] evaluatorInputColumnVectorTypes = vectorPTFInfo.getEvaluatorInputColumnVectorTypes();
+    VectorExpression[][] evaluatorInputExpressions = vectorPTFInfo.getEvaluatorInputExpressions();
+    Type[][] evaluatorInputColumnVectorTypes = vectorPTFInfo.getEvaluatorInputColumnVectorTypes();
 
     int[] outputColumnMap = vectorPTFInfo.getOutputColumnMap();
 
     VectorPTFEvaluatorBase[] evaluators = new VectorPTFEvaluatorBase[evaluatorCount];
     for (int i = 0; i < evaluatorCount; i++) {
-      String functionName = evaluatorFunctionNames[i];
+      String functionName = evaluatorFunctionNames[i].toLowerCase();
+      boolean isDistinct = evaluatorsAreDistinct[i];
+      boolean respectNulls = evaluatorsRespectNulls[i];
       WindowFrameDef windowFrameDef = evaluatorWindowFrameDefs[i];
       SupportedFunctionType functionType = VectorPTFDesc.supportedFunctionsMap.get(functionName);
-      VectorExpression inputVectorExpression = evaluatorInputExpressions[i];
-      final Type columnVectorType = evaluatorInputColumnVectorTypes[i];
+      VectorExpression[] inputVectorExpressions = evaluatorInputExpressions[i];
+      final Type[] columnVectorTypes = evaluatorInputColumnVectorTypes[i];
 
       // The output* arrays start at index 0 for output evaluator aggregations.
       final int outputColumnNum = outputColumnMap[i];
 
       VectorPTFEvaluatorBase evaluator =
-          VectorPTFDesc.getEvaluator(
-              functionType, windowFrameDef, columnVectorType, inputVectorExpression, outputColumnNum);
+          VectorPTFDesc.getEvaluator(functionType, isDistinct, respectNulls,
+              windowFrameDef, columnVectorTypes, inputVectorExpressions, outputColumnNum);
 
       evaluators[i] = evaluator;
     }
@@ -359,12 +495,30 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
     return ArrayUtils.toPrimitive(streamingEvaluatorNums.toArray(new Integer[0]));
   }
 
+  /**
+   * Returns whether every evaluator can process the batch immediately via
+   * {@link org.apache.hadoop.hive.ql.exec.vector.ptf.VectorPTFGroupBatches
+   * #evaluateStreamingGroupBatch} without buffering the partition.
+   *
+   * <p>See {@link VectorPTFEvaluatorBase} for evaluator categories and flag semantics.
+   */
+  public static boolean getAllEvaluatorsAreStreaming(VectorPTFEvaluatorBase[] evaluators) {
+    for (VectorPTFEvaluatorBase evaluator : evaluators) {
+      if (!evaluator.streamsResult() || evaluator.isGroupAggregatedStreamingEvaluator()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   public TypeInfo[] getReducerBatchTypeInfos() {
     return reducerBatchTypeInfos;
   }
 
-  public void setReducerBatchTypeInfos(TypeInfo[] reducerBatchTypeInfos) {
+  public void setReducerBatchTypeInfos(TypeInfo[] reducerBatchTypeInfos,
+      DataTypePhysicalVariation[] reducerBatchDataTypePhysicalVariations) {
     this.reducerBatchTypeInfos = reducerBatchTypeInfos;
+    this.reducerBatchDataTypePhysicalVariations = reducerBatchDataTypePhysicalVariations;
   }
 
   public boolean getIsPartitionOrderBy() {
@@ -381,6 +535,22 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
 
   public void setEvaluatorFunctionNames(String[] evaluatorFunctionNames) {
     this.evaluatorFunctionNames = evaluatorFunctionNames;
+  }
+
+  public void setEvaluatorsAreDistinct(boolean[] evaluatorsAreDistinct) {
+    this.evaluatorsAreDistinct = evaluatorsAreDistinct;
+  }
+
+  public boolean[] getEvaluatorsAreDistinct() {
+    return evaluatorsAreDistinct;
+  }
+
+  public boolean[] getEvaluatorsRespectNulls() {
+    return evaluatorsRespectNulls;
+  }
+
+  public void setEvaluatorsRespectNulls(boolean[] evaluatorsRespectNulls) {
+    this.evaluatorsRespectNulls = evaluatorsRespectNulls;
   }
 
   public WindowFrameDef[] getEvaluatorWindowFrameDefs() {
@@ -427,8 +597,14 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
     return outputTypeInfos;
   }
 
-  public void setOutputTypeInfos(TypeInfo[] outputTypeInfos) {
+  public DataTypePhysicalVariation[] getOutputDataTypePhysicalVariations() {
+    return outputDataTypePhysicalVariations;
+  }
+
+  public void setOutputTypeInfos(TypeInfo[] outputTypeInfos,
+      DataTypePhysicalVariation[] outputDataTypePhysicalVariations) {
     this.outputTypeInfos = outputTypeInfos;
+    this.outputDataTypePhysicalVariations = outputDataTypePhysicalVariations;
   }
 
   public void setVectorPTFInfo(VectorPTFInfo vectorPTFInfo) {
@@ -447,5 +623,4 @@ public class VectorPTFDesc extends AbstractVectorDesc  {
   public int getVectorizedPTFMaxMemoryBufferingBatchCount() {
     return vectorizedPTFMaxMemoryBufferingBatchCount;
   }
-
 }

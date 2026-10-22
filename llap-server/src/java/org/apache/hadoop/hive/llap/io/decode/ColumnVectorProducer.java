@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.io.decode;
@@ -49,6 +50,14 @@ public interface ColumnVectorProducer {
     List<Integer> getPhysicalColumnIds();
     List<Integer> getReaderLogicalColumnIds();
     TypeDescription[] getBatchReaderTypes(TypeDescription fileSchema);
+    String[] getOriginalColumnNames(TypeDescription fileSchema);
+    String getQueryId();
+    boolean isProbeDecodeEnabled();
+    byte getProbeMjSmallTablePos();
+    String getProbeCacheKey();
+    String getProbeColName();
+    int getProbeColIdx();
+    List<Integer> getLogicalOrderedColumnIds();
   }
 
   ReadPipeline createReadPipeline(Consumer<ColumnVectorBatch> consumer, FileSplit split,

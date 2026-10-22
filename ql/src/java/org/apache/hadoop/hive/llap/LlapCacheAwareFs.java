@@ -1,15 +1,20 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap;
@@ -37,6 +42,7 @@ import org.apache.hadoop.fs.PositionedReadable;
 import org.apache.hadoop.fs.Seekable;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hive.common.io.Allocator;
+import org.apache.hadoop.hive.common.io.CacheTag;
 import org.apache.hadoop.hive.common.io.DataCache;
 import org.apache.hadoop.hive.common.io.DiskRange;
 import org.apache.hadoop.hive.common.io.DiskRangeList;
@@ -61,7 +67,7 @@ public class LlapCacheAwareFs extends FileSystem {
       new ConcurrentHashMap<>();
 
   public static Path registerFile(DataCache cache, Path path, Object fileKey,
-      TreeMap<Long, Long> index, Configuration conf, String tag) throws IOException {
+      TreeMap<Long, Long> index, Configuration conf, CacheTag tag) throws IOException {
     long splitId = currentSplitId.incrementAndGet();
     CacheAwareInputStream stream = new CacheAwareInputStream(
         cache, conf, index, path, fileKey, -1, tag);
@@ -170,14 +176,14 @@ public class LlapCacheAwareFs extends FileSystem {
     private final TreeMap<Long, Long> chunkIndex;
     private final Path path;
     private final Object fileKey;
-    private final String tag;
+    private final CacheTag tag;
     private final Configuration conf;
     private final DataCache cache;
     private final int bufferSize;
     private long position = 0;
 
     public CacheAwareInputStream(DataCache cache, Configuration conf,
-        TreeMap<Long, Long> chunkIndex, Path path, Object fileKey, int bufferSize, String tag) {
+        TreeMap<Long, Long> chunkIndex, Path path, Object fileKey, int bufferSize, CacheTag tag) {
       this.cache = cache;
       this.fileKey = fileKey;
       this.chunkIndex = chunkIndex;
@@ -213,8 +219,8 @@ public class LlapCacheAwareFs extends FileSystem {
           return new CacheChunk(buffer, startOffset, endOffset);
         }
       }, gotAllData);
-      if (LOG.isInfoEnabled()) {
-        LOG.info("Buffers after cache " + RecordReaderUtils.stringifyDiskRanges(drl));
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Buffers after cache " + RecordReaderUtils.stringifyDiskRanges(drl));
       }
       if (gotAllData.value) {
         long sizeRead = 0;
@@ -239,112 +245,110 @@ public class LlapCacheAwareFs extends FileSystem {
       // represent one or several column chunks, since we always cache on column chunk boundaries.
       DiskRangeList current = drl;
       FileSystem fs = path.getFileSystem(conf);
-      FSDataInputStream is = fs.open(path, bufferSize);
-      Allocator allocator = cache.getAllocator();
-      long sizeRead = 0;
-      while (current != null) {
-        DiskRangeList candidate = current;
-        current = current.next;
-        long from = candidate.getOffset(), to = candidate.getEnd();
-        // The offset in the destination array for the beginning of this missing range.
-        int offsetFromReadStart = (int)(from - readStartPos), candidateSize = (int)(to - from);
-        if (candidate.hasData()) {
-          ByteBuffer data = candidate.getData().duplicate();
-          data.get(array, arrayOffset + offsetFromReadStart, candidateSize);
-          cache.releaseBuffer(((CacheChunk)candidate).getBuffer());
+      try (FSDataInputStream is = fs.open(path, bufferSize)) {
+        Allocator allocator = cache.getAllocator();
+        long sizeRead = 0;
+        while (current != null) {
+          DiskRangeList candidate = current;
+          current = current.next;
+          long from = candidate.getOffset(), to = candidate.getEnd();
+          // The offset in the destination array for the beginning of this missing range.
+          int offsetFromReadStart = (int)(from - readStartPos), candidateSize = (int)(to - from);
+          if (candidate.hasData()) {
+            ByteBuffer data = candidate.getData().duplicate();
+            data.get(array, arrayOffset + offsetFromReadStart, candidateSize);
+            cache.releaseBuffer(((CacheChunk)candidate).getBuffer());
+            sizeRead += candidateSize;
+            continue;
+          }
+          // The data is not in cache.
+
+          // Account for potential partial chunks.
+          SortedMap<Long, Long> chunksInThisRead = getAndValidateMissingChunks(maxAlloc, from, to);
+
+          is.seek(from);
+          is.readFully(array, arrayOffset + offsetFromReadStart, candidateSize);
           sizeRead += candidateSize;
-          continue;
-        }
-        // The data is not in cache.
-
-        // Account for potential partial chunks.
-        SortedMap<Long, Long> chunksInThisRead = getAndValidateMissingChunks(maxAlloc, from, to);
-
-        is.seek(from);
-        is.readFully(array, arrayOffset + offsetFromReadStart, candidateSize);
-        sizeRead += candidateSize;
-        // Now copy missing chunks (and parts of chunks) into cache buffers.
-        if (fileKey == null || cache == null) continue;
-        int extraDiskDataOffset = 0;
-        // TODO: should we try to make a giant array for one cache call to avoid overhead?
-        for (Map.Entry<Long, Long> missingChunk : chunksInThisRead.entrySet()) {
-          long chunkFrom = Math.max(from, missingChunk.getKey()),
-              chunkTo = Math.min(to, missingChunk.getValue()),
-              chunkLength = chunkTo - chunkFrom;
-          // TODO: if we allow partial reads (right now we disable this), we'd have to handle it here.
-          //       chunksInThisRead should probably be changed to be a struct array indicating both
-          //       partial and full sizes for each chunk; then the partial ones could be merged
-          //       with the previous partial ones, and any newly-full chunks put in the cache.
-          MemoryBuffer[] largeBuffers = null, smallBuffer = null, newCacheData = null;
-          try {
-            int largeBufCount = (int) (chunkLength / maxAlloc);
-            int smallSize = (int) (chunkLength % maxAlloc);
-            int chunkPartCount = largeBufCount + ((smallSize > 0) ? 1 : 0);
-            DiskRange[] cacheRanges = new DiskRange[chunkPartCount];
-            int extraOffsetInChunk = 0;
-            if (maxAlloc < chunkLength) {
-              largeBuffers = new MemoryBuffer[largeBufCount];
-              // Note: we don't use StoppableAllocator here - this is not on an IO thread.
-              allocator.allocateMultiple(largeBuffers, maxAlloc, cache.getDataBufferFactory());
-              for (int i = 0; i < largeBuffers.length; ++i) {
-                // By definition here we copy up to the limit of the buffer.
-                ByteBuffer bb = largeBuffers[i].getByteBufferRaw();
-                int remaining = bb.remaining();
-                assert remaining == maxAlloc;
+          // Now copy missing chunks (and parts of chunks) into cache buffers.
+          if (fileKey == null || cache == null) continue;
+          int extraDiskDataOffset = 0;
+          // TODO: should we try to make a giant array for one cache call to avoid overhead?
+          for (Map.Entry<Long, Long> missingChunk : chunksInThisRead.entrySet()) {
+            long chunkFrom = Math.max(from, missingChunk.getKey()),
+                chunkTo = Math.min(to, missingChunk.getValue()),
+                chunkLength = chunkTo - chunkFrom;
+            // TODO: if we allow partial reads (right now we disable this), we'd have to handle it here.
+            //       chunksInThisRead should probably be changed to be a struct array indicating both
+            //       partial and full sizes for each chunk; then the partial ones could be merged
+            //       with the previous partial ones, and any newly-full chunks put in the cache.
+            MemoryBuffer[] largeBuffers = null, smallBuffer = null, newCacheData = null;
+            try {
+              int largeBufCount = (int) (chunkLength / maxAlloc);
+              int smallSize = (int) (chunkLength % maxAlloc);
+              int chunkPartCount = largeBufCount + ((smallSize > 0) ? 1 : 0);
+              DiskRange[] cacheRanges = new DiskRange[chunkPartCount];
+              int extraOffsetInChunk = 0;
+              newCacheData = new MemoryBuffer[chunkPartCount];
+              int index = 0;
+              
+              if (largeBufCount > 0) {
+                largeBuffers = new MemoryBuffer[largeBufCount];
+                // Note: we don't use StoppableAllocator here - this is not on an IO thread.
+                allocator.allocateMultiple(largeBuffers, maxAlloc, cache.getDataBufferFactory());
+                for (int i = 0; i < largeBuffers.length; ++i) {
+                  // By definition here we copy up to the limit of the buffer.
+                  ByteBuffer bb = largeBuffers[i].getByteBufferRaw();
+                  int remaining = bb.remaining();
+                  assert remaining == maxAlloc;
+                  copyDiskDataToCacheBuffer(array,
+                      arrayOffset + offsetFromReadStart + extraDiskDataOffset,
+                      remaining, bb, cacheRanges, i, chunkFrom + extraOffsetInChunk);
+                  extraDiskDataOffset += remaining;
+                  extraOffsetInChunk += remaining;
+                }
+                for (MemoryBuffer buf : largeBuffers) {
+                  newCacheData[index++] = buf;
+                }
+              }
+              largeBuffers = null;
+              if (smallSize > 0) {
+                smallBuffer = new MemoryBuffer[1];
+                // Note: we don't use StoppableAllocator here - this is not on an IO thread.
+                allocator.allocateMultiple(smallBuffer, smallSize, cache.getDataBufferFactory());
+                ByteBuffer bb = smallBuffer[0].getByteBufferRaw();
                 copyDiskDataToCacheBuffer(array,
                     arrayOffset + offsetFromReadStart + extraDiskDataOffset,
-                    remaining, bb, cacheRanges, i, chunkFrom + extraOffsetInChunk);
-                extraDiskDataOffset += remaining;
-                extraOffsetInChunk += remaining;
+                    smallSize, bb, cacheRanges, largeBufCount, chunkFrom + extraOffsetInChunk);
+                extraDiskDataOffset += smallSize;
+                extraOffsetInChunk += smallSize; // Not strictly necessary, no one will look at it.
+                newCacheData[index] = smallBuffer[0];
+                smallBuffer = null;
               }
-            }
-            newCacheData = largeBuffers;
-            largeBuffers = null;
-            if (smallSize > 0) {
-              smallBuffer = new MemoryBuffer[1];
-              // Note: we don't use StoppableAllocator here - this is not on an IO thread.
-              allocator.allocateMultiple(smallBuffer, smallSize, cache.getDataBufferFactory());
-              ByteBuffer bb = smallBuffer[0].getByteBufferRaw();
-              copyDiskDataToCacheBuffer(array,
-                  arrayOffset + offsetFromReadStart + extraDiskDataOffset,
-                  smallSize, bb, cacheRanges, largeBufCount, chunkFrom + extraOffsetInChunk);
-              extraDiskDataOffset += smallSize;
-              extraOffsetInChunk += smallSize; // Not strictly necessary, noone will look at it.
-              if (newCacheData == null) {
-                newCacheData = smallBuffer;
-              } else {
-                // TODO: add allocate overload with an offset and length
-                MemoryBuffer[] combinedCacheData = new MemoryBuffer[largeBufCount + 1];
-                System.arraycopy(newCacheData, 0, combinedCacheData, 0, largeBufCount);
-                newCacheData = combinedCacheData;
-                newCacheData[largeBufCount] = smallBuffer[0];
+              cache.putFileData(fileKey, cacheRanges, newCacheData, 0, tag);
+            } finally {
+              // We do not use the new cache buffers for the actual read, given the way read() API is.
+              // Therefore, we don't need to handle cache collisions - just decref all the buffers.
+              if (newCacheData != null) {
+                for (MemoryBuffer buffer : newCacheData) {
+                  if (buffer == null) continue;
+                  cache.releaseBuffer(buffer);
+                }
               }
-              smallBuffer = null;
-            }
-            cache.putFileData(fileKey, cacheRanges, newCacheData, 0, tag);
-          } finally {
-            // We do not use the new cache buffers for the actual read, given the way read() API is.
-            // Therefore, we don't need to handle cache collisions - just decref all the buffers.
-            if (newCacheData != null) {
-              for (MemoryBuffer buffer : newCacheData) {
-                if (buffer == null) continue;
-                cache.releaseBuffer(buffer);
+              // If we have failed before building newCacheData, deallocate other the allocated.
+              if (largeBuffers != null) {
+                for (MemoryBuffer buffer : largeBuffers) {
+                  if (buffer == null) continue;
+                  allocator.deallocate(buffer);
+                }
               }
-            }
-            // If we have failed before building newCacheData, deallocate other the allocated.
-            if (largeBuffers != null) {
-              for (MemoryBuffer buffer : largeBuffers) {
-                if (buffer == null) continue;
-                allocator.deallocate(buffer);
+              if (smallBuffer != null && smallBuffer[0] != null) {
+                allocator.deallocate(smallBuffer[0]);
               }
-            }
-            if (smallBuffer != null && smallBuffer[0] != null) {
-              allocator.deallocate(smallBuffer[0]);
             }
           }
         }
+        validateAndUpdatePosition(len, sizeRead);
       }
-      validateAndUpdatePosition(len, sizeRead);
       return len;
     }
 

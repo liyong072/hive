@@ -9,15 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.common;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 import org.apache.hadoop.conf.Configuration;
 import org.junit.Test;
 
@@ -104,6 +105,22 @@ public class TestValidReadTxnList {
     Assert.assertFalse(txnList.isTxnAborted(4L));
     Assert.assertFalse(txnList.isTxnAborted(6L));
     Assert.assertTrue(txnList.isTxnAborted(8L));
+    Assert.assertFalse(txnList.isTxnAborted(10L));
+  }
+
+  @Test
+  public void testAbortedTxnRange() throws Exception {
+    long[] exceptions = {2L, 4L, 5L, 6L, 7L, 8L, 9L, 10L};
+    BitSet bitSet = new BitSet(exceptions.length);
+    bitSet.set(0);  // mark txn "2L" aborted
+    bitSet.set(6);  // mark txn "9L" aborted, do not create range 8-10
+    ValidTxnList txnList = new ValidReadTxnList(exceptions, bitSet, 11, 4L);
+    String str = txnList.writeToString();
+    Assert.assertEquals("11:4:4-8,10:2,9", str);
+    Assert.assertTrue(txnList.isTxnAborted(2L));
+    Assert.assertFalse(txnList.isTxnAborted(4L));
+    Assert.assertFalse(txnList.isTxnAborted(6L));
+    Assert.assertTrue(txnList.isTxnAborted(9L));
     Assert.assertFalse(txnList.isTxnAborted(10L));
   }
 }

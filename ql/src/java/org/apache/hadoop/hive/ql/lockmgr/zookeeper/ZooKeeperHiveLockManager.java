@@ -9,23 +9,26 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.lockmgr.zookeeper;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import org.apache.hadoop.hive.common.TableName;
 import org.apache.hadoop.hive.common.metrics.common.Metrics;
 import org.apache.hadoop.hive.common.metrics.common.MetricsConstant;
 import org.apache.hadoop.hive.common.metrics.common.MetricsFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.ql.Driver.LockedDriverState;
+import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.ql.ErrorMsg;
+import org.apache.hadoop.hive.ql.DriverState;
 import org.apache.hadoop.hive.ql.lockmgr.*;
 import org.apache.hadoop.hive.ql.lockmgr.HiveLockObject.HiveLockObjectData;
 import org.apache.hadoop.hive.ql.metadata.*;
@@ -151,12 +154,12 @@ public class ZooKeeperHiveLockManager implements HiveLockManager {
    * @param  lockObjects  List of objects and the modes of the locks requested
    * @param  keepAlive    Whether the lock is to be persisted after the statement
    *
-   * Acuire all the locks. Release all the locks and return null if any lock
+   * Acquire all the locks. Release all the locks and return null if any lock
    * could not be acquired.
    **/
   @Override
   public List<HiveLock> lock(List<HiveLockObj> lockObjects,
-      boolean keepAlive, LockedDriverState lDrvState) throws LockException
+      boolean keepAlive, DriverState driverState) throws LockException
   {
     // Sort the objects first. You are guaranteed that if a partition is being locked,
     // the table has already been locked
@@ -195,12 +198,12 @@ public class ZooKeeperHiveLockManager implements HiveLockManager {
 
       HiveLock lock = null;
       boolean isInterrupted = false;
-      if (lDrvState != null) {
-        lDrvState.stateLock.lock();
-        if (lDrvState.isAborted()) {
+      if (driverState != null) {
+        driverState.lock();
+        if (driverState.isAborted()) {
           isInterrupted = true;
         }
-        lDrvState.stateLock.unlock();
+        driverState.unlock();
       }
       if (!isInterrupted) {
         try {
@@ -419,6 +422,7 @@ public class ZooKeeperHiveLockManager implements HiveLockManager {
 
     String exLock = getLockName(lastName, HiveLockMode.EXCLUSIVE);
     String shLock = getLockName(lastName, HiveLockMode.SHARED);
+    String semiLock = getLockName(lastName, HiveLockMode.SEMI_SHARED);
 
     for (String child : children) {
       child = lastName + "/" + child;
@@ -431,6 +435,9 @@ public class ZooKeeperHiveLockManager implements HiveLockManager {
       }
       if ((mode == HiveLockMode.EXCLUSIVE) && child.startsWith(shLock)) {
         childSeq = getSequenceNumber(child, shLock);
+      }
+      if ((mode == HiveLockMode.SEMI_SHARED || mode == HiveLockMode.EXCLUSIVE) && child.startsWith(semiLock)) {
+        childSeq = getSequenceNumber(child, semiLock);
       }
 
       if ((childSeq >= 0) && (childSeq < seqNo)) {
@@ -761,7 +768,11 @@ public class ZooKeeperHiveLockManager implements HiveLockManager {
       String objName = path.substring(("/" + parent + "/").length(), indx-1);
       String[] names = objName.split("/");
 
-      if (names.length < 2) {
+      if (names.length == 2) {
+        Database database = db.getDatabase(names[0], names[1]);
+        if (database != null) {
+          return new HiveLockObject(database, data);
+        }
         return null;
       }
 
@@ -769,18 +780,18 @@ public class ZooKeeperHiveLockManager implements HiveLockManager {
         return new HiveLockObject(names, data);
       }
 
-      // do not throw exception if table does not exist
-      Table tab = db.getTable(names[0], names[1], false);
+      TableName tableName = TableName.fromString(names[2],  names[0], names[1]);
+      Table tab = db.getTable(tableName);
       if (tab == null) {
         return null;
       }
 
-      if (names.length == 2) {
+      if (names.length == 3) {
         return new HiveLockObject(tab, data);
       }
 
       Map<String, String> partSpec = new HashMap<String, String>();
-      for (indx = 2; indx < names.length; indx++) {
+      for (indx = 3; indx < names.length; indx++) {
         String[] partVals = names[indx].split("=");
         partSpec.put(partVals[0], partVals[1]);
       }

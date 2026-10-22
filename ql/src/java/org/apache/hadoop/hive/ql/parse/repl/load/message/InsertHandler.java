@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.load.message;
 
@@ -36,7 +37,7 @@ public class InsertHandler extends AbstractMessageHandler {
   private static final Logger LOG = LoggerFactory.getLogger(InsertHandler.class);
 
   @Override
-  public List<Task<? extends Serializable>> handle(Context withinContext)
+  public List<Task<?>> handle(Context withinContext)
       throws SemanticException {
     try {
       FileSystem fs =
@@ -55,13 +56,12 @@ public class InsertHandler extends AbstractMessageHandler {
     InsertMessage insertMessage = deserializer.getInsertMessage(withinContext.dmd.getPayload());
     String actualDbName =
         withinContext.isDbNameEmpty() ? insertMessage.getDB() : withinContext.dbName;
-    String actualTblName =
-        withinContext.isTableNameEmpty() ? insertMessage.getTable() : withinContext.tableName;
+    Context currentContext = new Context(withinContext, actualDbName,
+                                         withinContext.getDumpDirectory(), withinContext.getMetricCollector());
 
-    Context currentContext = new Context(withinContext, actualDbName, actualTblName);
     // Piggybacking in Import logic for now
     TableHandler tableHandler = new TableHandler();
-    List<Task<? extends Serializable>> tasks = tableHandler.handle(currentContext);
+    List<Task<?>> tasks = tableHandler.handle(currentContext);
     readEntitySet.addAll(tableHandler.readEntities());
     writeEntitySet.addAll(tableHandler.writeEntities());
     getUpdatedMetadata().copyUpdatedMetadata(tableHandler.getUpdatedMetadata());

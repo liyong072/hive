@@ -9,16 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.lockmgr.zookeeper;
 
-import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.hadoop.hive.ql.lockmgr.HiveLock;
 import org.apache.hadoop.hive.ql.lockmgr.HiveLockMode;
 import org.apache.hadoop.hive.ql.lockmgr.HiveLockObject;
@@ -72,7 +73,7 @@ public class ZooKeeperHiveLock extends HiveLock {
       obj.equals(zLock.getHiveLockObject()) &&
       mode == zLock.getHiveLockMode();
   }
-  
+
   @Override
   public int hashCode() {
     HashCodeBuilder builder = new HashCodeBuilder();
@@ -92,5 +93,10 @@ public class ZooKeeperHiveLock extends HiveLock {
       builder.append(mode);
     }
     return builder.toHashCode();
+  }
+
+  @Override
+  public String toString() {
+    return String.format("ZKHL[%s;%s;%s]", path, obj, mode);
   }
 }

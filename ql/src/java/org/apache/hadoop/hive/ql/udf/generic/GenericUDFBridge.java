@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
@@ -21,6 +22,7 @@ package org.apache.hadoop.hive.ql.udf.generic;
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Optional;
 
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
@@ -97,7 +99,7 @@ public class GenericUDFBridge extends GenericUDF implements Serializable {
     this.isOperator = isOperator;
     this.udfClassName = udfClassName;
   }
- 
+
   // For Java serialization only
   public GenericUDFBridge() {
   }
@@ -151,7 +153,7 @@ public class GenericUDFBridge extends GenericUDF implements Serializable {
   public ObjectInspector initialize(ObjectInspector[] arguments) throws UDFArgumentException {
 
     try {
-      udf = (UDF)getUdfClassInternal().newInstance();
+      udf = getUdfClassInternal().newInstance();
     } catch (Exception e) {
       throw new UDFArgumentException(
           "Unable to instantiate UDF implementation class " + udfClassName + ": " + e);
@@ -248,5 +250,14 @@ public class GenericUDFBridge extends GenericUDF implements Serializable {
 
   public interface UdfWhitelistChecker {
     boolean isUdfAllowed(Class<?> clazz);
+  }
+
+  @SuppressWarnings("unchecked")
+  @Override
+  public <T> Optional<T> adapt(Class<T> clazz) {
+    if (clazz.isInstance(udf)) {
+      return Optional.of((T) udf);
+    }
+    return super.adapt(clazz);
   }
 }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
@@ -55,6 +56,7 @@ import org.apache.hadoop.hive.ql.parse.WindowingSpec.WindowFrameSpec;
 import org.apache.hadoop.hive.ql.parse.WindowingSpec.WindowFunctionSpec;
 import org.apache.hadoop.hive.ql.parse.WindowingSpec.WindowSpec;
 import org.apache.hadoop.hive.ql.parse.WindowingSpec.WindowType;
+import org.apache.hadoop.hive.ql.parse.type.TypeCheckCtx;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.PTFDesc;
@@ -78,7 +80,6 @@ import org.apache.hadoop.hive.ql.udf.ptf.TableFunctionResolver;
 import org.apache.hadoop.hive.ql.udf.ptf.WindowingTableFunction.WindowingTableFunctionResolver;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
-import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.lazybinary.LazyBinarySerDe;
 import org.apache.hadoop.hive.serde2.objectinspector.ListObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -89,8 +90,6 @@ import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector.PrimitiveCategory;
 import org.apache.hadoop.hive.serde2.objectinspector.StructField;
 import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
-import org.apache.hadoop.hive.serde2.typeinfo.StructTypeInfo;
-import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -355,6 +354,7 @@ public class PTFTranslator {
     def.setExpressionTreeString(spec.getExpression().toStringTree());
     def.setStar(spec.isStar());
     def.setPivotResult(wFnInfo.isPivotResult());
+    def.setRespectNulls(spec.isRespectNulls());
     ShapeDetails inpShape = wdwTFnDef.getRawInputShape();
 
     /*
@@ -584,7 +584,7 @@ public class PTFTranslator {
 
     GenericUDAFEvaluator wFnEval = FunctionRegistry.getGenericWindowingEvaluator(def.getName(),
         argOIs,
-        def.isDistinct(), def.isStar());
+        def.isDistinct(), def.isStar(), def.respectNulls());
     ObjectInspector OI = wFnEval.init(GenericUDAFEvaluator.Mode.COMPLETE, funcArgOIs);
     def.setWFnEval(wFnEval);
     def.setOI(OI);
@@ -816,19 +816,8 @@ public class PTFTranslator {
     p.setProperty(
         org.apache.hadoop.hive.serde.serdeConstants.LIST_COLUMN_TYPES,
         serdePropsMap.get(org.apache.hadoop.hive.serde.serdeConstants.LIST_COLUMN_TYPES));
-    SerDeUtils.initializeSerDe(serDe, cfg, p, null);
+    serDe.initialize(cfg, p, null);
     return serDe;
-  }
-
-  @SuppressWarnings({"unchecked"})
-
-  private static ArrayList<? extends Object>[] getTypeMap(
-      StructObjectInspector oi) {
-    StructTypeInfo t = (StructTypeInfo) TypeInfoUtils
-        .getTypeInfoFromObjectInspector(oi);
-    ArrayList<String> fnames = t.getAllStructFieldNames();
-    ArrayList<TypeInfo> fields = t.getAllStructFieldTypeInfos();
-    return new ArrayList<?>[] {fnames, fields};
   }
 
   /**
@@ -841,9 +830,9 @@ public class PTFTranslator {
    */
   public static StructObjectInspector getStandardStructOI(RowResolver rr) {
     StructObjectInspector oi;
-    ArrayList<ColumnInfo> colLists = rr.getColumnInfos();
-    ArrayList<String> structFieldNames = new ArrayList<String>();
-    ArrayList<ObjectInspector> structFieldObjectInspectors = new ArrayList<ObjectInspector>();
+    List<ColumnInfo> colLists = rr.getColumnInfos();
+    List<String> structFieldNames = new ArrayList<String>();
+    List<ObjectInspector> structFieldObjectInspectors = new ArrayList<ObjectInspector>();
     for (ColumnInfo columnInfo : colLists) {
       String colName = columnInfo.getInternalName();
       ObjectInspector colOI = columnInfo.getObjectInspector();

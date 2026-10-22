@@ -9,19 +9,20 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common.io;
 
-import org.apache.commons.codec.binary.Base64;
-
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Base64;
 
 public class DigestPrintStream extends FetchConverter {
 
@@ -34,12 +35,12 @@ public class DigestPrintStream extends FetchConverter {
 
   @Override
   protected void process(String out) {
-    digest.update(out.getBytes());
+    digest.update(out.getBytes(StandardCharsets.UTF_8));
   }
 
   @Override
   public void processFinal() {
-    printDirect(new String(Base64.encodeBase64(digest.digest())));
+    printDirect(Base64.getEncoder().encodeToString(digest.digest()));
     digest.reset();
   }
 }

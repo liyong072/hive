@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.daemon.services.impl;
@@ -41,12 +42,14 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.service.CompositeService;
 import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.hive.common.IPStackUtils;
 import org.apache.hive.common.util.HiveVersionInfo;
 import org.apache.hive.http.HttpServer;
-import org.codehaus.jackson.JsonFactory;
-import org.codehaus.jackson.JsonGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
 
 public class LlapWebServices extends AbstractService {
 
@@ -79,10 +82,17 @@ public class LlapWebServices extends AbstractService {
 
     this.useSSL = HiveConf.getBoolVar(conf, ConfVars.LLAP_DAEMON_WEB_SSL);
     this.useSPNEGO = HiveConf.getBoolVar(conf, ConfVars.LLAP_WEB_AUTO_AUTH);
-    String bindAddress = "0.0.0.0";
+    String bindAddress = IPStackUtils.resolveWildcardAddress();
     HttpServer.Builder builder =
         new HttpServer.Builder("llap").setPort(this.port).setHost(bindAddress);
     builder.setConf(new HiveConf(conf, HiveConf.class));
+    builder.setDisableDirListing(true);
+    if (conf.getBoolean(ConfVars.LLAP_DAEMON_WEB_XFRAME_ENABLED.varname,
+        ConfVars.LLAP_DAEMON_WEB_XFRAME_ENABLED.defaultBoolVal)) {
+      builder.configureXFrame(true).setXFrameOption(
+          conf.get(ConfVars.LLAP_DAEMON_WEB_XFRAME_VALUE.varname,
+              ConfVars.LLAP_DAEMON_WEB_XFRAME_VALUE.defaultStrVal));
+    }
     if (UserGroupInformation.isSecurityEnabled()) {
       LOG.info("LLAP UI useSSL=" + this.useSSL + ", auto-auth/SPNEGO="
           + this.useSPNEGO + ", port=" + this.port);
@@ -207,7 +217,7 @@ public class LlapWebServices extends AbstractService {
     public void init() throws ServletException {
       jsonFactory = new JsonFactory();
     }
-    
+
     @Override
     public void doGet(HttpServletRequest request, HttpServletResponse response) {
       JsonGenerator jg = null;

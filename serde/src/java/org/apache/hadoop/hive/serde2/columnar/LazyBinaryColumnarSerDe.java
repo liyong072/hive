@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.columnar;
 
@@ -61,9 +62,12 @@ public class LazyBinaryColumnarSerDe extends ColumnarSerDeBase {
   }
 
   @Override
-  public void initialize(Configuration conf, Properties tbl) throws SerDeException {
-    LazySerDeParameters serdeParams = new LazySerDeParameters(conf, tbl, getClass().getName());
-    
+  public void initialize(Configuration configuration, Properties tableProperties, Properties partitionProperties)
+      throws SerDeException {
+    super.initialize(configuration, tableProperties, partitionProperties);
+
+    LazySerDeParameters serdeParams = new LazySerDeParameters(configuration, properties, getClass().getName());
+
     columnNames = serdeParams.getColumnNames();
     columnTypes = serdeParams.getColumnTypes();
 
@@ -71,12 +75,12 @@ public class LazyBinaryColumnarSerDe extends ColumnarSerDeBase {
         columnNames, columnTypes);
     int size = columnTypes.size();
     List<Integer> notSkipIDs = new ArrayList<Integer>();
-    if (conf == null || ColumnProjectionUtils.isReadAllColumns(conf)) {
-      for (int i = 0; i < size; i++ ) {
+    if (!this.configuration.isPresent() || ColumnProjectionUtils.isReadAllColumns(this.configuration.get())) {
+      for (int i = 0; i < size; i++) {
         notSkipIDs.add(i);
       }
     } else {
-      notSkipIDs = ColumnProjectionUtils.getReadColumnIDs(conf);
+      notSkipIDs = ColumnProjectionUtils.getReadColumnIDs(this.configuration.get());
     }
     cachedLazyStruct = new LazyBinaryColumnarStruct(cachedObjectInspector, notSkipIDs);
 

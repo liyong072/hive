@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -356,8 +357,8 @@ public class TopNHash {
     hashes[index] = key.hashCode();
     if (null != indexes.store(index)) {
       // it's only for GBY which should forward all values associated with the key in the range
-      // of limit. new value should be attatched with the key but in current implementation,
-      // only one values is allowed. with map-aggreagtion which is true by default,
+      // of limit. new value should be attached with the key but in current implementation,
+      // only one values is allowed. with map-aggregation which is true by default,
       // this is not common case, so just forward new key/value and forget that (todo)
       return FORWARD;
     }
@@ -408,7 +409,7 @@ public class TopNHash {
 
   /**
    * for order by, same keys are counted (For 1-2-2-3-4, limit 3 is 1-2-2)
-   * MinMaxPriorityQueue is used because it alows duplication and fast access to biggest one
+   * MinMaxPriorityQueue is used because it allows duplication and fast access to biggest one
    */
   private class HashForRow implements IndexStore {
     private final MinMaxPriorityQueue<Integer> indexes = MinMaxPriorityQueue.orderedBy(C).create();

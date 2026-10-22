@@ -31,10 +31,10 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.serde.serdeConstants;
-import org.apache.hadoop.hive.serde2.AbstractSerDe;
+import org.apache.hadoop.hive.serde2.AbstractEncodingAwareSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeSpec;
-import org.apache.hadoop.hive.serde2.SerDeStats;
+import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.StructTypeInfo;
 import org.apache.hadoop.io.Text;
@@ -47,21 +47,23 @@ import org.slf4j.LoggerFactory;
 
 @SerDeSpec(schemaProps = {serdeConstants.LIST_COLUMNS,
                           serdeConstants.LIST_COLUMN_TYPES,
-                          serdeConstants.TIMESTAMP_FORMATS})
-public class JsonSerDe extends AbstractSerDe {
+                          serdeConstants.TIMESTAMP_FORMATS,
+                          serdeConstants.SERIALIZATION_ENCODING})
+public class JsonSerDe extends AbstractEncodingAwareSerDe {
 
   private static final Logger LOG = LoggerFactory.getLogger(JsonSerDe.class);
+
   private HCatSchema schema;
 
   private HCatRecordObjectInspector cachedObjectInspector;
   private org.apache.hadoop.hive.serde2.JsonSerDe jsonSerde = new org.apache.hadoop.hive.serde2.JsonSerDe();
 
   @Override
-  public void initialize(Configuration conf, Properties tbl)
-    throws SerDeException {
+  public void initialize(Configuration configuration, Properties tableProperties, Properties partitionProperties)
+      throws SerDeException {
+    super.initialize(configuration, tableProperties, partitionProperties);
 
-    jsonSerde.initialize(conf, tbl);
-    jsonSerde.setWriteablesUsage(false);
+    jsonSerde.initialize(configuration, tableProperties, partitionProperties, false);
 
     StructTypeInfo rowTypeInfo = jsonSerde.getTypeInfo();
     cachedObjectInspector = HCatRecordObjectInspectorFactory.getHCatRecordObjectInspector(rowTypeInfo);
@@ -82,30 +84,34 @@ public class JsonSerDe extends AbstractSerDe {
    * our own object implementation, and we use HCatRecord for it
    */
   @Override
-  public Object deserialize(Writable blob) throws SerDeException {
+  public Object doDeserialize(Writable blob) throws SerDeException {
     try {
-      Object row = jsonSerde.deserialize(blob);
-      List fatRow = fatLand((Object[]) row);
+      List<?> row = (List<?>) jsonSerde.deserialize(blob);
+      List<Object> fatRow = fatLand(row);
       return new DefaultHCatRecord(fatRow);
     } catch (Exception e) {
       throw new SerDeException(e);
     }
   }
 
+
   @SuppressWarnings({"rawtypes", "unchecked" })
-  private static List fatLand(Object[] arr) {
-    List ret = new ArrayList<>();
-    for (Object o : arr) {
-      if (o != null && o instanceof Map<?, ?>) {
+  private static List<Object> fatLand(final List<?> arr) {
+    final List ret = new ArrayList<>();
+    for (final Object o : arr) {
+      if (o == null) {
+        ret.add(null);
+      } else if (o instanceof Map<?, ?>) {
         ret.add(fatMap(((Map) o)));
-      } else if (o != null && o instanceof List<?>) {
-        ret.add(fatLand(((List) o).toArray()));
-      } else if (o != null && o.getClass().isArray() && o.getClass().getComponentType() != byte.class) {
+      } else if (o instanceof List<?>) {
+        ret.add(fatLand((List) o));
+      } else if (o.getClass().isArray()
+          && o.getClass().getComponentType() != byte.class) {
         Class<?> ct = o.getClass().getComponentType();
         if (ct.isPrimitive()) {
           ret.add(primitiveArrayToList(o));
         } else {
-          ret.add(fatLand((Object[]) o));
+          ret.add(fatLand(Arrays.asList((Object[]) o)));
         }
       } else {
         ret.add(o);
@@ -114,15 +120,14 @@ public class JsonSerDe extends AbstractSerDe {
     return ret;
   }
 
-  @SuppressWarnings("rawtypes")
   private static Object fatMap(Map<Object, Object> map) {
-    Map ret = new LinkedHashMap<>();
+    Map<Object, Object> ret = new LinkedHashMap<>();
     Set<Entry<Object, Object>> es = map.entrySet();
     for (Entry<Object, Object> e : es) {
-      Object oldV = e.getValue();
-      Object newV;
+      final Object oldV = e.getValue();
+      final Object newV;
       if (oldV != null && oldV.getClass().isArray()) {
-        newV = fatLand((Object[]) oldV);
+        newV = fatLand(Arrays.asList((Object[]) oldV));
       } else {
         newV = oldV;
       }
@@ -166,7 +171,7 @@ public class JsonSerDe extends AbstractSerDe {
    * and generate a Text representation of the object.
    */
   @Override
-  public Writable serialize(Object obj, ObjectInspector objInspector)
+  public Writable doSerialize(Object obj, ObjectInspector objInspector)
     throws SerDeException {
     return jsonSerde.serialize(obj, objInspector);
   }
@@ -185,10 +190,22 @@ public class JsonSerDe extends AbstractSerDe {
     return Text.class;
   }
 
+  /**
+   * Transform Writable data from UTF-8 to charset before serialize.
+   * @param blob
+   * @return
+   */
+  
   @Override
-  public SerDeStats getSerDeStats() {
-    // no support for statistics yet
-    return null;
+  protected Writable transformFromUTF8(Writable blob) {
+    Text text = (Text)blob;
+    return SerDeUtils.transformTextFromUTF8(text, this.charset);
+  }
+
+  @Override
+  protected Writable transformToUTF8(Writable blob) {
+    Text text = (Text)blob;
+    return SerDeUtils.transformTextToUTF8(text, this.charset);
   }
 
 }

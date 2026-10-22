@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -265,7 +266,7 @@ public class PTFDeserializer {
     try {
       AbstractSerDe serDe =  ReflectionUtils.newInstance(hConf.getClassByName(serdeClassName).
           asSubclass(AbstractSerDe.class), hConf);
-      SerDeUtils.initializeSerDe(serDe, hConf, serDeProps, null);
+      serDe.initialize(hConf, serDeProps, null);
       shp.setSerde(serDe);
       StructObjectInspector outOI = PTFPartition.setupPartitionOutputOI(serDe, OI);
       shp.setOI(outOI);
@@ -304,10 +305,10 @@ public class PTFDeserializer {
       return;
     }
 
-    ArrayList<? extends Object>[] tInfo = getTypeMap(OI);
+    List<? extends Object>[] tInfo = getTypeMap(OI);
 
-    ArrayList<String> columnNames = (ArrayList<String>) tInfo[0];
-    ArrayList<TypeInfo> fields = (ArrayList<TypeInfo>) tInfo[1];
+    List<String> columnNames = (List<String>) tInfo[0];
+    List<TypeInfo> fields = (List<TypeInfo>) tInfo[1];
     StringBuilder cNames = new StringBuilder();
     StringBuilder cTypes = new StringBuilder();
 
@@ -325,14 +326,13 @@ public class PTFDeserializer {
         cTypes.toString());
   }
 
-  private static ArrayList<? extends Object>[] getTypeMap(
+  private static List<? extends Object>[] getTypeMap(
       StructObjectInspector oi) {
     StructTypeInfo t = (StructTypeInfo) TypeInfoUtils
         .getTypeInfoFromObjectInspector(oi);
-    ArrayList<String> fnames = t.getAllStructFieldNames();
-    ArrayList<TypeInfo> fields = t.getAllStructFieldTypeInfos();
-    return new ArrayList<?>[]
-    {fnames, fields};
+    List<String> fnames = t.getAllStructFieldNames();
+    List<TypeInfo> fields = t.getAllStructFieldTypeInfos();
+    return new List<?>[] {fnames, fields};
   }
 
   /*

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
@@ -24,6 +25,7 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.io.BytesWritable;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.apache.hive.common.util.HashCodeUtil;
 
 /*
  * An multi-key value hash map optimized for vector map join.
@@ -45,7 +47,8 @@ public class VectorMapJoinFastMultiKeyHashMap
     }
     testKeyBytesWritable.set(currentKey, 0, currentKey.length);
     testValueBytesWritable.set(currentValue, 0, currentValue.length);
-    putRow(testKeyBytesWritable, testValueBytesWritable);
+    long hashCode = HashCodeUtil.murmurHash(currentKey, 0, currentKey.length);
+    putRow(hashCode, testKeyBytesWritable, testValueBytesWritable);
   }
 
   public VectorMapJoinFastMultiKeyHashMap(

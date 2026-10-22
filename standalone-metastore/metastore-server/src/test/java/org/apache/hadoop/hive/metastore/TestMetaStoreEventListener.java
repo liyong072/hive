@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
@@ -104,6 +105,14 @@ public class TestMetaStoreEventListener {
     MetaStoreTestUtils.setConfForStandloneMode(conf);
     MetaStoreTestUtils.startMetaStoreWithRetry(HadoopThriftAuthBridge.getBridge(), conf);
 
+    HiveMetaStoreClient.setProcessorIdentifier("test@TestMetaStoreEventListener");
+    HiveMetaStoreClient.setProcessorCapabilities(new String[] {
+        "HIVEFULLACIDREAD",
+        "EXTWRITE",
+        "EXTREAD",
+        "HIVEBUCKET2"
+    });
+
     msc = new HiveMetaStoreClient(conf);
 
     msc.dropDatabase(dbName, true, true, true);
@@ -131,6 +140,8 @@ public class TestMetaStoreEventListener {
   }
 
   private void validateTableInAddPartition(Table expectedTable, Table actualTable) {
+    // AccessType is not set on the table object from the event. We want to compare everything else.
+    actualTable.setAccessType(expectedTable.getAccessType());
     assertEquals(expectedTable, actualTable);
   }
 
@@ -209,7 +220,10 @@ public class TestMetaStoreEventListener {
     Database db = msc.getDatabase(dbName);
     assertEquals(listSize, notifyList.size());
     assertEquals(listSize + 1, preNotifyList.size());
-    validateCreateDb(db, preDbEvent.getDatabase());
+    // The location uri in preDbEvent.getDatabase() is null as "skipAuthorization" is true.
+    Database expectedDb = new Database(db);
+    expectedDb.setLocationUri(null);
+    validateCreateDb(expectedDb, preDbEvent.getDatabase());
 
     CreateDatabaseEvent dbEvent = (CreateDatabaseEvent)(notifyList.get(listSize - 1));
     Assert.assertTrue(dbEvent.getStatus());
@@ -221,7 +235,7 @@ public class TestMetaStoreEventListener {
         .addCol("a", "string")
         .addPartCol("b", "string")
         .create(msc, conf);
-    PreCreateTableEvent preTblEvent = (PreCreateTableEvent)(preNotifyList.get(preNotifyList.size() - 1));
+    PreCreateTableEvent preTblEvent = (PreCreateTableEvent) (preNotifyList.get(preNotifyList.size() - 1));
     listSize++;
     Table tbl = msc.getTable(dbName, tblName);
     validateCreateTable(tbl, preTblEvent.getTable());
@@ -252,6 +266,9 @@ public class TestMetaStoreEventListener {
     // Test adding multiple partitions in a single partition-set, atomically.
     int currentTime = (int)System.currentTimeMillis();
     HiveMetaStoreClient hmsClient = new HiveMetaStoreClient(conf);
+    // A ConfigChangeEvent will be triggered on new Client creation because of
+    // org.apache.hadoop.hive.metastore.client.ThriftHiveMetaStoreClient#overlaySessionModifiedMetaConf()
+    ++listSize;
     table = hmsClient.getTable(dbName, "tmptbl");
     Partition partition1 = new Partition(Arrays.asList("20110101"), dbName, "tmptbl", currentTime,
                                         currentTime, table.getSd(), table.getParameters());
@@ -262,7 +279,7 @@ public class TestMetaStoreEventListener {
     hmsClient.add_partitions(Arrays.asList(partition1, partition2, partition3));
     ++listSize;
     AddPartitionEvent multiplePartitionEvent = (AddPartitionEvent)(notifyList.get(listSize-1));
-    assertEquals("Unexpected table value.", table, multiplePartitionEvent.getTable());
+    validateTableInAddPartition(table, multiplePartitionEvent.getTable());
     List<Partition> multiParts = Lists.newArrayList(multiplePartitionEvent.getPartitionIterator());
     assertEquals("Unexpected number of partitions in event!", 3, multiParts.size());
     assertEquals("Unexpected partition value.", partition1.getValues(), multiParts.get(0).getValues());
@@ -315,7 +332,7 @@ public class TestMetaStoreEventListener {
     msc.alter_table(dbName, tblName, renamedTable);
     listSize++;
     assertEquals(notifyList.size(), listSize);
-    PreAlterTableEvent preAlterTableE = (PreAlterTableEvent) preNotifyList.get(preNotifyList.size() - 1);
+    PreAlterTableEvent preAlterTableE = (PreAlterTableEvent) preNotifyList.get(preNotifyList.size() - 2);
 
     renamedTable = msc.getTable(dbName, renamed);
 
@@ -428,7 +445,7 @@ public class TestMetaStoreEventListener {
     assertEquals(event.getOldValue(), metaConfVal);
     assertEquals(event.getNewValue(), "[test pattern modified]");
     // This should also trigger meta listener notification via TServerEventHandler#deleteContext
-    nonClosingClient.getTTransport().close();
+    nonClosingClient.getThriftClient().getTTransport().close();
 
     Thread.sleep(2 * 1000);
 

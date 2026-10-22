@@ -9,23 +9,23 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.udf.generic.InstantFormatter;
 import org.apache.hadoop.io.Text;
 
 import java.nio.charset.CharacterCodingException;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.TimeZone;
 
 /**
  * Return Unix Timestamp.
@@ -35,9 +35,7 @@ public final class VectorUDFUnixTimeStampString extends VectorUDFTimestampFieldS
 
   private static final long serialVersionUID = 1L;
 
-  private transient final SimpleDateFormat format = getFormatter();
-  private transient final Calendar calendar = Calendar.getInstance(
-      TimeZone.getTimeZone("UTC"));
+  private transient InstantFormatter formatter;
 
   public VectorUDFUnixTimeStampString(int colNum, int outputColumnNum) {
     super(colNum, outputColumnNum, -1, -1);
@@ -48,20 +46,19 @@ public final class VectorUDFUnixTimeStampString extends VectorUDFTimestampFieldS
   }
 
   @Override
-  protected long doGetField(byte[] bytes, int start, int length) throws ParseException {
-    Date date = null;
-    try {
-      date = format.parse(Text.decode(bytes, start, length));
-    } catch (CharacterCodingException e) {
-      throw new ParseException(e.getMessage(), 0);
+  public void transientInit(Configuration conf) throws HiveException {
+    super.transientInit(conf);
+    if (formatter == null) {
+      formatter = InstantFormatter.ofConfiguration(conf);
     }
-    calendar.setTime(date);
-    return calendar.getTimeInMillis() / 1000;
   }
 
-  private static SimpleDateFormat getFormatter() {
-    SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-    format.setTimeZone(TimeZone.getTimeZone("UTC"));
-    return format;
+  @Override
+  protected long getField(byte[] bytes, int start, int length) throws ParseException {
+    try {
+      return formatter.parse(Text.decode(bytes, start, length)).getEpochSecond();
+    } catch (CharacterCodingException | RuntimeException e) {
+      throw new ParseException(e.getMessage(), 0);
+    }
   }
 }

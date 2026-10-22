@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.processors;
@@ -39,6 +40,7 @@ import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.Schema;
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveOperationType;
 import org.apache.hadoop.hive.ql.session.SessionState;
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,29 +56,25 @@ public class LlapClusterResourceProcessor implements CommandProcessor {
     CLUSTER_OPTIONS.addOption("info", "info", false, "Information about LLAP cluster");
   }
 
-  private CommandProcessorResponse returnErrorResponse(final String errmsg) {
-    return new CommandProcessorResponse(1, "LLAP Cluster Processor Helper Failed:" + errmsg, null);
-  }
-
   @Override
-  public CommandProcessorResponse run(String command) {
+  public CommandProcessorResponse run(String command) throws CommandProcessorException {
     SessionState ss = SessionState.get();
     command = new VariableSubstitution(() -> SessionState.get().getHiveVariables()).substitute(ss.getConf(), command);
     String[] tokens = command.split("\\s+");
     if (tokens.length < 1) {
-      return returnErrorResponse("Command arguments are empty.");
+      throw new CommandProcessorException("LLAP Cluster Processor Helper Failed: Command arguments are empty.");
     }
 
     String params[] = Arrays.copyOfRange(tokens, 1, tokens.length);
     try {
       return llapClusterCommandHandler(ss, params);
     } catch (Exception e) {
-      return returnErrorResponse(e.getMessage());
+      throw new CommandProcessorException("LLAP Cluster Processor Helper Failed: " + e.getMessage());
     }
   }
 
-  private CommandProcessorResponse llapClusterCommandHandler(final SessionState ss,
-    final String[] params) throws ParseException {
+  private CommandProcessorResponse llapClusterCommandHandler(SessionState ss, String[] params)
+      throws ParseException, CommandProcessorException {
     CommandLine args = parseCommandArgs(CLUSTER_OPTIONS, params);
     String hs2Host = null;
     if (ss.isHiveServerQuery()) {
@@ -102,29 +100,27 @@ public class LlapClusterResourceProcessor implements CommandProcessor {
             instance.getRpcPort(), instance.getResource().getMemory() * 1024L * 1024L,
             instance.getResource().getVirtualCores()));
         }
-        return createProcessorSuccessResponse();
+        return new CommandProcessorResponse(getSchema(), null);
       } catch (Exception e) {
         LOG.error("Unable to list LLAP instances. err: ", e);
-        return returnErrorResponse("Unable to list LLAP instances. err: " + e.getMessage());
+        throw new CommandProcessorException(
+            "LLAP Cluster Processor Helper Failed: Unable to list LLAP instances. err: " + e.getMessage());
       }
     } else {
       String usage = getUsageAsString();
-      return returnErrorResponse("Unsupported sub-command option. " + usage);
+      throw new CommandProcessorException(
+          "LLAP Cluster Processor Helper Failed: Unsupported sub-command option. " + usage);
     }
-  }
-
-  private CommandProcessorResponse createProcessorSuccessResponse() {
-    return new CommandProcessorResponse(0, null, null, getSchema());
   }
 
   private Schema getSchema() {
     Schema sch = new Schema();
-    sch.addToFieldSchemas(new FieldSchema("applicationId", "string", ""));
-    sch.addToFieldSchemas(new FieldSchema("workerIdentity", "string", ""));
-    sch.addToFieldSchemas(new FieldSchema("hostname", "string", ""));
-    sch.addToFieldSchemas(new FieldSchema("rpcPort", "string", ""));
-    sch.addToFieldSchemas(new FieldSchema("memory", "string", ""));
-    sch.addToFieldSchemas(new FieldSchema("vcores", "string", ""));
+    sch.addToFieldSchemas(new FieldSchema("applicationId", serdeConstants.STRING_TYPE_NAME, ""));
+    sch.addToFieldSchemas(new FieldSchema("workerIdentity", serdeConstants.STRING_TYPE_NAME, ""));
+    sch.addToFieldSchemas(new FieldSchema("hostname", serdeConstants.STRING_TYPE_NAME, ""));
+    sch.addToFieldSchemas(new FieldSchema("rpcPort", serdeConstants.STRING_TYPE_NAME, ""));
+    sch.addToFieldSchemas(new FieldSchema("memory", serdeConstants.STRING_TYPE_NAME, ""));
+    sch.addToFieldSchemas(new FieldSchema("vcores", serdeConstants.STRING_TYPE_NAME, ""));
     sch.putToProperties(SERIALIZATION_NULL_FORMAT, defaultNullString);
     return sch;
   }

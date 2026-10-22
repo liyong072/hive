@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.cli.control;
 
@@ -26,16 +27,18 @@ import java.net.URL;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang.StringUtils;
-import org.apache.hadoop.hive.ql.QTestUtil;
-import org.apache.hadoop.hive.ql.QTestUtil.FsType;
-import org.apache.hadoop.hive.ql.QTestUtil.MiniClusterType;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.ql.QTestSystemProperties;
+import org.apache.hadoop.hive.ql.QTestMiniClusters.FsType;
+import org.apache.hadoop.hive.ql.QTestMiniClusters.MiniClusterType;
 import org.apache.hive.testutils.HiveTestEnvSetup;
 
 import com.google.common.base.Splitter;
@@ -47,11 +50,6 @@ public abstract class AbstractCliConfig {
   public static final String HIVE_ROOT = HiveTestEnvSetup.HIVE_ROOT;
   private static final Logger LOG = LoggerFactory.getLogger(AbstractCliConfig.class);
 
-  enum MetastoreType {
-    sql
-  }
-
-  private MetastoreType metastoreType = MetastoreType.sql;
   private String queryFile;
   private String queryFileRegex;
   private String queryDirectory;
@@ -68,18 +66,23 @@ public abstract class AbstractCliConfig {
   private String hiveConfDir;
   private MiniClusterType clusterType;
   private FsType fsType;
+  private String metastoreType;
 
   // FIXME: null value is treated differently on the other end..when those filter will be
   // moved...this may change
   private Set<String> includeQueryFileNames;
   private Class<? extends CliAdapter> cliAdapter;
+  private Map<HiveConf.ConfVars, String> customConfigValueMap;
 
   public AbstractCliConfig(Class<? extends CliAdapter> adapter) {
     cliAdapter = adapter;
-    clusterType = MiniClusterType.none;
+    clusterType = MiniClusterType.NONE;
     queryFile = getSysPropValue("qfile");
     queryFileRegex = getSysPropValue("qfile_regex");
     runDisabled = getSysPropValue("run_disabled");
+    // By default get metastoreType from system properties but allow specific configs to override
+    metastoreType = QTestSystemProperties.getMetaStoreDb() == null ? "derby"
+        : QTestSystemProperties.getMetaStoreDb();
   }
 
   protected void setQueryDir(String dir) {
@@ -135,7 +138,7 @@ public abstract class AbstractCliConfig {
     }
   }
 
-  protected void excludeQuery(String qFile) {
+  private void excludeQuery(String qFile) {
     excludedQueryFileNames.add(qFile);
   }
 
@@ -244,7 +247,8 @@ public abstract class AbstractCliConfig {
     for (String qFileName : excludedQueryFileNames) {
       // in case of running as ptest, exclusions should be respected,
       // because test drivers receive every qfiles regardless of exclusions
-      if ("hiveptest".equals(System.getProperty("user.name")) || !isQFileSpecified()) {
+      if ("hiveptest".equals(System.getProperty("user.name")) || !isQFileSpecified()
+          || QTestSystemProperties.shouldForceExclusions()) {
         testFiles.remove(new File(queryDir, qFileName));
       }
     }
@@ -342,7 +346,6 @@ public abstract class AbstractCliConfig {
       this.initScript = initScript;
     }
   }
-
   public String getHiveConfDir() {
     return hiveConfDir;
   }
@@ -372,6 +375,7 @@ public abstract class AbstractCliConfig {
     if (clusterType == null) {
       throw new RuntimeException("clustertype cant be null");
     }
+    this.setFsType(clusterType.getDefaultFsType());
   }
 
   protected FsType getFsType() {
@@ -400,23 +404,6 @@ public abstract class AbstractCliConfig {
     }
   }
 
-  protected void setMetastoreType(MetastoreType mt) {
-    String metaStoreTypeProperty = getSysPropValue("metaStoreType");
-    if (metaStoreTypeProperty != null) {
-      if (metaStoreTypeProperty.equalsIgnoreCase("sql")) {
-        metastoreType = MetastoreType.sql;
-      } else {
-        throw new IllegalArgumentException("Unknown metastore type: " + metaStoreTypeProperty);
-      }
-    } else {
-      metastoreType = mt;
-    }
-  }
-
-  public MetastoreType getMetastoreType() {
-    return metastoreType;
-  }
-
   public String getQueryDirectory() {
     return queryDirectory;
   }
@@ -425,4 +412,19 @@ public abstract class AbstractCliConfig {
     return new File(new File(HIVE_ROOT), dir).getAbsolutePath();
   }
 
+  public String getMetastoreType() {
+    return metastoreType;
+  }
+
+  protected void setMetastoreType(String metastoreType) {
+    this.metastoreType = metastoreType;
+  }
+
+  protected void setCustomConfigValueMap(Map<HiveConf.ConfVars, String> customConfigValueMap) {
+    this.customConfigValueMap = customConfigValueMap;
+  }
+  
+  public Map<HiveConf.ConfVars, String> getCustomConfigValueMap() {
+    return this.customConfigValueMap;
+  }
 }

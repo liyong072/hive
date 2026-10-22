@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.accumulo.serde;
@@ -33,21 +34,21 @@ import org.apache.hadoop.hive.serde2.objectinspector.StructField;
  * AccumuloCompositeKey extension of LazyStruct. All complex composite keys should extend this class
  * and override the {@link LazyStruct#getField(int)} method where fieldID corresponds to the ID of a
  * key in the composite key.
- * <p>
+ * <br>
  * For example, for a composite key <i>"/part1/part2/part3"</i>, <i>part1</i> will have an id
  * <i>0</i>, <i>part2</i> will have an id <i>1</i> and <i>part3</i> will have an id <i>2</i>. Custom
  * implementations of getField(fieldID) should return the value corresponding to that fieldID. So,
- * for the above example, the value returned for <i>getField(0)</i> should be </i>part1</i>,
+ * for the above example, the value returned for <i>getField(0)</i> should be <i>part1</i>,
  * <i>getField(1)</i> should be <i>part2</i> and <i>getField(2)</i> should be <i>part3</i>.
- * </p>
+ * <br>
  *
- * <p>
+ * <br>
  * All custom implementation are expected to have a constructor of the form:
  *
  * <pre>
  * MyCustomCompositeKey(LazySimpleStructObjectInspector oi, Properties tbl, Configuration conf)
  * </pre>
- * </p>
+ * <br>
  *
  */
 public class AccumuloCompositeRowId extends LazyStruct {

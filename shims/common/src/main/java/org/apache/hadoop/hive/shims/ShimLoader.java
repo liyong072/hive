@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.shims;
 
@@ -21,6 +22,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.hadoop.util.VersionInfo;
+import org.apache.hadoop.util.SuppressFBWarnings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +35,6 @@ public abstract class ShimLoader {
   public static final String HADOOP23VERSIONNAME = "0.23";
 
   private static volatile HadoopShims hadoopShims;
-  private static SchedulerShim schedulerShim;
 
   /**
    * The names of the classes for shimming Hadoop for each major version.
@@ -64,7 +65,7 @@ public abstract class ShimLoader {
 
   static {
     HADOOP_THRIFT_AUTH_BRIDGE_CLASSES.put(HADOOP23VERSIONNAME,
-        "org.apache.hadoop.hive.thrift.HadoopThriftAuthBridge23");
+        "org.apache.hadoop.hive.metastore.security.HadoopThriftAuthBridge23");
   }
 
 
@@ -75,6 +76,7 @@ public abstract class ShimLoader {
    * Factory method to get an instance of HadoopShims based on the
    * version of Hadoop on the classpath.
    */
+  @SuppressFBWarnings(value = "MS_EXPOSE_REP", justification = "intended")
   public static HadoopShims getHadoopShims() {
     if (hadoopShims == null) {
       synchronized (ShimLoader.class) {
@@ -91,12 +93,6 @@ public abstract class ShimLoader {
     return hadoopShims;
   }
 
-  public static synchronized SchedulerShim getSchedulerShims() {
-    if (schedulerShim == null) {
-      schedulerShim = createShim(SCHEDULER_SHIM_CLASSE, SchedulerShim.class);
-    }
-    return schedulerShim;
-  }
 
   private static <T> T loadShims(Map<String, String> classMap, Class<T> xface) {
     String vers = getMajorVersion();

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.cli.service;
@@ -27,7 +28,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -44,9 +45,10 @@ class AsyncTaskCopyAuxJars implements Callable<Void> {
   private static final Logger LOG = LoggerFactory.getLogger(AsyncTaskCopyAuxJars.class.getName());
 
   private static final String[] DEFAULT_AUX_CLASSES =
-      new String[] {"org.apache.hive.hcatalog.data.JsonSerDe", "org.apache.hadoop.hive.druid.DruidStorageHandler",
-          "org.apache.hive.storage.jdbc.JdbcStorageHandler", "org.apache.commons.dbcp.BasicDataSourceFactory",
-          "org.apache.commons.pool.impl.GenericObjectPool", "org.apache.hadoop.hive.kafka.KafkaStorageHandler"};
+      new String[] {"org.apache.hive.hcatalog.data.JsonSerDe",
+          "org.apache.hive.storage.jdbc.JdbcStorageHandler", "org.apache.commons.dbcp2.BasicDataSourceFactory",
+          "org.apache.commons.pool2.impl.GenericObjectPool", "org.apache.hadoop.hive.kafka.KafkaStorageHandler",
+          "org.apache.hadoop.hive.kudu.KuduStorageHandler"};
   private static final String HBASE_SERDE_CLASS = "org.apache.hadoop.hive.hbase.HBaseSerDe";
 
   private final LlapServiceCommandLine cl;
@@ -67,6 +69,16 @@ class AsyncTaskCopyAuxJars implements Callable<Void> {
     localizeJarForClass(conf.getStringCollection("io.compression.codecs"), false);
     localizeJarForClass(getDbSpecificJdbcJars(), false);
 
+    Set<String> auxJars = new HashSet<>();
+    // There are many ways to have AUX jars in Hive... sigh
+    if (cl.getIsHiveAux()) {
+      // Note: we don't add ADDED jars, RELOADABLE jars, etc. That is by design; there are too many ways
+      // to add jars in Hive, some of which are session/etc. specific. Env + conf + arg should be enough.
+      addAuxJarsToSet(auxJars, conf.getAuxJars(), ",");
+      addAuxJarsToSet(auxJars, System.getenv("HIVE_AUX_JARS_PATH"), ":");
+      LOG.info("Adding the following aux jars from the environment and configs: " + auxJars);
+    }
+
     if (cl.getIsHBase()) {
       try {
         localizeJarForClass(Arrays.asList(HBASE_SERDE_CLASS), true);
@@ -78,22 +90,13 @@ class AsyncTaskCopyAuxJars implements Callable<Void> {
             rawFs.copyFromLocalFile(new Path(jarPath), libDir);
           }
         }
+        addAuxJarsToSet(auxJars, cl.getHBaseJars(), ",");
       } catch (Throwable t) {
         String err = "Failed to add HBase jars. Use --auxhbase=false to avoid localizing them";
         LOG.error(err);
         System.err.println(err);
         throw new RuntimeException(t);
       }
-    }
-
-    Set<String> auxJars = new HashSet<>();
-    // There are many ways to have AUX jars in Hive... sigh
-    if (cl.getIsHiveAux()) {
-      // Note: we don't add ADDED jars, RELOADABLE jars, etc. That is by design; there are too many ways
-      // to add jars in Hive, some of which are session/etc. specific. Env + conf + arg should be enough.
-      addAuxJarsToSet(auxJars, conf.getAuxJars(), ",");
-      addAuxJarsToSet(auxJars, System.getenv("HIVE_AUX_JARS_PATH"), ":");
-      LOG.info("Adding the following aux jars from the environment and configs: " + auxJars);
     }
 
     addAuxJarsToSet(auxJars, cl.getAuxJars(), ",");

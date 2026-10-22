@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.io.orc;
 
@@ -83,6 +84,7 @@ public class TestNewInputOutputFormat {
         + File.separator + "mapred" + File.separator + "staging");
     conf.set("mapred.temp.dir", workDir + File.separator + this.getClass().getSimpleName()
         + File.separator + "mapred" + File.separator + "temp");
+    conf.set("hive.exec.orc.default.compress", "ZLIB");
     localFs = FileSystem.get(conf);
   }
   
@@ -225,7 +227,8 @@ public class TestNewInputOutputFormat {
     
     assertEquals(intWritable.get(), firstIntValue);
     assertEquals(text.toString(), firstStringValue);
-    
+
+    rows.close();
     localFs.delete(outputPath, true);
   }
   
@@ -258,9 +261,9 @@ public class TestNewInputOutputFormat {
     assertTrue(result);
     
     Path outputFilePath = new Path(outputPath, "part-m-00000");
-    Reader reader = OrcFile.createReader(outputFilePath,
-        OrcFile.readerOptions(conf).filesystem(localFs));
-    assertEquals(reader.getCompression(), CompressionKind.SNAPPY);
+    try (Reader reader = OrcFile.createReader(outputFilePath, OrcFile.readerOptions(conf).filesystem(localFs))) {
+      assertEquals(reader.getCompression(), CompressionKind.SNAPPY);
+    }
     
     localFs.delete(outputPath, true);
   }
@@ -410,7 +413,8 @@ public class TestNewInputOutputFormat {
     assertEquals(map.get("were"), Integer.valueOf(3));
     
     assertFalse(rows.hasNext());
-    
+
+    rows.close();
     localFs.delete(outputPath, true);
   }
   

@@ -1,15 +1,20 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.daemon.impl;
@@ -22,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.google.common.base.Supplier;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.llap.LlapNodeId;
 import org.apache.hadoop.hive.llap.daemon.FragmentCompletionHandler;
@@ -34,6 +40,7 @@ import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.SubmitWor
 import org.apache.hadoop.hive.llap.daemon.rpc.LlapDaemonProtocolProtos.VertexOrBinary;
 import org.apache.hadoop.hive.llap.metrics.LlapDaemonExecutorMetrics;
 import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.tez.dag.records.TezDAGID;
 import org.apache.tez.dag.records.TezVertexID;
@@ -55,6 +62,13 @@ public class TaskExecutorTestHelpers {
     long currentAttemptStartTime, boolean canFinish, long workTime, boolean isGuaranteed) {
     SubmitWorkRequestProto request = createSubmitWorkRequestProto(
         fragmentNum, parallelism, firstAttemptStartTime, currentAttemptStartTime, isGuaranteed);
+    return createMockRequest(canFinish, canFinish, workTime, request, isGuaranteed);
+  }
+
+  public static MockRequest createMockRequest(int fragmentNum, int parallelism, long firstAttemptStartTime,
+      long currentAttemptStartTime, boolean canFinish, long workTime, boolean isGuaranteed, int dagId) {
+    SubmitWorkRequestProto request = createSubmitWorkRequestProto(fragmentNum, parallelism, 0,
+        firstAttemptStartTime, currentAttemptStartTime, 1, "MockDag", dagId, isGuaranteed);
     return createMockRequest(canFinish, canFinish, workTime, request, isGuaranteed);
   }
 
@@ -102,7 +116,7 @@ public class TaskExecutorTestHelpers {
         new QueryInfo(queryIdentifier, "fake_app_id_string", "fake_dag_id_string", "fake_dag_name",
             "fakeHiveQueryId", 1, "fakeUser",
             new ConcurrentHashMap<String, LlapDaemonProtocolProtos.SourceStateProto>(),
-            new String[0], null, "fakeUser", null, nodeId, null, null, false);
+            new String[0], null, "fakeUser", null, nodeId, null, null, false, null);
     return queryInfo;
   }
 
@@ -131,7 +145,7 @@ public class TaskExecutorTestHelpers {
       int fragmentNumber, int selfAndUpstreamParallelism,
       int selfAndUpstreamComplete, long firstAttemptStartTime,
       long currentAttemptStartTime, int withinDagPriority) {
-    return createSubmitWorkRequestProto(fragmentNumber, selfAndUpstreamParallelism, 0, firstAttemptStartTime,
+    return createSubmitWorkRequestProto(fragmentNumber, selfAndUpstreamParallelism, selfAndUpstreamComplete, firstAttemptStartTime,
         currentAttemptStartTime, withinDagPriority, "MockDag", false);
   }
 
@@ -143,14 +157,21 @@ public class TaskExecutorTestHelpers {
         currentAttemptStartTime, withinDagPriority, "MockDag", isGuaranteed);
   }
 
+  private static SubmitWorkRequestProto createSubmitWorkRequestProto(
+      int fragmentNumber, int selfAndUpstreamParallelism, int selfAndUpstreamComplete, long firstAttemptStartTime,
+      long currentAttemptStartTime, int withinDagPriority, String mockDag, boolean isGuaranteed) {
+    return createSubmitWorkRequestProto(fragmentNumber, selfAndUpstreamParallelism, selfAndUpstreamComplete, firstAttemptStartTime,
+        currentAttemptStartTime, withinDagPriority, mockDag, 35, isGuaranteed);
+  }
+
   public static SubmitWorkRequestProto createSubmitWorkRequestProto(
       int fragmentNumber, int selfAndUpstreamParallelism,
       int selfAndUpstreamComplete, long firstAttemptStartTime,
-      long currentAttemptStartTime, int withinDagPriority, String dagName,
+      long currentAttemptStartTime, int withinDagPriority, String dagName, int dagId,
       boolean isGuaranteed) {
     ApplicationId appId = ApplicationId.newInstance(9999, 72);
-    TezDAGID dagId = TezDAGID.getInstance(appId, 1);
-    TezVertexID vId = TezVertexID.getInstance(dagId, 35);
+    TezDAGID dag = TezDAGID.getInstance(appId, 1);
+    TezVertexID vId = TezVertexID.getInstance(dag, dagId);
     return SubmitWorkRequestProto
         .newBuilder()
         .setAttemptNumber(0)
@@ -166,7 +187,7 @@ public class TaskExecutorTestHelpers {
                     QueryIdentifierProto.newBuilder()
                         .setApplicationIdString(appId.toString())
                         .setAppAttemptNumber(0)
-                        .setDagIndex(dagId.getId())
+                        .setDagIndex(dag.getId())
                         .build())
                 .setVertexIndex(vId.getId())
                 .setVertexName("MockVertex")
@@ -212,11 +233,11 @@ public class TaskExecutorTestHelpers {
     public MockRequest(SubmitWorkRequestProto requestProto, QueryFragmentInfo fragmentInfo,
                        boolean canFinish, boolean canFinishQueue, long workTime,
                        TezEvent initialEvent, boolean isGuaranteed) {
-      super(requestProto, fragmentInfo, new Configuration(), new ExecutionContextImpl("localhost"),
+      super(requestProto, fragmentInfo, Configuration::new, new ExecutionContextImpl("localhost"),
           null, new Credentials(), 0, mock(AMReporter.class), null, mock(
           LlapDaemonExecutorMetrics.class), mock(KilledTaskHandler.class), mock(
           FragmentCompletionHandler.class), new DefaultHadoopShim(), null,
-          requestProto.getWorkSpec().getVertex(), initialEvent, null, mock(
+          requestProto.getWorkSpec().getVertex(), initialEvent, mock(UserGroupInformation.class), mock(
           SchedulerFragmentCompletingListener.class), mock(SocketFactory.class), isGuaranteed, null);
       this.workTime = workTime;
       this.canFinish = canFinish;

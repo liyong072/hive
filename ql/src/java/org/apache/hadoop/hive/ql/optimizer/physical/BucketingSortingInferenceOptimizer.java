@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.physical;
@@ -36,12 +37,12 @@ import org.apache.hadoop.hive.ql.exec.SelectOperator;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.mr.ExecDriver;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.PreOrderWalker;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleExactMatch;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -51,9 +52,9 @@ import org.apache.hadoop.hive.ql.plan.OperatorDesc;
  *
  * BucketingSortingInferenceOptimizer.
  *
- * For each map reduce task, attmepts to infer bucketing and sorting metadata for the outputs.
+ * For each map reduce task, attempts to infer bucketing and sorting metadata for the outputs.
  *
- * Currently only map reduce tasks which produce final output have there output metadata inferred,
+ * Currently, only map reduce tasks which produce final output have there output metadata inferred,
  * but it can be extended to intermediate tasks as well.
  *
  * This should be run as the last physical optimizer, as other physical optimizers may invalidate
@@ -99,7 +100,7 @@ public class BucketingSortingInferenceOptimizer implements PhysicalPlanResolver 
       // In particular, this guarantees that the first operator is the reducer
       // (and its parent(s) are ReduceSinkOperators) since it begins walking the tree from
       // the reducer.
-      Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
+      Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
       opRules.put(new RuleRegExp("R1", SelectOperator.getOperatorName() + "%"),
           BucketingSortingOpProcFactory.getSelProc());
       // Matches only GroupByOperators which are reducers, rather than map group by operators,
@@ -132,9 +133,9 @@ public class BucketingSortingInferenceOptimizer implements PhysicalPlanResolver 
 
       // The dispatcher fires the processor corresponding to the closest matching rule and passes
       // the context along
-      Dispatcher disp = new DefaultRuleDispatcher(BucketingSortingOpProcFactory.getDefaultProc(),
+      SemanticDispatcher disp = new DefaultRuleDispatcher(BucketingSortingOpProcFactory.getDefaultProc(),
           opRules, bCtx);
-      GraphWalker ogw = new PreOrderWalker(disp);
+      SemanticGraphWalker ogw = new PreOrderWalker(disp);
 
       // Create a list of topop nodes
       ArrayList<Node> topNodes = new ArrayList<Node>();

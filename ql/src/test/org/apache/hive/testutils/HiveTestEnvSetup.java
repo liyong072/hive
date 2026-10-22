@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.testutils;
@@ -63,6 +64,11 @@ import com.google.common.collect.Sets;
  * Later this should be migrated to junit5...when it will be possible; see HIVE-18495
  */
 public class HiveTestEnvSetup extends ExternalResource {
+
+  private static final String TEST_DATA_DIR = new File(System.getProperty("java.io.tmpdir") +
+    File.separator + HiveTestEnvSetup.class.getCanonicalName()
+    + "-" + System.currentTimeMillis()
+  ).getPath().replaceAll("\\\\", "/");
 
   static interface IHiveTestRule {
     default void beforeClass(HiveTestEnvContext ctx) throws Exception {
@@ -126,7 +132,6 @@ public class HiveTestEnvSetup extends ExternalResource {
       System.setProperty("test.tmp.dir.uri", "file://" + tmpFolderPath);
       System.setProperty("test.dfs.mkdir", "-mkdir -p");
       System.setProperty("test.warehouse.dir", tmpFolderPath + "/warehouse"); // this is changed to be *under* tmp dir
-      System.setProperty("java.net.preferIPv4Stack", "true"); // not sure if this will have any effect..
       System.setProperty("test.src.tables", "src");
       System.setProperty("hive.jar.directory", tmpFolderPath);
     }
@@ -146,7 +151,7 @@ public class HiveTestEnvSetup extends ExternalResource {
       FileUtils.copyDirectory(new File(DATA_DIR + "/conf/tez"), confFolder);
 
       HiveConf.setHiveSiteLocation(new File(confFolder, "hive-site.xml").toURI().toURL());
-      HiveConf.setHivemetastoreSiteUrl(new File(confFolder, "hivemetastore-site.xml").toURI().toURL());
+      HiveConf.setMetastoreSiteLocation(new File(confFolder, "metastore-site.xml").toURI().toURL());
       // FIXME: hiveServer2SiteUrl is not settable?
 
       ctx.hiveConf = new HiveConf(IDriver.class);
@@ -159,6 +164,12 @@ public class HiveTestEnvSetup extends ExternalResource {
         savedConf = new HiveConf(ctx.hiveConf);
       }
       // service a fresh conf for every testMethod
+      ctx.hiveConf = new HiveConf(savedConf);
+    }
+
+    @Override
+    public void afterMethod(HiveTestEnvContext ctx) throws Exception {
+      // create a fresh hiveconf; afterclass methods may get into trouble without this
       ctx.hiveConf = new HiveConf(savedConf);
     }
 
@@ -222,11 +233,25 @@ public class HiveTestEnvSetup extends ExternalResource {
       HadoopShims shims = ShimLoader.getHadoopShims();
       mr1 = shims.getLocalMiniTezCluster(ctx.hiveConf, true);
       mr1.setupConfiguration(ctx.hiveConf);
+      setupTez(ctx.hiveConf);
     }
 
     @Override
     public void afterClass(HiveTestEnvContext ctx) throws Exception {
       mr1.shutdown();
+    }
+
+    private void setupTez(HiveConf conf) {
+      conf.setVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE, "tez");
+      conf.setVar(HiveConf.ConfVars.HIVE_USER_INSTALL_DIR, TEST_DATA_DIR);
+      conf.set("tez.am.resource.memory.mb", "128");
+      conf.set("tez.am.dag.scheduler.class", "org.apache.tez.dag.app.dag.impl.DAGSchedulerNaturalOrderControlled");
+      conf.setBoolean("tez.local.mode", true);
+      conf.setBoolean("tez.local.mode.without.network", true);
+      conf.set("fs.defaultFS", "file:///");
+      conf.setBoolean("tez.runtime.optimize.local.fetch", true);
+      conf.set("tez.staging-dir", TEST_DATA_DIR);
+      conf.setBoolean("tez.ignore.lib.uris", true);
     }
   }
 

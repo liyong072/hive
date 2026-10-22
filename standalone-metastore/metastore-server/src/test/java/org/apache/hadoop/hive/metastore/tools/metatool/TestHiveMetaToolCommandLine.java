@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.tools.metatool;
@@ -44,6 +45,8 @@ public class TestHiveMetaToolCommandLine {
     assertNull(cl.getJDOQLQuery());
     assertFalse(cl.isUpdateLocation());
     assertNull(cl.getUpddateLocationParams());
+    assertFalse(cl.isListExtTblLocs());
+    assertNull(cl.getListExtTblLocsParams());
     assertFalse(cl.isDryRun());
     assertNull(cl.getSerdePropKey());
     assertNull(cl.getTablePropKey());
@@ -57,6 +60,8 @@ public class TestHiveMetaToolCommandLine {
     assertEquals("select a from b", cl.getJDOQLQuery());
     assertFalse(cl.isUpdateLocation());
     assertNull(cl.getUpddateLocationParams());
+    assertFalse(cl.isListExtTblLocs());
+    assertNull(cl.getListExtTblLocsParams());
     assertFalse(cl.isDryRun());
     assertNull(cl.getSerdePropKey());
     assertNull(cl.getTablePropKey());
@@ -73,6 +78,8 @@ public class TestHiveMetaToolCommandLine {
     assertTrue(cl.isUpdateLocation());
     assertEquals("hdfs://new.loc", cl.getUpddateLocationParams()[0]);
     assertEquals("hdfs://old.loc", cl.getUpddateLocationParams()[1]);
+    assertFalse(cl.isListExtTblLocs());
+    assertNull(cl.getListExtTblLocsParams());
     assertTrue(cl.isDryRun());
     assertEquals("abc", cl.getSerdePropKey());
     assertEquals("def", cl.getTablePropKey());
@@ -81,7 +88,7 @@ public class TestHiveMetaToolCommandLine {
   @Test
   public void testNoTask() throws ParseException {
     exception.expect(IllegalArgumentException.class);
-    exception.expectMessage("exectly one of -listFSRoot, -executeJDOQL, -updateLocation must be set");
+    exception.expectMessage("exactly one of -listFSRoot, -executeJDOQL, -updateLocation, -listExtTblLocs, -diffExtTblLocs, -metadataSummary, -dedupColumns must be set");
 
     new HiveMetaToolCommandLine(new String[] {});
   }
@@ -89,7 +96,7 @@ public class TestHiveMetaToolCommandLine {
   @Test
   public void testMultipleTask() throws ParseException {
     exception.expect(IllegalArgumentException.class);
-    exception.expectMessage("exectly one of -listFSRoot, -executeJDOQL, -updateLocation must be set");
+    exception.expectMessage("exactly one of -listFSRoot, -executeJDOQL, -updateLocation, -listExtTblLocs, -diffExtTblLocs, -metadataSummary, -dedupColumns must be set");
 
     new HiveMetaToolCommandLine(new String[] {"-listFSRoot", "-executeJDOQL", "select a from b"});
   }
@@ -103,17 +110,80 @@ public class TestHiveMetaToolCommandLine {
   }
 
   @Test
+  public void testListExtTblLocsOneArgument() throws ParseException {
+    exception.expect(IllegalArgumentException.class);
+    exception.expectMessage("HiveMetaTool:listExtTblLocs takes in 2 arguments but was passed 1 arguments");
+
+    new HiveMetaToolCommandLine(new String[] {"-listExtTblLocs", "db1"});
+  }
+
+  @Test
+  public void testDiffExtTblLocsArgCount() throws ParseException {
+    exception.expect(IllegalArgumentException.class);
+    exception.expectMessage("HiveMetaTool:diffExtTblLocs takes in 3 arguments but was passed 1 arguments");
+    new HiveMetaToolCommandLine(new String[] {"-diffExtTblLocs", "file1"});
+
+    exception.expect(IllegalArgumentException.class);
+    exception.expectMessage("HiveMetaTool:diffExtTblLocs takes in 3 arguments but was passed 2 arguments");
+    new HiveMetaToolCommandLine(new String[] {"-diffExtTblLocs", "file1", "file2"});
+
+  }
+
+  @Test
   public void testDryRunNotAllowed() throws ParseException {
     exception.expect(IllegalArgumentException.class);
-    exception.expectMessage("-dryRun, -serdePropKey, -tablePropKey may be used only for the -updateLocation command");
+    exception.expectMessage("-dryRun may be used only for the -updateLocation or -dedupColumns commands");
 
     new HiveMetaToolCommandLine(new String[] {"-listFSRoot", "-dryRun"});
   }
 
   @Test
+  public void testParseDedupColumns() throws ParseException {
+    HiveMetaToolCommandLine cl = new HiveMetaToolCommandLine(
+        new String[] {"-dedupColumns", "hive", "default", "person", "-dryRun", "-verbose"});
+    assertTrue(cl.isDedupColumns());
+    assertTrue(cl.isDryRun());
+    assertTrue(cl.isVerbose());
+    assertEquals("hive", cl.getDedupColumnsParams()[0]);
+    assertEquals("default", cl.getDedupColumnsParams()[1]);
+    assertEquals("person", cl.getDedupColumnsParams()[2]);
+
+    cl = new HiveMetaToolCommandLine(new String[] {"-dedupColumns"});
+    assertTrue(cl.isDedupColumns());
+    assertEquals(0, cl.getDedupColumnsParams().length);
+
+    cl = new HiveMetaToolCommandLine(new String[] {"-dedupColumns", "-timeout", "3600"});
+    assertEquals(Long.valueOf(3600L), cl.getDedupColumnsTimeoutSeconds());
+  }
+
+  @Test
+  public void testTimeoutNotAllowed() throws ParseException {
+    exception.expect(IllegalArgumentException.class);
+    exception.expectMessage("-timeout may be used only for the -dedupColumns command");
+
+    new HiveMetaToolCommandLine(new String[] {"-listFSRoot", "-timeout", "60"});
+  }
+
+  @Test
+  public void testInvalidTimeout() throws ParseException {
+    exception.expect(IllegalArgumentException.class);
+    exception.expectMessage("HiveMetaTool:-timeout must be a positive number of seconds");
+
+    new HiveMetaToolCommandLine(new String[] {"-dedupColumns", "-timeout", "0"});
+  }
+
+  @Test
+  public void testVerboseNotAllowed() throws ParseException {
+    exception.expect(IllegalArgumentException.class);
+    exception.expectMessage("-verbose may be used only for the -dedupColumns command");
+
+    new HiveMetaToolCommandLine(new String[] {"-listFSRoot", "-verbose"});
+  }
+
+  @Test
   public void testSerdePropKeyNotAllowed() throws ParseException {
     exception.expect(IllegalArgumentException.class);
-    exception.expectMessage("-dryRun, -serdePropKey, -tablePropKey may be used only for the -updateLocation command");
+    exception.expectMessage("-serdePropKey, -tablePropKey may be used only for the -updateLocation command");
 
     new HiveMetaToolCommandLine(new String[] {"-listFSRoot", "-serdePropKey", "abc"});
   }
@@ -121,7 +191,7 @@ public class TestHiveMetaToolCommandLine {
   @Test
   public void testTablePropKeyNotAllowed() throws ParseException {
     exception.expect(IllegalArgumentException.class);
-    exception.expectMessage("-dryRun, -serdePropKey, -tablePropKey may be used only for the -updateLocation command");
+    exception.expectMessage("-serdePropKey, -tablePropKey may be used only for the -updateLocation command");
 
     new HiveMetaToolCommandLine(new String[] {"-executeJDOQL", "select a from b", "-tablePropKey", "abc"});
   }

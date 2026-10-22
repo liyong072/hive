@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.filemeta;
@@ -51,7 +52,7 @@ public class OrcFileMetadataHandler extends FileMetadataHandler {
       ByteBuffer metadata = metadatas[i].duplicate(); // Duplicate to avoid modification.
       SplitInfos result = null;
       try {
-        result = getFileFormatProxy().applySargToMetadata(sarg, metadata);
+        result = getFileFormatProxy().applySargToMetadata(sarg, metadata, conf);
       } catch (IOException ex) {
         LOG.error("Failed to apply SARG to metadata", ex);
         metadatas[i] = null;

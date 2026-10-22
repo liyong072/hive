@@ -9,18 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.teradata;
 
 import org.apache.commons.io.input.SwappedDataInputStream;
-import org.apache.commons.lang.ArrayUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.common.type.Date;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.common.type.Timestamp;
@@ -108,8 +109,8 @@ public class TeradataBinaryDataInputStream extends SwappedDataInputStream {
    * Read DATE.
    * The representation of date in Teradata binary format is:
    * The Date D is a int with 4 bytes using little endian,
-   * The representation is (D+19000000).ToString -> YYYYMMDD,
-   * eg: Date 07 b2 01 00 -> 111111 in little endian -> 19111111 - > 1911.11.11.
+   * The representation is (D+19000000).ToString -&gt; YYYYMMDD,
+   * eg: Date 07 b2 01 00 -&gt; 111111 in little endian -&gt; 19111111 - &gt; 1911.11.11.
    * the null date will use 0 to pad.
    *
    * @return the date
@@ -135,8 +136,8 @@ public class TeradataBinaryDataInputStream extends SwappedDataInputStream {
   /**
    * Read CHAR(N).
    * The representation of char in Teradata binary format is
-   * the byte number to read is based on the [charLength] * [bytePerChar] <- totalLength,
-   * bytePerChar is decided by the charset: LATAIN charset is 2 bytes per char and UNICODE charset is 3 bytes per char.
+   * the byte number to read is based on the [charLength] * [bytePerChar] &lt;- totalLength,
+   * bytePerChar is decided by the charset: LATIN charset is 2 bytes per char and UNICODE charset is 3 bytes per char.
    * the null char will use space to pad.
    *
    * @param totalLength the total length

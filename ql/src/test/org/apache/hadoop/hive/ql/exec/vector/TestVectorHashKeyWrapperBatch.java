@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector;
@@ -27,10 +28,12 @@ import java.sql.Timestamp;
 
 import org.junit.Test;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.IdentityExpression;
+import org.apache.hadoop.hive.ql.exec.vector.expressions.StringExpr;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorExpression;
 import org.apache.hadoop.hive.ql.exec.vector.util.FakeVectorRowBatchFromObjectIterables;
 import org.apache.hadoop.hive.ql.exec.vector.wrapper.VectorHashKeyWrapperBase;
 import org.apache.hadoop.hive.ql.exec.vector.wrapper.VectorHashKeyWrapperBatch;
+import org.apache.hadoop.hive.ql.exec.vector.wrapper.VectorHashKeyWrapperGeneral;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
@@ -85,4 +88,45 @@ public class TestVectorHashKeyWrapperBatch {
     assertFalse(vhk.isNull(0));
     assertEquals(vhk.getTimestamp(0), ts1);
   }
+
+  // Test for HIVE-24575
+  @Test
+  public void testVectorHashKeyWrapperGeneralCopyKey() throws HiveException {
+    VectorExpression[] keyExpressions = new VectorExpression[] { new IdentityExpression(0) };
+    TypeInfo[] typeInfos = new TypeInfo[] {TypeInfoFactory.stringTypeInfo};
+    VectorHashKeyWrapperBatch vhkwb = VectorHashKeyWrapperBatch.compileKeyWrapperBatch(
+        keyExpressions,
+        typeInfos);
+
+    VectorizedRowBatch batch = new VectorizedRowBatch(1);
+    batch.selectedInUse = false;
+    BytesColumnVector bytesColumnVector = new BytesColumnVector();
+    bytesColumnVector.initBuffer(1024);
+    batch.cols[0] = bytesColumnVector;
+
+    byte[] contents = "education_reference".getBytes();
+    bytesColumnVector.setVal(0, "system_management".getBytes());
+    bytesColumnVector.setVal(1, "travel_transportation".getBytes());
+    bytesColumnVector.setVal(2, contents);
+    bytesColumnVector.setVal(3, "app_management".getBytes());
+    batch.size = 4;
+
+    vhkwb.evaluateBatch(batch);
+    VectorHashKeyWrapperBase[] vhkwArray = vhkwb.getVectorHashKeyWrappers();
+    VectorHashKeyWrapperGeneral hashKey2 = (VectorHashKeyWrapperGeneral)vhkwArray[2];
+    VectorHashKeyWrapperGeneral hashKey1 = (VectorHashKeyWrapperGeneral)vhkwArray[1];
+
+    assertTrue(StringExpr.equal(hashKey2.getBytes(0), hashKey2.getByteStart(0), hashKey2.getByteLength(0),
+            contents, 0, contents.length));
+    assertFalse(StringExpr.equal(hashKey2.getBytes(0), hashKey2.getByteStart(0), hashKey2.getByteLength(0),
+        hashKey1.getBytes(0), hashKey1.getByteStart(0), hashKey1.getByteLength(0)));
+
+    hashKey2.copyKey(hashKey1);
+
+    assertTrue(StringExpr.equal(hashKey2.getBytes(0), hashKey2.getByteStart(0), hashKey2.getByteLength(0),
+            contents, 0, contents.length));
+    assertTrue(StringExpr.equal(hashKey2.getBytes(0), hashKey2.getByteStart(0), hashKey2.getByteLength(0),
+        hashKey1.getBytes(0), hashKey1.getByteStart(0), hashKey1.getByteLength(0)));
+  }
+
 }

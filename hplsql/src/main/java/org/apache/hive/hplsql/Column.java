@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.hplsql;
@@ -22,62 +23,37 @@ package org.apache.hive.hplsql;
  * Table column
  */
 public class Column {
-  
-  String name;
-  String type;
-  Var value;
-  
-  int len;
-  int scale;
-  
-  Column(String name, String type) {
-    this.name = name;
-    len = 0;
-    scale = 0;
-    setType(type);
+  private ColumnDefinition definition;
+  private Var value;
+
+  public Column(String name, String type, Var value) {
+    this.definition = new ColumnDefinition(name, ColumnType.parse(type));
+    this.value = value;
   }
-  
-  /**
-   * Set the column type with its length/precision
-   */
-  void setType(String type) {
-    int open = type.indexOf('(');
-    if (open == -1) {
-      this.type = type;
-    }
-    else {
-      this.type = type.substring(0, open);
-      int comma = type.indexOf(',', open);
-      int close = type.indexOf(')', open);
-      if (comma == -1) {
-        len = Integer.parseInt(type.substring(open + 1, close));
-      }
-      else {
-        len = Integer.parseInt(type.substring(open + 1, comma));
-        scale = Integer.parseInt(type.substring(comma + 1, close));
-      }
-    }
-  }
-  
+
   /**
    * Set the column value
    */
-  void setValue(Var value) {
+  public void setValue(Var value) {
     this.value = value;
   }
 
   /**
    * Get the column name
    */
-  String getName() {
-    return name;
+  public String getName() {
+    return definition.columnName();
   }
   
   /**
    * Get the column type
    */
-  String getType() {
-    return type;
+  public String getType() {
+    return definition.columnType().typeString();
+  }
+
+  public ColumnDefinition definition() {
+    return definition;
   }
     
   /**

@@ -9,34 +9,39 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.cache;
 
-public final class LlapDataBuffer extends LlapAllocatorBuffer {
+public final class LlapDataBuffer extends BaseLlapDataBuffer {
   public static final int UNKNOWN_CACHED_LENGTH = -1;
+
+  /**
+   * The starting position of the buffer in the compressed file. Required for cache hydration.
+   */
+  private long start;
 
   /** ORC cache uses this to store compressed length; buffer is cached uncompressed, but
    * the lookup is on compressed ranges, so we need to know this. */
   public int declaredCachedLength = UNKNOWN_CACHED_LENGTH;
-  private String tag;
 
-  @Override
-  public void notifyEvicted(EvictionDispatcher evictionDispatcher) {
-    evictionDispatcher.notifyEvicted(this);
+
+  public void setStart(long start){
+    this.start = start;
   }
 
-  public void setTag(String tag) {
-    this.tag = tag;
+  public long getStart() {
+    return start;
   }
 
   @Override
-  public String getTag() {
-    return tag;
+  public void notifyEvicted(EvictionDispatcher evictionDispatcher, boolean isProactiveEviction) {
+    evictionDispatcher.notifyEvicted(this, isProactiveEviction);
   }
 }

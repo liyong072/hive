@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.cli;
 
@@ -22,6 +23,7 @@ import java.util.List;
 
 import org.apache.hadoop.hive.cli.control.CliAdapter;
 import org.apache.hadoop.hive.cli.control.CliConfigs;
+import org.apache.hadoop.hive.cli.control.SplitSupport;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -33,11 +35,13 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public class TestEncryptedHDFSCliDriver {
 
+  private static final int N_SPLITS = 3;
+
   static CliAdapter adapter = new CliConfigs.EncryptedHDFSCliConfig().getCliAdapter();
 
   @Parameters(name = "{0}")
   public static List<Object[]> getParameters() throws Exception {
-    return adapter.getParameters();
+    return SplitSupport.process(adapter.getParameters(), TestEncryptedHDFSCliDriver.class, N_SPLITS);
   }
 
   @ClassRule

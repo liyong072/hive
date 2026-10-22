@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.utils;
@@ -58,6 +59,10 @@ public class HiveStrictManagedUtils {
         }
         if (isAvroTableWithExternalSchema(table)) {
           return createValidationError(table, "Managed Avro table has externally defined schema.");
+        }
+      } else if (tableType == TableType.EXTERNAL_TABLE) {
+        if (MetaStoreServerUtils.isTransactionalTable(table.getParameters())) {
+          return createValidationError(table, "Table is marked as a external table but it is transactional.");
         }
       }
     }

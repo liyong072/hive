@@ -7,16 +7,18 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.avro;
 
+import org.apache.avro.JsonProperties;
 import org.apache.avro.Schema;
 import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.CharTypeInfo;
@@ -28,8 +30,6 @@ import org.apache.hadoop.hive.serde2.typeinfo.StructTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.UnionTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.VarcharTypeInfo;
-import org.codehaus.jackson.JsonNode;
-import org.codehaus.jackson.node.JsonNodeFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -73,7 +73,7 @@ public class TypeInfoToSchema {
   }
 
   private Schema.Field createAvroField(String name, TypeInfo typeInfo, String comment) {
-    return new Schema.Field(name, createAvroSchema(typeInfo), comment, null);
+    return new Schema.Field(name, createAvroSchema(typeInfo), comment, JsonProperties.NULL_VALUE);
   }
 
   private Schema createAvroSchema(TypeInfo typeInfo) {
@@ -160,7 +160,7 @@ public class TypeInfoToSchema {
       case TIMESTAMP:
         schema = AvroSerdeUtils.getSchemaFor("{" +
           "\"type\":\"" + AvroSerDe.AVRO_LONG_TYPE_NAME + "\"," +
-          "\"logicalType\":\"" + AvroSerDe.TIMESTAMP_TYPE_NAME + "\"}");
+          "\"logicalType\":\"" + AvroSerDe.TIMESTAMP_TYPE_NAME_MICROS + "\"}");
         break;
       case VOID:
         schema = Schema.create(Schema.Type.NULL);
@@ -235,7 +235,7 @@ public class TypeInfoToSchema {
   private List<Schema.Field> getFields(Schema.Field schemaField) {
     List<Schema.Field> fields = new ArrayList<Schema.Field>();
 
-    JsonNode nullDefault = JsonNodeFactory.instance.nullNode();
+    JsonProperties.Null nullDefault = JsonProperties.NULL_VALUE;
     if (schemaField.schema().getType() == Schema.Type.RECORD) {
       for (Schema.Field field : schemaField.schema().getFields()) {
         fields.add(new Schema.Field(field.name(), field.schema(), field.doc(), nullDefault));

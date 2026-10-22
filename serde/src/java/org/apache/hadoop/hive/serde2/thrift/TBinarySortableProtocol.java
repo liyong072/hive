@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.thrift;
@@ -91,6 +92,11 @@ public class TBinarySortableProtocol extends TProtocol implements
     stackLevel = 0;
   }
 
+  @Override
+  public int getMinSerializedSize(byte b) throws TException {
+    return -1;
+  }
+
   /**
    * The stack level of the current field. Top-level fields have a stackLevel
    * value of 1. Each nested struct/list/map will increase the stackLevel value
@@ -147,7 +153,7 @@ public class TBinarySortableProtocol extends TProtocol implements
           .charAt(topLevelStructFieldID) != '-');
     } else {
       writeRawBytes(nonNullByte, 0, 1);
-      // If the struct is null and level > 1, DynamicSerDe will call
+      // If the struct is null and level > 1, SerDes will call
       // writeNull();
     }
   }
@@ -415,7 +421,7 @@ public class TBinarySortableProtocol extends TProtocol implements
 
   @Override
   public TField readFieldBegin() throws TException {
-    // slight hack to communicate to DynamicSerDe that the field ids are not
+    // slight hack to communicate to SerDes that the field ids are not
     // being set but things are ordered.
     f = new TField("", ORDERED_TYPE, (short) -1);
     return f;

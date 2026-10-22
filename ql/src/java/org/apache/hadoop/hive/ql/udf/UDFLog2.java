@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf;
@@ -35,7 +36,7 @@ import org.apache.hadoop.hive.serde2.io.DoubleWritable;
 @VectorizedExpressions({FuncLog2LongToDouble.class, FuncLog2DoubleToDouble.class})
 public class UDFLog2 extends UDFMath {
 
-  private static final double LOG_2 = Math.log(2.0);
+  private static final double LOG_2 = StrictMath.log(2.0);
 
   private final DoubleWritable result = new DoubleWritable();
 
@@ -47,7 +48,7 @@ public class UDFLog2 extends UDFMath {
     if (a.get() <= 0.0) {
       return null;
     } else {
-      result.set(Math.log(a.get()) / LOG_2);
+      result.set(StrictMath.log(a.get()) / LOG_2);
       return result;
     }
   }

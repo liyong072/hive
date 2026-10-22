@@ -9,30 +9,31 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.security;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.api.ACLProvider;
 import org.apache.curator.framework.imps.CuratorFrameworkState;
-import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hive.metastore.utils.SecurityUtils;
+import org.apache.hadoop.hive.common.ZooKeeperHiveHelper;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenSecretManager.DelegationTokenInformation;
 import org.apache.hadoop.security.token.delegation.MetastoreDelegationTokenSupport;
@@ -57,12 +58,25 @@ public class ZooKeeperTokenStore implements DelegationTokenStore {
   protected static final String ZK_SEQ_FORMAT = "%010d";
   private static final String NODE_KEYS = "/keys";
   private static final String NODE_TOKENS = "/tokens";
+  private static final String WHEN_ZK_DSTORE_MSG = "when zookeeper based delegation token storage is enabled"
+      + "(hive.cluster.delegation.token.store.class=" + ZooKeeperTokenStore.class.getName() + ")";
 
   private String rootNode = "";
   private volatile CuratorFramework zkSession;
   private String zkConnectString;
+  private String zkConnectPort;
   private int connectTimeoutMillis;
-  private List<ACL> newNodeAcl = Arrays.asList(new ACL(Perms.ALL, Ids.AUTH_IDS));
+  private boolean sslEnabled;
+  private String keyStoreLocation;
+  private String keyStorePassword;
+  private String keyStoreType;
+  private String trustStoreLocation;
+  private String trustStorePassword;
+  private String trustStoreType;
+
+  private List<ACL> newNodeAcl;
+  private Configuration conf;
+  private HadoopThriftAuthBridge.Server.ServerMode serverMode;
 
   /**
    * ACLProvider permissions will be used in case parent dirs need to be created
@@ -80,13 +94,37 @@ public class ZooKeeperTokenStore implements DelegationTokenStore {
     }
   };
 
+  /**
+   * Default ACLs for CuratorFrameworkFactory.
+   */
+  private List<ACL> getDefaultAcl(Configuration conf) {
+    List<ACL> nodeAcls = new ArrayList<>();
+    if (isKerberosEnabled(conf)) {
+      nodeAcls.add(new ACL(Perms.ALL, Ids.AUTH_IDS));
+    } else {
+      nodeAcls.addAll(Ids.OPEN_ACL_UNSAFE);
+    }
+    return nodeAcls;
+  }
 
-  private final String WHEN_ZK_DSTORE_MSG = "when zookeeper based delegation token storage is enabled"
-      + "(hive.cluster.delegation.token.store.class=" + ZooKeeperTokenStore.class.getName() + ")";
+  /**
+   * Check if Kerberos authentication is enabled.
+   * This is used by:
+   * - HMS
+   * In secure scenarios the HMS is logged in (by itself) using Kerberos keytab, hence
+   * UGI.getLoginUser().isFromKeytab() returns true.
+   * This makes checking against this method the tightest setting we can check against.
+   */
+  private boolean isKerberosEnabled(Configuration conf) {
+    try {
+      return UserGroupInformation.getLoginUser().isFromKeytab() &&
+          MetastoreConf.getBoolVar(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_USE_KERBEROS);
+    } catch (IOException e) {
+      return false;
+    }
+  }
 
-  private Configuration conf;
 
-  private HadoopThriftAuthBridge.Server.ServerMode serverMode;
 
   /**
    * Default constructor for dynamic instantiation w/ Configurable
@@ -95,54 +133,30 @@ public class ZooKeeperTokenStore implements DelegationTokenStore {
   protected ZooKeeperTokenStore() {
   }
 
-  private CuratorFramework getSession() {
+  public CuratorFramework getSession() {
     if (zkSession == null || zkSession.getState() == CuratorFrameworkState.STOPPED) {
       synchronized (this) {
         if (zkSession == null || zkSession.getState() == CuratorFrameworkState.STOPPED) {
-          zkSession =
-              CuratorFrameworkFactory.builder().connectString(zkConnectString)
-                  .connectionTimeoutMs(connectTimeoutMillis).aclProvider(aclDefaultProvider)
-                  .retryPolicy(new ExponentialBackoffRetry(1000, 3)).build();
+          ZooKeeperHiveHelper zkHelper = ZooKeeperHiveHelper.builder()
+              .quorum(zkConnectString)
+              .clientPort(zkConnectPort)
+              .connectionTimeout(connectTimeoutMillis)
+              .maxRetries(3)
+              .baseSleepTime(1000)
+              .sslEnabled(sslEnabled)
+              .keyStoreLocation(keyStoreLocation)
+              .keyStorePassword(keyStorePassword)
+              .keyStoreType(keyStoreType)
+              .trustStoreLocation(trustStoreLocation)
+              .trustStorePassword(trustStorePassword)
+              .trustStoreType(trustStoreType)
+              .build();
+          zkSession = zkHelper.getNewZookeeperClient(aclDefaultProvider);
           zkSession.start();
         }
       }
     }
     return zkSession;
-  }
-
-  private void setupJAASConfig(Configuration conf) throws IOException {
-    if (!UserGroupInformation.getLoginUser().isFromKeytab()) {
-      // The process has not logged in using keytab
-      // this should be a test mode, can't use keytab to authenticate
-      // with zookeeper.
-      LOGGER.warn("Login is not from keytab");
-      return;
-    }
-
-    String principal;
-    String keytab;
-    switch (serverMode) {
-    case METASTORE:
-      principal = getNonEmptyConfVar(conf, "hive.metastore.kerberos.principal");
-      keytab = getNonEmptyConfVar(conf, "hive.metastore.kerberos.keytab.file");
-      break;
-    case HIVESERVER2:
-      principal = getNonEmptyConfVar(conf, "hive.server2.authentication.kerberos.principal");
-      keytab = getNonEmptyConfVar(conf, "hive.server2.authentication.kerberos.keytab");
-      break;
-    default:
-      throw new AssertionError("Unexpected server mode " + serverMode);
-    }
-    SecurityUtils.setZookeeperClientKerberosJaasConfig(principal, keytab);
-  }
-
-  private String getNonEmptyConfVar(Configuration conf, String param) throws IOException {
-    String val = conf.get(param);
-    if (val == null || val.trim().isEmpty()) {
-      throw new IOException("Configuration parameter " + param + " should be set, "
-          + WHEN_ZK_DSTORE_MSG);
-    }
-    return val;
   }
 
   /**
@@ -388,14 +402,17 @@ public class ZooKeeperTokenStore implements DelegationTokenStore {
   public boolean removeToken(DelegationTokenIdentifier tokenIdentifier) {
     String tokenPath = getTokenPath(tokenIdentifier);
     zkDelete(tokenPath);
+    LOGGER.info("Removed token: {}", tokenPath);
     return true;
   }
 
   @Override
   public DelegationTokenInformation getToken(DelegationTokenIdentifier tokenIdentifier) {
-    byte[] tokenBytes = zkGetData(getTokenPath(tokenIdentifier));
+    String tokenPath = getTokenPath(tokenIdentifier);
+    byte[] tokenBytes = zkGetData(tokenPath);
     if(tokenBytes == null) {
       // The token is already removed.
+      LOGGER.info("Could not get data from {}", tokenPath);
       return null;
     }
     try {
@@ -437,37 +454,64 @@ public class ZooKeeperTokenStore implements DelegationTokenStore {
         conf.get(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_CONNECT_STR, null);
     if (zkConnectString == null || zkConnectString.trim().isEmpty()) {
       // try alternate config param
-      zkConnectString =
-          conf.get(
-              MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_CONNECT_STR_ALTERNATE,
-              null);
+      zkConnectString = conf.get(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_CONNECT_STR_ALTERNATE, null);
       if (zkConnectString == null || zkConnectString.trim().isEmpty()) {
-        throw new IllegalArgumentException("Zookeeper connect string has to be specified through "
-            + "either " + MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_CONNECT_STR
-            + " or "
-            + MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_CONNECT_STR_ALTERNATE
-            + WHEN_ZK_DSTORE_MSG);
+        throw new IllegalArgumentException("Zookeeper connect string has to be specified through either "
+            + MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_CONNECT_STR + " or "
+            + MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_CONNECT_STR_ALTERNATE + WHEN_ZK_DSTORE_MSG);
+      }
+      // If we use the alternate zk config (the global one)
+      // we should also use the related properties from the global config
+      zkConnectPort = MetastoreConf.getVar(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_CLIENT_PORT);
+      connectTimeoutMillis = (int) MetastoreConf
+          .getTimeVar(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_CONNECTION_TIMEOUT, TimeUnit.MILLISECONDS);
+      sslEnabled = MetastoreConf.getBoolVar(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_SSL_ENABLE);
+      if (sslEnabled) {
+        try {
+          keyStoreLocation = MetastoreConf.getVar(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_SSL_KEYSTORE_LOCATION);
+          keyStorePassword =
+              MetastoreConf.getPassword(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_SSL_KEYSTORE_PASSWORD);
+          keyStoreType =
+              MetastoreConf.getVar(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_SSL_KEYSTORE_TYPE);
+          trustStoreLocation =
+              MetastoreConf.getVar(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_SSL_TRUSTSTORE_LOCATION);
+          trustStorePassword =
+              MetastoreConf.getPassword(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_SSL_TRUSTSTORE_PASSWORD);
+          trustStoreType =
+              MetastoreConf.getVar(conf, MetastoreConf.ConfVars.THRIFT_ZOOKEEPER_SSL_TRUSTSTORE_TYPE);
+        } catch (IOException ex) {
+          throw new RuntimeException("Failed to read zookeeper configuration passwords", ex);
+        }
+      }
+    } else {
+      connectTimeoutMillis =
+          conf.getInt(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_CONNECT_TIMEOUTMILLIS,
+              CuratorFrameworkFactory.builder().getConnectionTimeoutMs());
+      sslEnabled = conf.getBoolean(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_SSL_ENABLE, false);
+      if (sslEnabled) {
+        try {
+          keyStoreLocation = conf.get(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_KEYSTORE_LOCATION, "");
+          char[] pwd = conf.getPassword(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_KEYSTORE_PASSWORD);
+          keyStorePassword = pwd == null ? null : new String(pwd);
+          keyStoreType = conf.get(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_KEYSTORE_TYPE, "");
+          trustStoreLocation =
+              conf.get(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_TRUSTSTORE_LOCATION, "");
+          pwd = conf.getPassword(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_TRUSTSTORE_PASSWORD);
+          trustStorePassword = pwd == null ? null : new String(pwd);
+          trustStoreType = conf.get(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_TRUSTSTORE_TYPE, "");
+        } catch (IOException ex) {
+          throw new RuntimeException("Failed to read zookeeper configuration passwords", ex);
+        }
       }
     }
-    connectTimeoutMillis =
-        conf.getInt(
-            MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_CONNECT_TIMEOUTMILLIS,
-            CuratorFrameworkFactory.builder().getConnectionTimeoutMs());
+
     String aclStr = conf.get(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_ACL, null);
-    if (StringUtils.isNotBlank(aclStr)) {
-      this.newNodeAcl = parseACLs(aclStr);
-    }
+    this.newNodeAcl = StringUtils.isNotBlank(aclStr)? parseACLs(aclStr) : getDefaultAcl(conf);
+
     rootNode =
         conf.get(MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_ZNODE,
             MetastoreDelegationTokenManager.DELEGATION_TOKEN_STORE_ZK_ZNODE_DEFAULT) + serverMode;
 
-    try {
-      // Install the JAAS Configuration for the runtime
-      setupJAASConfig(conf);
-    } catch (IOException e) {
-      throw new TokenStoreException("Error setting up JAAS configuration for zookeeper client "
-          + e.getMessage(), e);
-    }
     initClientAndPaths();
   }
 

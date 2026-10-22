@@ -9,20 +9,27 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common.type;
 
 import java.util.Random;
 
-import junit.framework.TestCase;
 
-public class TestHiveBaseChar extends TestCase {
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import org.junit.Test;
+
+/**
+ * HiveBaseChar Test.
+ */
+public class TestHiveBaseChar {
   static Random rnd = new Random();
 
   public static int getRandomSupplementaryChar() {
@@ -62,6 +69,7 @@ public class TestHiveBaseChar extends TestCase {
     return sb.toString();
   }
 
+  @Test
   public void testStringLength() throws Exception {
     int strLen = 20;
     int[] lengths = { 15, 20, 25 };
@@ -83,6 +91,7 @@ public class TestHiveBaseChar extends TestCase {
     assertNull(HiveBaseChar.enforceMaxLength(null, 0));
   }
 
+  @Test
   public void testGetPaddedValue() {
     int strLen = 20;
     int[] lengths = { 15, 20, 25 };

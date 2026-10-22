@@ -9,42 +9,57 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.ddl;
 
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 
-import org.apache.commons.lang.StringUtils;
-import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.common.TableName;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.ql.exec.Utilities;
+import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.metastore.HiveMetaHook;
+import org.apache.hadoop.hive.metastore.TableType;
+import org.apache.hadoop.hive.metastore.api.Database;
+import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.SQLDefaultConstraint;
+import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
+import org.apache.hadoop.hive.ql.ErrorMsg;
+import org.apache.hadoop.hive.ql.ddl.table.constraint.ConstraintsUtils;
 import org.apache.hadoop.hive.ql.hooks.WriteEntity;
+import org.apache.hadoop.hive.ql.hooks.Entity.Type;
 import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
+import org.apache.hadoop.hive.ql.parse.ASTErrorUtils;
+import org.apache.hadoop.hive.ql.parse.ASTNode;
+import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
+import org.apache.hadoop.hive.ql.parse.PartitionTransform;
 import org.apache.hadoop.hive.ql.parse.ReplicationSpec;
+import org.apache.hadoop.hive.ql.parse.SemanticException;
+import org.apache.hadoop.hive.ql.parse.StorageFormat.StorageHandlerTypes;
+import org.apache.hadoop.hive.ql.parse.TransformSpec;
+import org.apache.hadoop.hive.ql.session.SessionState;
+import org.apache.hadoop.hive.ql.session.SessionStateUtil;
 import org.apache.hadoop.hive.serde2.Deserializer;
-import org.apache.hive.common.util.HiveStringUtils;
 import org.apache.hive.common.util.ReflectionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HIVE_ICEBERG_STATS_SOURCE;
 
 /**
  * Utilities used by some DDLOperations.
@@ -54,15 +69,6 @@ public final class DDLUtils {
 
   private DDLUtils() {
     throw new UnsupportedOperationException("DDLUtils should not be instantiated");
-  }
-
-  public static DataOutputStream getOutputStream(Path outputFile, DDLOperationContext context) throws HiveException {
-    try {
-      FileSystem fs = outputFile.getFileSystem(context.getConf());
-      return fs.create(outputFile);
-    } catch (Exception e) {
-      throw new HiveException(e);
-    }
   }
 
   /**
@@ -84,8 +90,8 @@ public final class DDLUtils {
    * @return {@code true} if item was added
    */
   public static boolean addIfAbsentByName(WriteEntity newWriteEntity, Set<WriteEntity> outputs) {
-    for(WriteEntity writeEntity : outputs) {
-      if(writeEntity.getName().equalsIgnoreCase(newWriteEntity.getName())) {
+    for (WriteEntity writeEntity : outputs) {
+      if (writeEntity.getName().equalsIgnoreCase(newWriteEntity.getName())) {
         LOG.debug("Ignoring request to add {} because {} is present", newWriteEntity.toStringDetail(),
             writeEntity.toStringDetail());
         return false;
@@ -137,64 +143,154 @@ public final class DDLUtils {
     }
     // If the table/partition exist and is older than the event, then just apply the event else noop.
     Table existingTable = db.getTable(tableName, false);
-    if ((existingTable != null) && replicationSpec.allowEventReplacementInto(existingTable.getParameters())) {
-      // Table exists and is older than the update. Now, need to ensure if update allowed on the partition.
-      if (partSpec != null) {
-        Partition existingPtn = db.getPartition(existingTable, partSpec, false);
-        return ((existingPtn != null) && replicationSpec.allowEventReplacementInto(existingPtn.getParameters()));
+    if (existingTable != null) {
+      Map<String, String> dbParams = db.getDatabase(existingTable.getDbName()).getParameters();
+      if (replicationSpec.allowEventReplacementInto(dbParams)) {
+        // Table exists and is older than the update. Now, need to ensure if update allowed on the partition.
+        if (partSpec != null) {
+          Partition existingPtn = db.getPartition(existingTable, partSpec, false);
+          return ((existingPtn != null) && replicationSpec.allowEventReplacementInto(dbParams));
+        }
+
+        // Replacement is allowed as the existing table is older than event
+        return true;
       }
-
-      // Replacement is allowed as the existing table is older than event
-      return true;
     }
-
     // The table is missing either due to drop/rename which follows the operation.
     // Or the existing table is newer than our update. So, don't allow the update.
     return false;
   }
 
-  public static String propertiesToString(Map<String, String> props, List<String> exclude) {
-    if (props.isEmpty()) {
-      return "";
+  public static void addServiceOutput(HiveConf conf, Set<WriteEntity> outputs) throws SemanticException {
+    String hs2Hostname = getHS2Host(conf);
+    if (hs2Hostname != null) {
+      outputs.add(new WriteEntity(hs2Hostname, Type.SERVICE_NAME));
+    }
+  }
+
+  private static String getHS2Host(HiveConf conf) throws SemanticException {
+    if (SessionState.get().isHiveServerQuery()) {
+      return SessionState.get().getHiveServer2Host();
+    } else if (conf.getBoolVar(ConfVars.HIVE_TEST_AUTHORIZATION_SQLSTD_HS2_MODE)) {
+      return "dummyHostnameForTest";
     }
 
-    Map<String, String> sortedProperties = new TreeMap<String, String>(props);
-    List<String> realProps = new ArrayList<String>();
-    for (Map.Entry<String, String> e : sortedProperties.entrySet()) {
-      if (e.getValue() != null && (exclude == null || !exclude.contains(e.getKey()))) {
-        realProps.add("  '" + e.getKey() + "'='" + HiveStringUtils.escapeHiveCommand(e.getValue()) + "'");
+    throw new SemanticException("Kill query is only supported in HiveServer2 (not hive cli)");
+  }
+
+  /**
+   * Get the fully qualified name in the node.
+   * E.g. the node of the form ^(DOT ^(DOT a b) c) will generate a name of the form "a.b.c".
+   */
+  public static String getFQName(ASTNode node) {
+    if (node.getChildCount() == 0) {
+      return node.getText();
+    } else if (node.getChildCount() == 2) {
+      return getFQName((ASTNode) node.getChild(0)) + "." + getFQName((ASTNode) node.getChild(1));
+    } else if (node.getChildCount() == 3) {
+      return getFQName((ASTNode) node.getChild(0)) + "." + getFQName((ASTNode) node.getChild(1)) + "." +
+          getFQName((ASTNode) node.getChild(2));
+    } else {
+      return null;
+    }
+  }
+
+  public static void addDbAndTableToOutputs(Database database, TableName tableName, TableType type, boolean isTemporary,
+      Map<String, String> properties, Set<WriteEntity> outputs) {
+    outputs.add(new WriteEntity(database, WriteEntity.WriteType.DDL_SHARED));
+
+    Table table = new Table(tableName.getDb(), tableName.getTable());
+    table.setParameters(properties);
+    table.setTableType(type);
+    table.setTemporary(isTemporary);
+    outputs.add(new WriteEntity(table, WriteEntity.WriteType.DDL_NO_LOCK));
+  }
+
+  public static void addDbAndTableToOutputs(Database database, Table table, Set<WriteEntity> outputs) {
+    outputs.add(new WriteEntity(database, WriteEntity.WriteType.DDL_SHARED));
+    outputs.add(new WriteEntity(table, WriteEntity.WriteType.DDL_NO_LOCK));
+  }
+
+  public static void setColumnsAndStorePartitionTransformSpecOfTable(
+          List<FieldSchema> columns, List<FieldSchema> partitionColumns,
+          HiveConf conf, Table tbl) {
+    Optional<List<FieldSchema>> cols = Optional.ofNullable(columns);
+    Optional<List<FieldSchema>> partCols = Optional.ofNullable(partitionColumns);
+    
+    if (tbl.hasNonNativePartitionSupport()) {
+      tbl.getSd().setCols(new ArrayList<>());
+      cols.ifPresent(c -> tbl.getSd().getCols().addAll(c));
+      if (partCols.isPresent() && !partCols.get().isEmpty()) {
+        // Add the partition columns to the normal columns and save the transform to the session state
+        tbl.getSd().getCols().addAll(partCols.get());
+        List<TransformSpec> spec = PartitionTransform.getPartitionTransformSpec(partCols.get());
+        SessionStateUtil.addResourceOrThrow(conf, hive_metastoreConstants.PARTITION_TRANSFORM_SPEC, spec);
       }
-    }
-    return StringUtils.join(realProps, ", \n");
-  }
-
-  public static void writeToFile(String data, String file, DDLOperationContext context) throws IOException {
-    if (StringUtils.isEmpty(data)) {
-      return;
-    }
-
-    Path resFile = new Path(file);
-    FileSystem fs = resFile.getFileSystem(context.getConf());
-    try (FSDataOutputStream out = fs.create(resFile);
-         OutputStreamWriter writer = new OutputStreamWriter(out, "UTF-8")) {
-      writer.write(data);
-      writer.write((char) Utilities.newLineCode);
-      writer.flush();
+    } else {
+      cols.ifPresent(tbl::setFields);
+      partCols.ifPresent(tbl::setPartCols);
     }
   }
 
-  public static void appendNonNull(StringBuilder builder, Object value) {
-    appendNonNull(builder, value, false);
+  public static void validateTableIsIceberg(org.apache.hadoop.hive.ql.metadata.Table table)
+      throws SemanticException {
+    String tableType = table.getParameters().get(HiveMetaHook.TABLE_TYPE);
+    if (!HiveMetaHook.ICEBERG.equalsIgnoreCase(tableType)) {
+      throw new SemanticException(String.format("Not an iceberg table: %s (type=%s)",
+          table.getFullTableName(), tableType));
+    }
   }
 
-  public static void appendNonNull(StringBuilder builder, Object value, boolean firstColumn) {
-    if (!firstColumn) {
-      builder.append((char)Utilities.tabCode);
-    } else if (builder.length() > 0) {
-      builder.append((char)Utilities.newLineCode);
+  public static boolean isIcebergTable(Table table) {
+    return table.isNonNative() && 
+            table.getStorageHandler().getType() == StorageHandlerTypes.ICEBERG;
+  }
+
+  public static boolean isIcebergStatsSource(HiveConf conf) {
+    return conf.get(HIVE_ICEBERG_STATS_SOURCE.varname, HiveMetaHook.ICEBERG)
+            .equalsIgnoreCase(HiveMetaHook.ICEBERG);
+  }
+  
+  public static boolean hasTransformsInPartitionSpec(Table table) {
+    return isIcebergTable(table) && 
+      table.getStorageHandler().getPartitionTransformSpec(table).stream()
+          .anyMatch(spec -> spec.getTransformType() != TransformSpec.TransformType.IDENTITY);
+  }
+
+  public static void setDefaultColumnValues(Table table, TableName tableName,
+      List<ConstraintsUtils.ConstraintInfo> defaultConstraintsInfo, Configuration conf) throws SemanticException {
+    boolean isNativeColumnDefaultSupported = table.getStorageHandler() != null && table.getStorageHandler()
+        .supportsDefaultColumnValues(table.getParameters());
+    List<SQLDefaultConstraint> defaultConstraints = new ArrayList<>();
+    ConstraintsUtils.constraintInfosToDefaultConstraints(tableName, defaultConstraintsInfo, defaultConstraints,
+        isNativeColumnDefaultSupported);
+    SessionStateUtil.addResourceOrThrow(conf, SessionStateUtil.COLUMN_DEFAULTS, defaultConstraints);
+  }
+
+  /**
+   *
+   * @param dbNameNode A root node that contains database fields
+   * @return Return a Pair object which includes catalogName and dbName
+   * @throws SemanticException
+   */
+  public static Pair<String, String> getCatDbNamePair(ASTNode dbNameNode) throws SemanticException {
+    String catName = null;
+    String dbName;
+
+    if (dbNameNode.getChildCount() == 2) {
+      catName = BaseSemanticAnalyzer.unescapeIdentifier(dbNameNode.getChild(0).getText());
+      dbName = BaseSemanticAnalyzer.unescapeIdentifier(dbNameNode.getChild(1).getText());
+    } else if (dbNameNode.getChildCount() == 1) {
+      dbName = BaseSemanticAnalyzer.unescapeIdentifier(dbNameNode.getChild(0).getText());
+    } else {
+      dbName = BaseSemanticAnalyzer.unescapeIdentifier(dbNameNode.getText());
     }
-    if (value != null) {
-      builder.append(value);
+
+    if ((catName != null && catName.contains(".")) || dbName.contains(".")) {
+      throw new SemanticException(ASTErrorUtils.getMsg(
+              ErrorMsg.OBJECTNAME_CONTAINS_DOT.getMsg(), dbNameNode));
     }
+
+    return Pair.of(catName, dbName);
   }
 }

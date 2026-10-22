@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
@@ -22,6 +23,7 @@ import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedExpressions;
+import org.apache.hadoop.hive.ql.exec.vector.VectorizedExpressionsSupportDecimal64;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.LongColDivideLongColumn;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.LongColDivideLongScalar;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.LongScalarDivideLongColumn;
@@ -48,7 +50,9 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
   LongScalarDivideLongColumn.class, LongScalarDivideDoubleColumn.class,
   DoubleScalarDivideLongColumn.class, DoubleScalarDivideDoubleColumn.class,
   DecimalColDivideDecimalColumn.class, DecimalColDivideDecimalScalar.class,
-  DecimalScalarDivideDecimalColumn.class})
+  DecimalScalarDivideDecimalColumn.class, Decimal64ColDivideDecimal64Scalar.class,
+  Decimal64ColDivideDecimal64Column.class})
+@VectorizedExpressionsSupportDecimal64()
 public class GenericUDFOPDivide extends GenericUDFBaseNumeric {
 
   public GenericUDFOPDivide() {

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.tez;
@@ -28,7 +29,6 @@ import org.apache.hadoop.hive.ql.exec.mr.ExecMapperContext;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapred.JobConf;
-import org.apache.hadoop.util.StringUtils;
 import org.apache.tez.mapreduce.lib.MRReader;
 import org.apache.tez.runtime.library.api.KeyValueReader;
 
@@ -44,6 +44,9 @@ public class MapRecordSource implements RecordSource {
   private AbstractMapOperator mapOp = null;
   private KeyValueReader reader = null;
   private final boolean grouped = false;
+
+  // Flush the last record when reader is out of records
+  private boolean flushLastRecord = false;
 
   void init(JobConf jconf, AbstractMapOperator mapOp, KeyValueReader reader) throws IOException {
     execContext = mapOp.getExecContext();
@@ -61,6 +64,11 @@ public class MapRecordSource implements RecordSource {
   }
 
   @Override
+  public void setFlushLastRecord(boolean flushLastRecord) {
+    this.flushLastRecord = flushLastRecord;
+  }
+
+  @Override
   public boolean pushRecord() throws HiveException {
     execContext.resetRow();
 
@@ -74,6 +82,8 @@ public class MapRecordSource implements RecordSource {
           throw new HiveException(e);
         }
         return processRow(value);
+      } else if (flushLastRecord) {
+        mapOp.flushRecursive();
       }
     } catch (IOException e) {
       closeReader();
@@ -96,7 +106,7 @@ public class MapRecordSource implements RecordSource {
         // Don't create a new object if we are already out of memory
         throw (OutOfMemoryError) e;
       } else {
-        LOG.error(StringUtils.stringifyException(e));
+        LOG.error("Failed to process row", e);
         closeReader();
         throw new RuntimeException(e);
       }

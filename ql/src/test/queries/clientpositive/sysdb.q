@@ -1,4 +1,9 @@
---! qt:dataset:alltypesorc,alltypesparquet,part,src,src1,srcbucket,srcbucket2,src_cbo,src_json,src_sequencefile,src_thrift,srcpart,cbo_t1,cbo_t2,cbo_t3,lineitem
+--! qt:dataset:src,part,srcbucket:ONLY
+--! qt:sysdb
+-- Mask the enqueue time which is based on current time
+--! qt:replace:/(initiated\s+NULL\s+NULL\s+NULL\s+)[0-9\-]* [0-9:]*(\s+NULL)/$1#Masked#$2/
+-- Mask the hostname in compaction view
+--! qt:replace:/(NULL\s+)[\S]*(\s+manual)/$1#Masked#$2/
 
 set hive.strict.checks.cartesian.product=false;
 
@@ -21,13 +26,17 @@ CREATE TABLE scr_txn (key int, value string)
       "compactorthreshold.hive.compactor.delta.num.threshold"="4",
       "compactorthreshold.hive.compactor.delta.pct.threshold"="0.5");
 
+CREATE TABLE scr_txn_2 (key int, value string) STORED AS ORC
+    TBLPROPERTIES ("transactional"="true");
+
+alter table scr_txn compact 'major';
+alter table scr_txn_2 compact 'minor';
+
 CREATE TEMPORARY TABLE src_tmp (key int, value string);
 
 CREATE TABLE moretypes (a decimal(10,2), b tinyint, c smallint, d int, e bigint, f varchar(10), g char(3));
 
 show grant user hive_test_user;
-
-source ../../metastore/scripts/upgrade/hive/hive-schema-4.0.0.hive.sql;
 
 use sys;
 
@@ -76,9 +85,10 @@ select skewed_col_name from skewed_col_names order by skewed_col_name limit 5;
 
 select count(*) from skewed_col_value_loc_map;
 
-select count(*) from skewed_string_list;
+-- HIVE-23289: there are fallout in these tables from previous tests
+select * from skewed_string_list limit 0;
 
-select count(*) from skewed_string_list_values;
+select * from skewed_string_list_values limit 0;
 
 select count(*) from skewed_values;
 
@@ -92,9 +102,9 @@ select column_name, grantor, principal_name from tbl_col_privs order by column_n
 
 select grantor, principal_name from tbl_privs order by grantor, principal_name limit 5;
 
-select table_name, column_name, num_nulls, num_distincts from tab_col_stats order by table_name, column_name limit 10;
+select tbls.tbl_name, column_name, num_nulls, num_distincts from tab_col_stats inner join tbls on tab_col_stats.tbl_id=tbls.tbl_id join dbs on tbls.db_id=dbs.db_id order by tbls.tbl_name, column_name limit 10;
 
-select table_name, partition_name, column_name, num_nulls, num_distincts from part_col_stats order by table_name, partition_name, column_name limit 10;
+select tbls.tbl_name, partitions.part_name, column_name, num_nulls, num_distincts from part_col_stats inner join partitions on part_col_stats.part_id=partitions.part_id inner join tbls on partitions.tbl_id=tbls.tbl_id order by tbls.tbl_name, partitions.part_name, column_name limit 10;
 
 select schema_version from version order by schema_version limit 5;
 
@@ -112,6 +122,10 @@ explain select max(num_distincts) from sys.tab_col_stats;
 
 select max(num_distincts) from sys.tab_col_stats;
 
+select * from compactions;
+
+select MHL_TXNID,MHL_MIN_OPEN_TXNID from MIN_HISTORY_LEVEL;
+
 use INFORMATION_SCHEMA;
 
 select count(*) from SCHEMATA;
@@ -125,3 +139,9 @@ select table_catalog,table_schema,table_name,column_name,ordinal_position,column
 select * from COLUMN_PRIVILEGES order by GRANTOR, GRANTEE, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME limit 10;
 
 select TABLE_SCHEMA, TABLE_NAME from views order by TABLE_SCHEMA, TABLE_NAME;
+
+select * from compactions;
+
+select TXN_ID, STATE, AGENT_INFO, META_INFO, HEARTBEAT_COUNT, TYPE, TC_DATABASE, TC_TABLE, TC_PARTITION, TC_OPERATION_TYPE, TC_WRITEID from TRANSACTIONS;
+
+select * from LOCKS;

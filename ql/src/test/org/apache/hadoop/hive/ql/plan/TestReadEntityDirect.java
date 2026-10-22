@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.plan;
 
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.ql.Driver;
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.hooks.ReadEntity;
@@ -50,10 +52,8 @@ public class TestReadEntityDirect {
   @BeforeClass
   public static void onetimeSetup() throws Exception {
     Driver driver = createDriver();
-    int ret = driver.run("create table t1(i int)").getResponseCode();
-    assertEquals("Checking command success", 0, ret);
-    ret = driver.run("create view v1 as select * from t1").getResponseCode();
-    assertEquals("Checking command success", 0, ret);
+    driver.run("create table t1(i int)");
+    driver.run("create view v1 as select * from t1");
   }
 
   @AfterClass
@@ -76,7 +76,7 @@ public class TestReadEntityDirect {
   @Test
   public void testSelectEntityDirect() throws ParseException {
     Driver driver = createDriver();
-    int ret = driver.compile("select * from t1");
+    int ret = driver.compile("select * from t1", true);
     assertEquals("Checking command success", 0, ret);
     assertEquals(1, CheckInputReadEntityDirect.readEntities.size());
     assertTrue("isDirect", CheckInputReadEntityDirect.readEntities.iterator().next().isDirect());
@@ -90,7 +90,7 @@ public class TestReadEntityDirect {
   @Test
   public void testSelectEntityInDirect() throws ParseException {
     Driver driver = createDriver();
-    int ret = driver.compile("select * from v1");
+    int ret = driver.compile("select * from v1", true);
     assertEquals("Checking command success", 0, ret);
     assertEquals(2, CheckInputReadEntityDirect.readEntities.size());
     for (ReadEntity readEntity : CheckInputReadEntityDirect.readEntities) {
@@ -113,7 +113,7 @@ public class TestReadEntityDirect {
   @Test
   public void testSelectEntityViewDirectJoin() throws ParseException {
     Driver driver = createDriver();
-    int ret = driver.compile("select * from v1 join t1 on (v1.i = t1.i)");
+    int ret = driver.compile("select * from v1 join t1 on (v1.i = t1.i)", true);
     assertEquals("Checking command success", 0, ret);
     assertEquals(2, CheckInputReadEntityDirect.readEntities.size());
     for (ReadEntity readEntity : CheckInputReadEntityDirect.readEntities) {
@@ -136,7 +136,7 @@ public class TestReadEntityDirect {
   @Test
   public void testSelectEntityViewDirectUnion() throws ParseException {
     Driver driver = createDriver();
-    int ret = driver.compile("select * from ( select * from v1 union all select * from t1) uv1t1");
+    int ret = driver.compile("select * from ( select * from v1 union all select * from t1) uv1t1", true);
     assertEquals("Checking command success", 0, ret);
     assertEquals(2, CheckInputReadEntityDirect.readEntities.size());
     for (ReadEntity readEntity : CheckInputReadEntityDirect.readEntities) {
@@ -158,7 +158,7 @@ public class TestReadEntityDirect {
   @Test
   public void testSelectEntityInDirectJoinAlias() throws ParseException {
     Driver driver = createDriver();
-    int ret = driver.compile("select * from v1 as a join v1 as b on (a.i = b.i)");
+    int ret = driver.compile("select * from v1 as a join v1 as b on (a.i = b.i)", true);
     assertEquals("Checking command success", 0, ret);
     assertEquals(2, CheckInputReadEntityDirect.readEntities.size());
     for (ReadEntity readEntity : CheckInputReadEntityDirect.readEntities) {
@@ -176,7 +176,7 @@ public class TestReadEntityDirect {
    * Create driver with the test hook set in config
    */
   private static Driver createDriver() {
-    HiveConf conf = new HiveConf(Driver.class);
+    HiveConf conf = new HiveConfForTest(TestReadEntityDirect.class);
     conf
     .setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
         "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
@@ -196,7 +196,7 @@ public class TestReadEntityDirect {
 
     @Override
     public void postAnalyze(HiveSemanticAnalyzerHookContext context,
-        List<Task<? extends Serializable>> rootTasks) throws SemanticException {
+        List<Task<?>> rootTasks) throws SemanticException {
       readEntities = context.getInputs();
     }
 

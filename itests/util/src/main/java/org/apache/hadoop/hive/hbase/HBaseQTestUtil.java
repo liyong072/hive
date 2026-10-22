@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.hbase;
 
@@ -21,6 +22,7 @@ import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hive.ql.QTestArguments;
+import org.apache.hadoop.hive.ql.QTestMiniClusters.MiniClusterType;
 import org.apache.hadoop.hive.ql.QTestUtil;
 
 /**
@@ -37,17 +39,15 @@ public class HBaseQTestUtil extends QTestUtil {
   /** A handle to this harness's cluster */
   private final Connection conn;
 
-  public HBaseQTestUtil(
-    String outDir, String logDir, MiniClusterType miniMr, HBaseTestSetup setup,
-    String initScript, String cleanupScript)
-    throws Exception {
+  public HBaseQTestUtil(String outDir, String logDir, MiniClusterType miniMr, HBaseTestSetup setup, String hiveConfDir,
+      String initScript, String cleanupScript) throws Exception {
 
     super(
         QTestArguments.QTestArgumentsBuilder.instance()
           .withOutDir(outDir)
           .withLogDir(logDir)
           .withClusterType(miniMr)
-          .withConfDir(null)
+          .withConfDir(hiveConfDir)
           .withInitScript(initScript)
           .withCleanupScript(cleanupScript)
           .withLlapIo(false)
@@ -58,11 +58,11 @@ public class HBaseQTestUtil extends QTestUtil {
   }
 
   @Override
-  public void createSources(String tname) throws Exception {
-    super.createSources(tname);
+  public void createSources() throws Exception {
+    super.createSources();
 
     conf.setBoolean("hive.test.init.phase", true);
-    initDataset(HBASE_SRC_NAME);
+    datasetHandler.initDataset(HBASE_SRC_NAME, getCliDriver());
 
     // create a snapshot
     Admin admin = null;
@@ -78,8 +78,8 @@ public class HBaseQTestUtil extends QTestUtil {
   }
 
   @Override
-  public void cleanUp(String tname) throws Exception {
-    super.cleanUp(tname);
+  public void cleanUp() throws Exception {
+    super.cleanUp();
 
     Admin admin = null;
     try {

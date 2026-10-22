@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -25,23 +26,18 @@ import org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.VectorExpressionDescriptor;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.io.DateWritableV2;
 
 public class CastDateToTimestamp extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private int colNum;
-
   public CastDateToTimestamp(int colNum, int outputColumnNum) {
-    super(outputColumnNum);
-    this.colNum = colNum;
+    super(colNum, outputColumnNum);
   }
 
   public CastDateToTimestamp() {
     super();
-
-    // Dummy final assignments.
-    colNum = -1;
   }
 
   private void setDays(TimestampColumnVector timestampColVector, long[] vector, int elementNum) {
@@ -56,7 +52,7 @@ public class CastDateToTimestamp extends VectorExpression {
       this.evaluateChildren(batch);
     }
 
-    LongColumnVector inputColVector = (LongColumnVector) batch.cols[colNum];
+    LongColumnVector inputColVector = (LongColumnVector) batch.cols[inputColumnNum[0]];
     TimestampColumnVector outputColVector = (TimestampColumnVector) batch.cols[outputColumnNum];
     int[] sel = batch.selected;
     boolean[] inputIsNull = inputColVector.isNull;
@@ -107,7 +103,7 @@ public class CastDateToTimestamp extends VectorExpression {
       } else {
         if (!outputColVector.noNulls) {
 
-          // Assume it is almost always a performance win to fill all of isNull so we can
+          // Assume it is almost always a performance win to fill all of isNull, so we can
           // safely reset noNulls.
           Arrays.fill(outputIsNull, false);
           outputColVector.noNulls = true;
@@ -130,7 +126,7 @@ public class CastDateToTimestamp extends VectorExpression {
           setDays(outputColVector, vector, i);
         }
       } else {
-        // Set isNull before calls in case tney change their mind.
+        // Set isNull before calls in case they change their mind.
         System.arraycopy(inputIsNull, 0, outputIsNull, 0, n);
         for(int i = 0; i != n; i++) {
           setDays(outputColVector, vector, i);
@@ -141,7 +137,7 @@ public class CastDateToTimestamp extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return getColumnParamString(0, colNum);
+    return getColumnParamString(0, inputColumnNum[0]);
   }
 
   @Override
@@ -151,7 +147,7 @@ public class CastDateToTimestamp extends VectorExpression {
             VectorExpressionDescriptor.Mode.PROJECTION)
         .setNumArguments(1)
         .setArgumentTypes(
-            VectorExpressionDescriptor.ArgumentType.getType("date"))
+            VectorExpressionDescriptor.ArgumentType.getType(serdeConstants.DATE_TYPE_NAME))
         .setInputExpressionTypes(
             VectorExpressionDescriptor.InputExpressionType.COLUMN).build();
   }

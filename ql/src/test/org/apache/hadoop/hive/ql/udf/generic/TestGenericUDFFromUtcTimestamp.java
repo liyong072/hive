@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
@@ -26,9 +27,15 @@ import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.io.Text;
 
-import junit.framework.TestCase;
 
-public class TestGenericUDFFromUtcTimestamp extends TestCase {
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertEquals;
+import org.junit.Test;
+
+/**
+ * TestGenericUDFFromUtcTimestamp.
+ */
+public class TestGenericUDFFromUtcTimestamp {
   public static void runAndVerify(GenericUDF udf,
       Object arg1, Object arg2, Object expected) throws HiveException {
     DeferredObject[] args = { new DeferredJavaObject(arg1), new DeferredJavaObject(arg2) };
@@ -41,6 +48,7 @@ public class TestGenericUDFFromUtcTimestamp extends TestCase {
     }
   }
 
+  @Test
   public void testFromUtcTimestamp() throws Exception {
     ObjectInspector valueOI = PrimitiveObjectInspectorFactory.writableStringObjectInspector;
     GenericUDFFromUtcTimestamp udf = new GenericUDFFromUtcTimestamp();
@@ -63,6 +71,7 @@ public class TestGenericUDFFromUtcTimestamp extends TestCase {
         Timestamp.valueOf("2015-03-28 18:00:00.123456789"));
   }
 
+  @Test
   public void testToUtcTimestamp() throws Exception {
     ObjectInspector valueOI = PrimitiveObjectInspectorFactory.writableStringObjectInspector;
     GenericUDFToUtcTimestamp udf = new GenericUDFToUtcTimestamp();
@@ -83,5 +92,19 @@ public class TestGenericUDFFromUtcTimestamp extends TestCase {
     runAndVerify(udf,
         new Text("2015-03-28 18:00:00.123456789"), new Text("Europe/London"),
         Timestamp.valueOf("2015-03-28 18:00:00.123456789"));
+  }
+
+  @Test
+  public void testInvalidTimestamp() throws Exception {
+    ObjectInspector valueOI = PrimitiveObjectInspectorFactory.writableStringObjectInspector;
+    GenericUDFFromUtcTimestamp udf = new GenericUDFFromUtcTimestamp();
+    ObjectInspector[] args2 = {valueOI, valueOI};
+    udf.initialize(args2);
+
+    try {
+      runAndVerify(udf, new Text("2015-03-28 17:00:00"), new Text("InvalidTimestamp"), null);
+    }catch (Exception exception){
+      assertEquals("Unknown time-zone ID: InvalidTimestamp", exception.getMessage());
+    }
   }
 }

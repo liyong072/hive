@@ -1,18 +1,20 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.http;
@@ -44,10 +46,11 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.codehaus.jackson.JsonFactory;
-import org.codehaus.jackson.JsonGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
 
 /*
  * This servlet is based off of the JMXProxyServlet from Tomcat 7.0.14. It has
@@ -72,7 +75,7 @@ import org.slf4j.LoggerFactory;
  * attribute of a JMX bean.  The format of the URL is
  * <code>http://.../jmx?get=MXBeanName::AttributeName</code>
  * <p>
- * For example 
+ * For example
  * <code>
  * http://../jmx?get=Hadoop:service=NameNode,name=NameNodeInfo::ClusterId
  * </code> will return the cluster id of the namenode mxbean.
@@ -98,23 +101,23 @@ import org.slf4j.LoggerFactory;
  *  <p>
  *  The servlet attempts to convert the JMXBeans into JSON. Each
  *  bean's attributes will be converted to a JSON object member.
- *  
+ *
  *  If the attribute is a boolean, a number, a string, or an array
- *  it will be converted to the JSON equivalent. 
- *  
+ *  it will be converted to the JSON equivalent.
+ *
  *  If the value is a {@link CompositeData} then it will be converted
  *  to a JSON object with the keys as the name of the JSON member and
  *  the value is converted following these same rules.
- *  
+ *
  *  If the value is a {@link TabularData} then it will be converted
  *  to an array of the {@link CompositeData} elements that it contains.
- *  
+ *
  *  All other objects will be converted to a string and output as such.
- *  
+ *
  *  The bean's name and modelerType will be returned for all beans.
  *
- *  Optional paramater "callback" should be used to deliver JSONP response.
- *  
+ *  Optional parameter "callback" should be used to deliver JSONP response.
+ *
  */
 public class JMXJsonServlet extends HttpServlet {
   private static final Logger LOG = LoggerFactory.getLogger(JMXJsonServlet.class);
@@ -144,7 +147,7 @@ public class JMXJsonServlet extends HttpServlet {
 
   /**
    * Process a GET request for the specified resource.
-   * 
+   *
    * @param request
    *          The servlet request we are processing
    * @param response
@@ -210,8 +213,8 @@ public class JMXJsonServlet extends HttpServlet {
   }
 
   // --------------------------------------------------------- Private Methods
-  private void listBeans(JsonGenerator jg, ObjectName qry, String attribute, 
-      HttpServletResponse response) 
+  private void listBeans(JsonGenerator jg, ObjectName qry, String attribute,
+      HttpServletResponse response)
   throws IOException {
     LOG.debug("Listing beans for "+qry);
     Set<ObjectName> names = null;
@@ -255,7 +258,7 @@ public class JMXJsonServlet extends HttpServlet {
               + " threw an exception", e);
         } catch ( ReflectionException e ) {
           // This happens when the code inside the JMX bean (setter?? from the
-          // java docs) threw an exception, so log it and fall back on the 
+          // java docs) threw an exception, so log it and fall back on the
           // class name
           LOG.error("getting attribute " + prs + " of " + oname
               + " threw an exception", e);
@@ -382,14 +385,11 @@ public class JMXJsonServlet extends HttpServlet {
           writeObject(jg, item);
         }
         jg.writeEndArray();
-      } else if(value instanceof Number) {
-        Number n = (Number)value;
+      } else if (value instanceof Number n) {
         jg.writeNumber(n.toString());
-      } else if(value instanceof Boolean) {
-        Boolean b = (Boolean)value;
+      } else if (value instanceof Boolean b) {
         jg.writeBoolean(b);
-      } else if(value instanceof CompositeData) {
-        CompositeData cds = (CompositeData)value;
+      } else if (value instanceof CompositeData cds) {
         CompositeType comp = cds.getCompositeType();
         Set<String> keys = comp.keySet();
         jg.writeStartObject();
@@ -397,8 +397,7 @@ public class JMXJsonServlet extends HttpServlet {
           writeAttribute(jg, key, cds.get(key));
         }
         jg.writeEndObject();
-      } else if(value instanceof TabularData) {
-        TabularData tds = (TabularData)value;
+      } else if (value instanceof TabularData tds) {
         jg.writeStartArray();
         for(Object entry : tds.values()) {
           writeObject(jg, entry);

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.jdbc;
@@ -58,7 +59,6 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.ql.exec.UDF;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
 import org.apache.hadoop.hive.ql.processors.DfsProcessor;
 import org.apache.hive.common.util.HiveVersionInfo;
 import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
@@ -78,7 +78,6 @@ import org.junit.Test;
  */
 public class cbo_rp_TestJdbcDriver2 {
   private static final Logger LOG = LoggerFactory.getLogger(cbo_rp_TestJdbcDriver2.class);
-  private static final String driverName = "org.apache.hive.jdbc.HiveDriver";
   private static final String tableName = "testHiveJdbcDriver_Table";
   private static final String tableComment = "Simple table";
   private static final String viewName = "testHiveJdbcDriverView";
@@ -108,8 +107,7 @@ public class cbo_rp_TestJdbcDriver2 {
   }
 
   @BeforeClass
-  public static void setUpBeforeClass() throws SQLException, ClassNotFoundException{
-    Class.forName(driverName);
+  public static void setUpBeforeClass() throws SQLException {
     Connection con1 = getConnection("default");
     System.setProperty(ConfVars.HIVE_SERVER2_LOGGING_OPERATION_LEVEL.varname, "verbose");
 
@@ -817,15 +815,15 @@ public class cbo_rp_TestJdbcDriver2 {
     assertEquals(-1.1d, res.getDouble(3), floatCompareDelta);
     assertEquals("", res.getString(4));
     assertEquals("[]", res.getString(5));
-    assertEquals("{}", res.getString(6));
-    assertEquals("{}", res.getString(7));
+    assertEquals("{1:null}", res.getString(6));
+    assertEquals("{\"a\":\"b\"}", res.getString(7));
     assertEquals("{\"r\":null,\"s\":null,\"t\":null}", res.getString(8));
     assertEquals(-1, res.getByte(9));
     assertEquals(-1, res.getShort(10));
     assertEquals(-1.0f, res.getFloat(11), floatCompareDelta);
     assertEquals(-1, res.getLong(12));
     assertEquals("[]", res.getString(13));
-    assertEquals("{}", res.getString(14));
+    assertEquals("{1:{10:100}}", res.getString(14));
     assertEquals("{\"r\":null,\"s\":null}", res.getString(15));
     assertEquals("[]", res.getString(16));
     assertEquals(null, res.getString(17));
@@ -846,7 +844,7 @@ public class cbo_rp_TestJdbcDriver2 {
     assertEquals("1", res.getString(4));
     assertEquals("[1,2]", res.getString(5));
     assertEquals("{1:\"x\",2:\"y\"}", res.getString(6));
-    assertEquals("{\"k\":\"v\"}", res.getString(7));
+    assertEquals("{\"k\":\"v\",\"b\":\"c\"}", res.getString(7));
     assertEquals("{\"r\":\"a\",\"s\":9,\"t\":2.2}", res.getString(8));
     assertEquals(1, res.getByte(9));
     assertEquals(1, res.getShort(10));
@@ -2059,7 +2057,7 @@ public void testParseUrlHttpMode() throws SQLException, JdbcUriParseException,
    */
   @Test
   public void testFetchFirstDfsCmds() throws Exception {
-    String wareHouseDir = conf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname);
+    String wareHouseDir = conf.get(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname);
     execFetchFirst("dfs -ls " + wareHouseDir, DfsProcessor.DFS_RESULT_HEADER, false);
   }
 

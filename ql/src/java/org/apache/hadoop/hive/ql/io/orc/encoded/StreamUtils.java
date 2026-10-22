@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.io.orc.encoded;
 
@@ -21,13 +22,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import org.apache.hadoop.hive.common.DiskRangeInfo;
-import org.apache.hadoop.hive.common.io.DiskRange;
+import org.apache.hadoop.hive.common.io.DiskRangeList;
 import org.apache.hadoop.hive.common.io.encoded.EncodedColumnBatch.ColumnStreamData;
 import org.apache.hadoop.hive.common.io.encoded.MemoryBuffer;
-import org.apache.orc.impl.SettableUncompressedStream;
 import org.apache.orc.impl.BufferChunk;
-
-import com.google.common.collect.Lists;
 
 /**
  * Stream utility.
@@ -40,10 +38,9 @@ public class StreamUtils {
    * @param streamName - stream name
    * @param streamBuffer - stream buffer
    * @return - SettableUncompressedStream
-   * @throws IOException
    */
   public static SettableUncompressedStream createSettableUncompressedStream(String streamName,
-      ColumnStreamData streamBuffer) throws IOException {
+      ColumnStreamData streamBuffer) {
     if (streamBuffer == null) {
       return null;
     }
@@ -53,7 +50,7 @@ public class StreamUtils {
       return new SettableUncompressedStream(streamName, diskRangeInfo.getDiskRanges(),
           diskRangeInfo.getTotalLength());
     } else {
-      return new SettableUncompressedStream(streamName, Lists.<DiskRange>newArrayList(), 0);
+      return new SettableUncompressedStream(streamName, new DiskRangeList(0,0), 0);
     }
   }
 

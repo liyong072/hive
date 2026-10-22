@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer;
@@ -28,13 +29,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
+import java.util.TreeSet;
 
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.apache.hadoop.hive.ql.exec.AbstractMapJoinOperator;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.exec.CommonJoinOperator;
+import org.apache.hadoop.hive.ql.exec.FileSinkOperator;
 import org.apache.hadoop.hive.ql.exec.FilterOperator;
 import org.apache.hadoop.hive.ql.exec.GroupByOperator;
 import org.apache.hadoop.hive.ql.exec.JoinOperator;
@@ -52,7 +56,7 @@ import org.apache.hadoop.hive.ql.exec.UDTFOperator;
 import org.apache.hadoop.hive.ql.exec.UnionOperator;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
@@ -62,6 +66,7 @@ import org.apache.hadoop.hive.ql.plan.AggregationDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDescUtils;
+import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.GroupByDesc;
 import org.apache.hadoop.hive.ql.plan.JoinDesc;
 import org.apache.hadoop.hive.ql.plan.MapJoinDesc;
@@ -99,7 +104,7 @@ public final class ColumnPrunerProcFactory {
   /**
    * Node Processor for Column Pruning on Filter Operators.
    */
-  public static class ColumnPrunerFilterProc implements NodeProcessor {
+  public static class ColumnPrunerFilterProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
         Object... nodeOutputs) throws SemanticException {
@@ -130,7 +135,7 @@ public final class ColumnPrunerProcFactory {
   /**
    * Node Processor for Column Pruning on Group By Operators.
    */
-  public static class ColumnPrunerGroupByProc implements NodeProcessor {
+  public static class ColumnPrunerGroupByProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
         Object... nodeOutputs) throws SemanticException {
@@ -139,14 +144,14 @@ public final class ColumnPrunerProcFactory {
       List<FieldNode> colLists = new ArrayList<>();
       GroupByDesc conf = gbOp.getConf();
 
-      ArrayList<ExprNodeDesc> keys = conf.getKeys();
+      List<ExprNodeDesc> keys = conf.getKeys();
       for (ExprNodeDesc key : keys) {
         colLists = mergeFieldNodesWithDesc(colLists, key);
       }
 
-      ArrayList<AggregationDesc> aggrs = conf.getAggregators();
+      List<AggregationDesc> aggrs = conf.getAggregators();
       for (AggregationDesc aggr : aggrs) {
-        ArrayList<ExprNodeDesc> params = aggr.getParameters();
+        List<ExprNodeDesc> params = aggr.getParameters();
         for (ExprNodeDesc param : params) {
           colLists = mergeFieldNodesWithDesc(colLists, param);
         }
@@ -157,6 +162,7 @@ public final class ColumnPrunerProcFactory {
         List<FieldNode> neededCols = cppCtx.genColLists(gbOp);
         String groupingColumn = conf.getOutputColumnNames().get(groupingSetPosition);
         if (lookupColumn(neededCols, groupingColumn) == null) {
+          conf.addComputedField(groupingColumn);
           conf.getOutputColumnNames().remove(groupingSetPosition);
           if (gbOp.getSchema() != null) {
             gbOp.getSchema().getSignature().remove(groupingSetPosition);
@@ -220,7 +226,7 @@ public final class ColumnPrunerProcFactory {
     return new ColumnPrunerGroupByProc();
   }
 
-  public static class ColumnPrunerScriptProc implements NodeProcessor {
+  public static class ColumnPrunerScriptProc implements SemanticNodeProcessor {
     @Override
     @SuppressWarnings("unchecked")
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
@@ -453,7 +459,7 @@ public final class ColumnPrunerProcFactory {
   /**
    * The Default Node Processor for Column Pruning.
    */
-  public static class ColumnPrunerDefaultProc implements NodeProcessor {
+  public static class ColumnPrunerDefaultProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
         Object... nodeOutputs) throws SemanticException {
@@ -478,7 +484,7 @@ public final class ColumnPrunerProcFactory {
    * The Node Processor for Column Pruning on Table Scan Operators. It will
    * store needed columns in tableScanDesc.
    */
-  public static class ColumnPrunerTableScanProc implements NodeProcessor {
+  public static class ColumnPrunerTableScanProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
         Object... nodeOutputs) throws SemanticException {
@@ -492,12 +498,82 @@ public final class ColumnPrunerProcFactory {
       }
 
       cols = cols == null ? new ArrayList<FieldNode>() : cols;
+      cols = includePartitionColumnsFromScanFilters(scanOp, cols);
 
       cppCtx.getPrunedColLists().put((Operator<? extends OperatorDesc>) nd, cols);
       RowSchema inputRS = scanOp.getSchema();
       setupNeededColumns(scanOp, inputRS, cols);
 
       return null;
+    }
+
+    /**
+     * For storage handlers with non-native partitions (Iceberg), keep identity partition source
+     * columns in the scan when they are referenced by pushed storage filters or filters above the
+     * scan in the local read pipeline. Without this, filters can reference partition columns that
+     * were pruned from the read projection.
+     */
+    private static List<FieldNode> includePartitionColumnsFromScanFilters(TableScanOperator scanOp,
+        List<FieldNode> cols) {
+      TableScanDesc desc = scanOp.getConf();
+      Table table = desc.getTableMetadata();
+      if (table == null || !table.hasNonNativePartitionSupport()) {
+        return cols;
+      }
+
+      ExprNodeGenericFuncDesc filterExpr = desc.getFilterExpr();
+      if (filterExpr != null) {
+        cols = mergeFieldNodesWithDesc(cols, filterExpr);
+      }
+
+      if (scanOp.getChildOperators() != null) {
+        for (Operator<? extends OperatorDesc> child : scanOp.getChildOperators()) {
+          cols = mergePartitionColumnsFromFiltersAboveScan(child, cols);
+        }
+      }
+      return cols;
+    }
+
+    /**
+     * Walks operators above a TableScan in the local read pipeline and merges columns referenced by
+     * Filter predicates. Traversal follows passthrough operators (Select, PTF, lateral view join,
+     * Limit), mirroring predicate pushdown boundaries in {@code OpProcFactory.SimpleFilterPPD}.
+     * Stops at shuffle, join, grouping and sink operators.
+     */
+    private static List<FieldNode> mergePartitionColumnsFromFiltersAboveScan(
+        Operator<? extends OperatorDesc> op, List<FieldNode> cols) {
+      if (isScanPipelineBoundary(op)) {
+        return cols;
+      }
+
+      if (op instanceof FilterOperator filterOperator) {
+        cols = mergeFieldNodesWithDesc(cols, filterOperator.getConf().getPredicate());
+      } else if (!isPassthroughOperatorAboveScan(op)) {
+        return cols;
+      }
+
+      if (op.getChildOperators() == null) {
+        return cols;
+      }
+      for (Operator<? extends OperatorDesc> child : op.getChildOperators()) {
+        cols = mergePartitionColumnsFromFiltersAboveScan(child, cols);
+      }
+      return cols;
+    }
+
+    private static boolean isPassthroughOperatorAboveScan(Operator<? extends OperatorDesc> op) {
+      return op instanceof SelectOperator
+          || op instanceof PTFOperator
+          || op instanceof LateralViewJoinOperator
+          || op instanceof LimitOperator;
+    }
+
+    private static boolean isScanPipelineBoundary(Operator<? extends OperatorDesc> op) {
+      return op instanceof ReduceSinkOperator
+          || op instanceof GroupByOperator
+          || op instanceof CommonJoinOperator
+          || op instanceof UnionOperator
+          || op instanceof FileSinkOperator;
     }
   }
 
@@ -519,6 +595,8 @@ public final class ColumnPrunerProcFactory {
       cols.add(new FieldNode(VirtualColumn.RAWDATASIZE.getName()));
     }
 
+    Set<String> nonNativePartitionCols = nonNativePartitionColNames(desc.getTableMetadata());
+
     for (FieldNode fn : cols) {
       String column = fn.getFieldName();
       ColumnInfo colInfo = inputRS.getColumnInfo(column);
@@ -526,9 +604,9 @@ public final class ColumnPrunerProcFactory {
         continue;
       }
       referencedColumnNames.add(column);
-      if (colInfo.getIsVirtualCol()) {
+      if (colInfo.getIsVirtualCol() && !nonNativePartitionCols.contains(column)) {
         // part is also a virtual column, but part col should not in this
-        // list.
+        // list in case of non native tables like iceberg which have their partition support.
         for (int j = 0; j < virtualCols.size(); j++) {
           VirtualColumn vc = virtualCols.get(j);
           if (vc.getName().equals(colInfo.getInternalName())) {
@@ -554,6 +632,15 @@ public final class ColumnPrunerProcFactory {
     scanOp.setReferencedColumns(referencedColumnNames);
   }
 
+  private static Set<String> nonNativePartitionColNames(Table table) {
+    if (table == null || !table.hasNonNativePartitionSupport()) {
+      return Set.of();
+    }
+    Set<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+    names.addAll(table.getPartColNames());
+    return names;
+  }
+
   /**
    * Factory method to get the ColumnPrunerDefaultProc class.
    *
@@ -566,7 +653,7 @@ public final class ColumnPrunerProcFactory {
   /**
    * The Node Processor for Column Pruning on Reduce Sink Operators.
    */
-  public static class ColumnPrunerReduceSinkProc implements NodeProcessor {
+  public static class ColumnPrunerReduceSinkProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
         Object... nodeOutputs) throws SemanticException {
@@ -575,7 +662,7 @@ public final class ColumnPrunerProcFactory {
       ReduceSinkDesc conf = op.getConf();
 
       List<FieldNode> colLists = new ArrayList<>();
-      ArrayList<ExprNodeDesc> keys = conf.getKeyCols();
+      List<ExprNodeDesc> keys = conf.getKeyCols();
       LOG.debug("Reduce Sink Operator " + op.getIdentifier() + " key:" + keys);
       for (ExprNodeDesc key : keys) {
         colLists = mergeFieldNodesWithDesc(colLists, key);
@@ -646,7 +733,7 @@ public final class ColumnPrunerProcFactory {
   /**
    * The Node Processor for Column Pruning on Lateral View Join Operators.
    */
-  public static class ColumnPrunerLateralViewJoinProc implements NodeProcessor {
+  public static class ColumnPrunerLateralViewJoinProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
         Object... nodeOutputs) throws SemanticException {
@@ -742,7 +829,7 @@ public final class ColumnPrunerProcFactory {
   /**
    * The Node Processor for Column Pruning on Select Operators.
    */
-  public static class ColumnPrunerSelectProc implements NodeProcessor {
+  public static class ColumnPrunerSelectProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
         Object... nodeOutputs) throws SemanticException {
@@ -805,17 +892,16 @@ public final class ColumnPrunerProcFactory {
         for (FieldNode col : cols) {
           int index = originalOutputColumnNames.indexOf(col.getFieldName());
           Table tab = cppCtx.getParseContext().getViewProjectToTableSchema().get(op);
-          List<FieldSchema> fullFieldList = new ArrayList<FieldSchema>(tab.getCols());
-          fullFieldList.addAll(tab.getPartCols());
+          List<FieldSchema> fullFieldList = tab.getAllCols();
           cppCtx.getParseContext().getColumnAccessInfo()
               .add(tab.getCompleteName(), fullFieldList.get(index).getName());
         }
       }
       if (cols.size() < originalOutputColumnNames.size()) {
-        ArrayList<ExprNodeDesc> newColList = new ArrayList<ExprNodeDesc>();
-        ArrayList<String> newOutputColumnNames = new ArrayList<String>();
-        ArrayList<ColumnInfo> rs_oldsignature = op.getSchema().getSignature();
-        ArrayList<ColumnInfo> rs_newsignature = new ArrayList<ColumnInfo>();
+        List<ExprNodeDesc> newColList = new ArrayList<ExprNodeDesc>();
+        List<String> newOutputColumnNames = new ArrayList<String>();
+        List<ColumnInfo> rs_oldsignature = op.getSchema().getSignature();
+        List<ColumnInfo> rs_newsignature = new ArrayList<ColumnInfo>();
         // The pruning needs to preserve the order of columns in the input schema
         Set<String> colNames = new HashSet<String>();
         for (FieldNode col : cols) {
@@ -831,6 +917,7 @@ public final class ColumnPrunerProcFactory {
         }
         op.getSchema().setSignature(rs_newsignature);
         conf.setColList(newColList);
+        conf.getColumnExprMap().keySet().retainAll(colNames);
         conf.setOutputColumnNames(newOutputColumnNames);
         handleChildren(op, toColumnNames(cols), cppCtx);
       }
@@ -874,8 +961,7 @@ public final class ColumnPrunerProcFactory {
   private static boolean[] getPruneReduceSinkOpRetainFlags(
       List<String> retainedParentOpOutputCols, ReduceSinkOperator reduce) {
     ReduceSinkDesc reduceConf = reduce.getConf();
-    java.util.ArrayList<ExprNodeDesc> originalValueEval = reduceConf
-        .getValueCols();
+    List<ExprNodeDesc> originalValueEval = reduceConf.getValueCols();
     boolean[] flags = new boolean[originalValueEval.size()];
     for (int i = 0; i < originalValueEval.size(); i++) {
       flags[i] = false;
@@ -900,8 +986,8 @@ public final class ColumnPrunerProcFactory {
     Map<String, ExprNodeDesc> oldMap = reduce.getColumnExprMap();
     LOG.info("RS " + reduce.getIdentifier() + " oldColExprMap: " + oldMap);
     RowSchema oldRS = reduce.getSchema();
-    ArrayList<ColumnInfo> old_signature = oldRS.getSignature();
-    ArrayList<ColumnInfo> signature = new ArrayList<ColumnInfo>(old_signature);
+    List<ColumnInfo> old_signature = oldRS.getSignature();
+    List<ColumnInfo> signature = new ArrayList<ColumnInfo>(old_signature);
 
     List<String> valueColNames = reduceConf.getOutputValueColumnNames();
     ArrayList<String> newValueColNames = new ArrayList<String>();
@@ -970,7 +1056,7 @@ public final class ColumnPrunerProcFactory {
   /**
    * The Node Processor for Column Pruning on Join Operators.
    */
-  public static class ColumnPrunerJoinProc implements NodeProcessor {
+  public static class ColumnPrunerJoinProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
         Object... nodeOutputs) throws SemanticException {
@@ -993,7 +1079,7 @@ public final class ColumnPrunerProcFactory {
   /**
    * The Node Processor for Column Pruning on Map Join Operators.
    */
-  public static class ColumnPrunerMapJoinProc implements NodeProcessor {
+  public static class ColumnPrunerMapJoinProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx,
         Object... nodeOutputs) throws SemanticException {
@@ -1016,7 +1102,7 @@ public final class ColumnPrunerProcFactory {
   /**
    * The Node Processor for Column Pruning on Union Operators.
    */
-  public static class ColumnPrunerUnionProc implements NodeProcessor {
+  public static class ColumnPrunerUnionProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx, Object... nodeOutputs)
         throws SemanticException {
@@ -1043,8 +1129,8 @@ public final class ColumnPrunerProcFactory {
   }
 
   private static void pruneOperator(NodeProcessorCtx ctx,
-      Operator<? extends OperatorDesc> op,
-      List<FieldNode> cols)
+                                    Operator<? extends OperatorDesc> op,
+                                    List<FieldNode> cols)
       throws SemanticException {
     // the pruning needs to preserve the order of columns in the input schema
     RowSchema inputSchema = op.getSchema();
@@ -1054,6 +1140,11 @@ public final class ColumnPrunerProcFactory {
       for(ColumnInfo i : oldRS.getSignature()) {
         if (lookupColumn(cols, i.getInternalName()) != null) {
           rs.add(i);
+        } else {
+          Map<String, ExprNodeDesc> columnExprMap = op.getColumnExprMap();
+          if (columnExprMap != null) {
+            columnExprMap.remove(i.getInternalName());
+          }
         }
       }
       op.getSchema().setSignature(rs);
@@ -1072,8 +1163,8 @@ public final class ColumnPrunerProcFactory {
       throws SemanticException {
     RowSchema inputSchema = op.getSchema();
     if (inputSchema != null) {
-      ArrayList<FieldNode> rs = new ArrayList<>();
-      ArrayList<ColumnInfo> inputCols = inputSchema.getSignature();
+      List<FieldNode> rs = new ArrayList<>();
+      List<ColumnInfo> inputCols = inputSchema.getSignature();
       for (ColumnInfo i: inputCols) {
         FieldNode fn = lookupColumn(cols, i.getInternalName());
         if (fn != null) {
@@ -1087,9 +1178,9 @@ public final class ColumnPrunerProcFactory {
   }
 
   private static void pruneJoinOperator(NodeProcessorCtx ctx,
-      CommonJoinOperator op, JoinDesc conf,
-      Map<String, ExprNodeDesc> columnExprMap,
-      Map<Byte, List<Integer>> retainMap, boolean mapJoin) throws SemanticException {
+                                        CommonJoinOperator op, JoinDesc conf,
+                                        Map<String, ExprNodeDesc> columnExprMap,
+                                        Map<Byte, List<Integer>> retainMap, boolean mapJoin) throws SemanticException {
     ColumnPrunerProcCtx cppCtx = (ColumnPrunerProcCtx) ctx;
     List<Operator<? extends OperatorDesc>> childOperators = op
         .getChildOperators();

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.client;
 
@@ -54,8 +55,6 @@ import org.junit.runners.Parameterized;
 
 import com.google.common.collect.Lists;
 
-import static org.apache.hadoop.hive.metastore.Warehouse.DEFAULT_DATABASE_NAME;
-
 /**
  * Tests for dropping partitions.
  */
@@ -65,12 +64,12 @@ public class TestDropPartitions extends MetaStoreClientTest {
   private AbstractMetaStoreService metaStore;
   private IMetaStoreClient client;
 
-  private static final String DB_NAME = "test_drop_part_db";
-  private static final String TABLE_NAME = "test_drop_part_table";
+  protected static final String DB_NAME = "test_drop_part_db";
+  protected static final String TABLE_NAME = "test_drop_part_table";
   private static final String DEFAULT_COL_TYPE = "string";
   private static final String YEAR_COL_NAME = "year";
   private static final String MONTH_COL_NAME = "month";
-  private static final short MAX = -1;
+  protected static final short MAX = -1;
   private static final Partition[] PARTITIONS = new Partition[3];
 
   @BeforeClass
@@ -101,9 +100,7 @@ public class TestDropPartitions extends MetaStoreClientTest {
 
     // Create test tables with 3 partitions
     createTable(TABLE_NAME, getYearAndMonthPartCols(), null);
-    PARTITIONS[0] = createPartition(Lists.newArrayList("2017", "march"), getYearAndMonthPartCols());
-    PARTITIONS[1] = createPartition(Lists.newArrayList("2017", "april"), getYearAndMonthPartCols());
-    PARTITIONS[2] = createPartition(Lists.newArrayList("2018", "march"), getYearAndMonthPartCols());
+    createPartitions();
   }
 
   @After
@@ -119,6 +116,18 @@ public class TestDropPartitions extends MetaStoreClientTest {
     } finally {
       client = null;
     }
+  }
+
+  public AbstractMetaStoreService getMetaStore() {
+    return metaStore;
+  }
+
+  public IMetaStoreClient getClient() {
+    return client;
+  }
+
+  public void setClient(IMetaStoreClient client) {
+    this.client = client;
   }
 
   // Tests for dropPartition(String db_name, String tbl_name, List<String> part_vals,
@@ -163,7 +172,7 @@ public class TestDropPartitions extends MetaStoreClientTest {
 
     String tableName = "purge_test";
     Map<String, String> tableParams = new HashMap<>();
-    tableParams.put("auto.purge", "true");
+    tableParams.put("skip.trash", "true");
     createTable(tableName, getYearPartCol(), tableParams);
 
     Partition partition1 =
@@ -178,6 +187,7 @@ public class TestDropPartitions extends MetaStoreClientTest {
   }
 
   @Test
+  @ConditionalIgnoreOnSessionHiveMetastoreClient
   public void testDropPartitionArchivedPartition() throws Exception {
 
     String originalLocation = metaStore.getWarehouseRoot() + "/" + TABLE_NAME + "/2016_may";
@@ -205,10 +215,10 @@ public class TestDropPartitions extends MetaStoreClientTest {
     String tableName = "external_table";
     Map<String, String> tableParams = new HashMap<>();
     tableParams.put("EXTERNAL", "true");
-    tableParams.put("auto.purge", "true");
+    tableParams.put("skip.trash", "true");
     createTable(tableName, getYearPartCol(), tableParams);
 
-    String location = metaStore.getWarehouseRoot() + "/externalTable/year=2017";
+    String location = metaStore.getExternalWarehouseRoot() + "/externalTable/year=2017";
     Partition partition =
         createPartition(tableName, location, Lists.newArrayList("2017"), getYearPartCol(), null);
 
@@ -355,7 +365,7 @@ public class TestDropPartitions extends MetaStoreClientTest {
     tableParams.put("EXTERNAL", "true");
     createTable(tableName, getYearPartCol(), tableParams);
 
-    String location = metaStore.getWarehouseRoot() + "/externalTable/year=2017";
+    String location = metaStore.getExternalWarehouseRoot() + "/externalTable/year=2017";
     Partition partition =
         createPartition(tableName, location, Lists.newArrayList("2017"), getYearPartCol(), null);
 
@@ -392,7 +402,7 @@ public class TestDropPartitions extends MetaStoreClientTest {
 
     String tableName = "purge_test";
     Map<String, String> tableParams = new HashMap<>();
-    tableParams.put("auto.purge", "true");
+    tableParams.put("skip.trash", "true");
     createTable(tableName, getYearPartCol(), tableParams);
 
     Partition partition1 =
@@ -501,6 +511,7 @@ public class TestDropPartitions extends MetaStoreClientTest {
   }
 
   @Test
+  @ConditionalIgnoreOnSessionHiveMetastoreClient
   public void otherCatalog() throws TException {
     String catName = "drop_partition_catalog";
     Catalog cat = new CatalogBuilder()
@@ -554,11 +565,13 @@ public class TestDropPartitions extends MetaStoreClientTest {
   }
 
   @Test(expected = NoSuchObjectException.class)
+  @ConditionalIgnoreOnSessionHiveMetastoreClient
   public void testDropPartitionBogusCatalog() throws Exception {
     client.dropPartition("nosuch", DB_NAME, TABLE_NAME, Lists.newArrayList("2017"), false);
   }
 
   @Test(expected = NoSuchObjectException.class)
+  @ConditionalIgnoreOnSessionHiveMetastoreClient
   public void testDropPartitionByNameBogusCatalog() throws Exception {
     client.dropPartition("nosuch", DB_NAME, TABLE_NAME, "year=2017", false);
   }
@@ -566,21 +579,38 @@ public class TestDropPartitions extends MetaStoreClientTest {
 
   // Helper methods
 
-  private Table createTable(String tableName, List<FieldSchema> partCols,
+  protected void createPartitions() throws Exception {
+    PARTITIONS[0] = createPartition(Lists.newArrayList("2017", "march"), getYearAndMonthPartCols());
+    PARTITIONS[1] = createPartition(Lists.newArrayList("2017", "april"), getYearAndMonthPartCols());
+    PARTITIONS[2] = createPartition(Lists.newArrayList("2018", "march"), getYearAndMonthPartCols());
+  }
+
+  protected Table createTable(String tableName, List<FieldSchema> partCols,
       Map<String, String> tableParams) throws Exception {
+    String type = "MANAGED_TABLE";
+    String location = metaStore.getWarehouseRoot() + "/" + tableName;
+
+    if (tableParams != null) {
+      type = (tableParams.getOrDefault("EXTERNAL", "FALSE").equalsIgnoreCase("TRUE")) ?
+        "EXTERNAL_TABLE" : "MANAGED_TABLE";
+      location = (type.equalsIgnoreCase("EXTERNAL_TABLE")) ?
+        (metaStore.getExternalWarehouseRoot() + "/" + tableName) : (metaStore.getWarehouseRoot() + "/" + tableName);
+    }
+
     Table table = new TableBuilder()
         .setDbName(DB_NAME)
         .setTableName(tableName)
+        .setType(type)
         .addCol("test_id", "int", "test col id")
         .addCol("test_value", "string", "test col value")
         .setPartCols(partCols)
-        .setLocation(metaStore.getWarehouseRoot() + "/" + tableName)
+        .setLocation(location)
         .setTableParams(tableParams)
         .create(client, metaStore.getConf());
     return table;
   }
 
-  private Partition createPartition(List<String> values,
+  protected Partition createPartition(List<String> values,
       List<FieldSchema> partCols) throws Exception {
     new PartitionBuilder()
         .setDbName(DB_NAME)
@@ -592,7 +622,7 @@ public class TestDropPartitions extends MetaStoreClientTest {
     return partition;
   }
 
-  private Partition createPartition(String tableName, String location, List<String> values,
+  protected Partition createPartition(String tableName, String location, List<String> values,
       List<FieldSchema> partCols, Map<String, String> partParams) throws Exception {
     new PartitionBuilder()
         .setDbName(DB_NAME)
@@ -606,7 +636,7 @@ public class TestDropPartitions extends MetaStoreClientTest {
     return partition;
   }
 
-  private static List<FieldSchema> getYearAndMonthPartCols() {
+  protected static List<FieldSchema> getYearAndMonthPartCols() {
     List<FieldSchema> cols = new ArrayList<>();
     cols.add(new FieldSchema(YEAR_COL_NAME, DEFAULT_COL_TYPE, "year part col"));
     cols.add(new FieldSchema(MONTH_COL_NAME, DEFAULT_COL_TYPE, "month part col"));
@@ -619,7 +649,7 @@ public class TestDropPartitions extends MetaStoreClientTest {
     return cols;
   }
 
-  private void checkPartitionsAfterDelete(String tableName, List<Partition> droppedPartitions,
+  protected void checkPartitionsAfterDelete(String tableName, List<Partition> droppedPartitions,
       List<Partition> existingPartitions, boolean deleteData, boolean purge) throws Exception {
 
     List<Partition> partitions = client.listPartitions(DB_NAME, tableName, MAX);

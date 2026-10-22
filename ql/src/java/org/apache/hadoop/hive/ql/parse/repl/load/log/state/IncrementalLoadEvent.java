@@ -9,16 +9,21 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.load.log.state;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+
+import org.apache.hadoop.hive.ql.exec.repl.ReplStatsTracker;
+import org.apache.hadoop.hive.ql.exec.repl.util.ReplUtils;
 import org.apache.hadoop.hive.ql.parse.repl.ReplState;
-import org.codehaus.jackson.annotate.JsonProperty;
 
 public class IncrementalLoadEvent extends ReplState {
   @JsonProperty
@@ -34,18 +39,28 @@ public class IncrementalLoadEvent extends ReplState {
   private String eventsLoadProgress;
 
   @JsonProperty
+  @JsonSerialize(using = ReplUtils.TimeSerializer.class)
   private Long loadTime;
 
-  public IncrementalLoadEvent(String dbName,
-                              String eventId,
-                              String eventType,
-                              long eventSeqNo,
-                              long numEvents) {
+  @JsonProperty
+  private String eventDuration;
+
+  private long loadTimeMillis;
+
+  public IncrementalLoadEvent(String dbName, String eventId, String eventType, long eventSeqNo, long numEvents,
+      long previousTimestamp, ReplStatsTracker replStatsTracker) {
     this.dbName = dbName;
     this.eventId = eventId;
     this.eventType = eventType;
     this.eventsLoadProgress = new String(new StringBuilder()
                                             .append(eventSeqNo).append("/").append(numEvents));
-    this.loadTime = System.currentTimeMillis() / 1000;
+    this.loadTimeMillis = System.currentTimeMillis();
+    this.loadTime = loadTimeMillis / 1000;
+    this.eventDuration = (this.loadTimeMillis - previousTimestamp) + " ms";
+    replStatsTracker.addEntry(eventType,eventId,(this.loadTimeMillis - previousTimestamp));
+  }
+
+  public long getLoadTimeMillis() {
+    return this.loadTimeMillis;
   }
 }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector;
@@ -22,9 +23,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
 
-import org.apache.commons.lang.ArrayUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.common.type.DataTypePhysicalVariation;
 import org.apache.hadoop.hive.common.type.Date;
 import org.apache.hadoop.hive.common.type.HiveChar;
@@ -33,6 +35,7 @@ import org.apache.hadoop.hive.common.type.HiveIntervalYearMonth;
 import org.apache.hadoop.hive.common.type.HiveVarchar;
 import org.apache.hadoop.hive.common.type.Timestamp;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.io.ByteWritable;
 import org.apache.hadoop.hive.serde2.io.DateWritableV2;
 import org.apache.hadoop.hive.serde2.io.DoubleWritable;
@@ -69,6 +72,8 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static java.util.stream.Collectors.toList;
 
 public class VectorizedBatchUtil {
   private static final Logger LOG = LoggerFactory.getLogger(VectorizedBatchUtil.class);
@@ -113,7 +118,7 @@ public class VectorizedBatchUtil {
     typeName = typeName.toLowerCase();
 
     // Allow undecorated CHAR and VARCHAR to support scratch column type names.
-    if (typeName.equals("char") || typeName.equals("varchar")) {
+    if (typeName.equals(serdeConstants.CHAR_TYPE_NAME) || typeName.equals(serdeConstants.VARCHAR_TYPE_NAME)) {
       return new BytesColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
     }
 
@@ -137,9 +142,10 @@ public class VectorizedBatchUtil {
         case SHORT:
         case INT:
         case LONG:
-        case DATE:
         case INTERVAL_YEAR_MONTH:
           return new LongColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
+        case DATE:
+          return new DateColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
         case TIMESTAMP:
           return new TimestampColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
         case INTERVAL_DAY_TIME:
@@ -203,6 +209,8 @@ public class VectorizedBatchUtil {
             createColumnVector(mapTypeInfo.getMapKeyTypeInfo()),
             createColumnVector(mapTypeInfo.getMapValueTypeInfo()));
       }
+    case UNKNOWN:
+      return new VoidColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
     default:
       throw new RuntimeException("Vectorization is not supported for datatype:"
           + typeInfo.getCategory());
@@ -515,17 +523,17 @@ public class VectorizedBatchUtil {
       }
         break;
     case DECIMAL:
-      DecimalColumnVector dcv = (DecimalColumnVector) batch.cols[offset + colIndex];
+      ColumnVector dcv = batch.cols[offset + colIndex];
       if (writableCol != null) {
         dcv.isNull[rowIndex] = false;
         HiveDecimalWritable wobj = (HiveDecimalWritable) writableCol;
-        dcv.set(rowIndex, wobj);
+        ((IDecimalColumnVector) dcv).set(rowIndex, wobj);
       } else {
         setNullColIsNullValue(dcv, rowIndex);
       }
       break;
     default:
-      throw new HiveException("Vectorizaton is not supported for datatype:" +
+      throw new HiveException("Vectorization is not supported for datatype:" +
           poi.getPrimitiveCategory());
     }
   }
@@ -574,13 +582,14 @@ public class VectorizedBatchUtil {
     return typeInfoList.toArray(new TypeInfo[0]);
   }
 
-  public static ColumnVector makeLikeColumnVector(ColumnVector source
-                                        ) throws HiveException{
+  public static ColumnVector makeLikeColumnVector(ColumnVector source) throws HiveException{
     if (source instanceof Decimal64ColumnVector) {
       Decimal64ColumnVector dec64ColVector = (Decimal64ColumnVector) source;
-      return new DecimalColumnVector(dec64ColVector.vector.length,
+      return new Decimal64ColumnVector(dec64ColVector.vector.length,
           dec64ColVector.precision,
           dec64ColVector.scale);
+    } else if (source instanceof DateColumnVector) {
+      return new DateColumnVector(((DateColumnVector) source).vector.length);
     } else if (source instanceof LongColumnVector) {
       return new LongColumnVector(((LongColumnVector) source).vector.length);
     } else if (source instanceof DoubleColumnVector) {
@@ -619,6 +628,8 @@ public class VectorizedBatchUtil {
         copy[i] = makeLikeColumnVector(src.fields[i]);
       }
       return new UnionColumnVector(src.tags.length, copy);
+    } else if (source instanceof VoidColumnVector) {
+      return new VoidColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
     } else
       throw new HiveException("Column vector class " +
           source.getClass().getName() +
@@ -628,10 +639,15 @@ public class VectorizedBatchUtil {
   private static final byte[] EMPTY_BYTES = new byte[0];
   private static final HiveIntervalDayTime emptyIntervalDayTime = new HiveIntervalDayTime(0, 0);
 
+  public static void copyNonSelectedColumnVector(VectorizedRowBatch sourceBatch,
+      int sourceColumnNum, VectorizedRowBatch targetBatch, int targetColumnNum, int size) {
+    copyNonSelectedColumnVector(sourceBatch, sourceColumnNum, targetBatch, targetColumnNum, size, 0);
+  }
+
   public static void copyNonSelectedColumnVector(
       VectorizedRowBatch sourceBatch, int sourceColumnNum,
       VectorizedRowBatch targetBatch, int targetColumnNum,
-      int size) {
+      int size, int startIndex) {
 
     ColumnVector sourceColVector = sourceBatch.cols[sourceColumnNum];
     ColumnVector targetColVector = targetBatch.cols[targetColumnNum];
@@ -647,6 +663,7 @@ public class VectorizedBatchUtil {
     }
     if (sourceColVector.isRepeating) {
       size = 1;
+      startIndex = 0; // we must copy the first item in case of isRepeating
       targetColVector.isRepeating = true;
     } else {
       targetColVector.isRepeating = false;
@@ -658,14 +675,14 @@ public class VectorizedBatchUtil {
       {
         long[] sourceVector = ((LongColumnVector) sourceColVector).vector;
         long[] targetVector = ((LongColumnVector) targetColVector).vector;
-        System.arraycopy(sourceVector, 0, targetVector, 0, size);
+        System.arraycopy(sourceVector, startIndex, targetVector, 0, size);
       }
       break;
     case DOUBLE:
       {
         double[] sourceVector = ((DoubleColumnVector) sourceColVector).vector;
         double[] targetVector = ((DoubleColumnVector) targetColVector).vector;
-        System.arraycopy(sourceVector, 0, targetVector, 0, size);
+        System.arraycopy(sourceVector, startIndex, targetVector, 0, size);
       }
       break;
     case BYTES:
@@ -678,14 +695,14 @@ public class VectorizedBatchUtil {
         BytesColumnVector targetBytesColVector = ((BytesColumnVector) targetColVector);
   
         if (sourceColVector.noNulls) {
-          for (int i = 0; i < size; i++) {
+          for (int i = startIndex; i < size; i++) {
             targetBytesColVector.setVal(i, sourceVector[i], sourceStart[i], sourceLength[i]);
           }
         } else {
           boolean[] sourceIsNull = sourceColVector.isNull;
   
           // Target isNull was copied at beginning of method.
-          for (int i = 0; i < size; i++) {
+          for (int i = startIndex; i < size; i++) {
             if (!sourceIsNull[i]) {
               targetBytesColVector.setVal(i, sourceVector[i], sourceStart[i], sourceLength[i]);
             } else {
@@ -703,14 +720,14 @@ public class VectorizedBatchUtil {
         DecimalColumnVector targetDecimalColVector = ((DecimalColumnVector) targetColVector);
 
         if (sourceColVector.noNulls) {
-          for (int i = 0; i < size; i++) {
+          for (int i = startIndex; i < size; i++) {
             targetDecimalColVector.set(i, sourceVector[i]);
           }
         } else {
           boolean[] sourceIsNull = sourceColVector.isNull;
 
           // Target isNull was copied at beginning of method.
-          for (int i = 0; i < size; i++) {
+          for (int i = startIndex; i < size; i++) {
             if (!sourceIsNull[i]) {
               targetDecimalColVector.set(i, sourceVector[i]);
             } else {
@@ -731,7 +748,7 @@ public class VectorizedBatchUtil {
         int[] targetNanos = targetTimestampColVector.nanos;
 
         if (sourceColVector.noNulls) {
-          for (int i = 0; i < size; i++) {
+          for (int i = startIndex; i < size; i++) {
             targetTime[i] = sourceTime[i];
             targetNanos[i] = sourceNanos[i];
           }
@@ -739,7 +756,7 @@ public class VectorizedBatchUtil {
           boolean[] sourceIsNull = sourceColVector.isNull;
   
           // Target isNull was copied at beginning of method.
-          for (int i = 0; i < size; i++) {
+          for (int i = startIndex; i < size; i++) {
             if (!sourceIsNull[i]) {
               targetTime[i] = sourceTime[i];
               targetNanos[i] = sourceNanos[i];
@@ -758,7 +775,7 @@ public class VectorizedBatchUtil {
         IntervalDayTimeColumnVector targetIntervalDayTimeColVector = ((IntervalDayTimeColumnVector) targetColVector);
 
         if (sourceColVector.noNulls) {
-          for (int i = 0; i < size; i++) {
+          for (int i = startIndex; i < size; i++) {
             targetIntervalDayTimeColVector.set(
                 i, targetIntervalDayTimeColVector.asScratchIntervalDayTime(i));
           }
@@ -766,7 +783,7 @@ public class VectorizedBatchUtil {
           boolean[] sourceIsNull = sourceColVector.isNull;
 
           // Target isNull was copied at beginning of method.
-          for (int i = 0; i < size; i++) {
+          for (int i = startIndex; i < size; i++) {
             if (!sourceIsNull[i]) {
               targetIntervalDayTimeColVector.set(
                   i, targetIntervalDayTimeColVector.asScratchIntervalDayTime(i));
@@ -988,5 +1005,17 @@ public class VectorizedBatchUtil {
       int index = (batch.selectedInUse ? batch.selected[i] : i);
       debugDisplayOneRow(batch, index, prefix);
     }
+  }
+
+  /**
+   * Reset all columns other than Partition columns
+   * @param rowBatch VectorizedRowBatch to reset
+   */
+  public static void resetNonPartitionColumns(VectorizedRowBatch rowBatch) {
+    List<Integer> columnsToReset = IntStream.concat(
+            IntStream.range(0, rowBatch.getDataColumnCount()),
+            IntStream.range(rowBatch.getDataColumnCount() + rowBatch.getPartitionColumnCount(), rowBatch.cols.length)
+    ).boxed().collect(toList());
+    rowBatch.reset(columnsToReset);
   }
 }

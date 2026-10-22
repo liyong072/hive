@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.processors;
@@ -30,12 +31,13 @@ import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveAuthzContext;
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveAuthzPluginException;
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HiveOperationType;
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HivePrivilegeObject;
+import org.apache.hadoop.hive.ql.security.authorization.plugin.HivePrivilegeObject.HivePrivilegeObjectType;
 import org.apache.hadoop.hive.ql.session.SessionState;
 
 import com.google.common.base.Joiner;
 
 class CommandUtil {
-  public static final Logger LOG = LoggerFactory.getLogger(CommandUtil.class);
+  private static final Logger LOG = LoggerFactory.getLogger(CommandUtil.class);
 
   /**
    * Authorize command of given type and arguments
@@ -47,7 +49,7 @@ class CommandUtil {
    * capturing the authorization error
    */
   static CommandProcessorResponse authorizeCommand(SessionState ss, HiveOperationType type,
-      List<String> command) {
+      List<String> command) throws CommandProcessorException {
     if (ss == null) {
       // ss can be null in unit tests
       return null;
@@ -60,12 +62,9 @@ class CommandUtil {
         authorizeCommandThrowEx(ss, type, command);
         // authorized to perform action
         return null;
-      } catch (HiveAuthzPluginException e) {
+      } catch (HiveAuthzPluginException | HiveAccessControlException e) {
         LOG.error(errMsg, e);
-        return CommandProcessorResponse.create(e);
-      } catch (HiveAccessControlException e) {
-        LOG.error(errMsg, e);
-        return CommandProcessorResponse.create(e);
+        throw new CommandProcessorException(e);
       }
     }
     return null;
@@ -78,7 +77,7 @@ class CommandUtil {
    * @throws HiveAuthzPluginException
    * @throws HiveAccessControlException
    */
-  static void authorizeCommandThrowEx(SessionState ss, HiveOperationType type,
+  private static void authorizeCommandThrowEx(SessionState ss, HiveOperationType type,
       List<String> command) throws HiveAuthzPluginException, HiveAccessControlException {
     HivePrivilegeObject commandObj = HivePrivilegeObject.createHivePrivilegeObject(command);
     HiveAuthzContext.Builder ctxBuilder = new HiveAuthzContext.Builder();
@@ -99,7 +98,7 @@ class CommandUtil {
    * capturing the authorization error
    */
   static CommandProcessorResponse authorizeCommandAndServiceObject(SessionState ss, HiveOperationType type,
-    List<String> command, String serviceObject) {
+      List<String> command, String serviceObject) throws CommandProcessorException {
     if (ss == null) {
       // ss can be null in unit tests
       return null;
@@ -114,7 +113,7 @@ class CommandUtil {
         return null;
       } catch (HiveAuthzPluginException | HiveAccessControlException e) {
         LOG.error(errMsg, e);
-        return CommandProcessorResponse.create(e);
+        throw new CommandProcessorException(e);
       }
     }
     return null;
@@ -123,8 +122,7 @@ class CommandUtil {
   private static void authorizeCommandThrowEx(SessionState ss, HiveOperationType type,
     List<String> command, String serviceObject) throws HiveAuthzPluginException, HiveAccessControlException {
     HivePrivilegeObject commandObj = HivePrivilegeObject.createHivePrivilegeObject(command);
-    HivePrivilegeObject serviceObj = new HivePrivilegeObject(HivePrivilegeObject.HivePrivilegeObjectType.SERVICE_NAME,
-      null, serviceObject, null, null, null);
+    HivePrivilegeObject serviceObj = new HivePrivilegeObject(HivePrivilegeObjectType.SERVICE_NAME, serviceObject);
     HiveAuthzContext.Builder ctxBuilder = new HiveAuthzContext.Builder();
     ctxBuilder.setCommandString(Joiner.on(' ').join(command));
     ctxBuilder.setUserIpAddress(ss.getUserIpAddress());

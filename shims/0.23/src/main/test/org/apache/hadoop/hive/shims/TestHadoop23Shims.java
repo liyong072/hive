@@ -9,30 +9,57 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.shims;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdfs.DFSClient;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
+import org.apache.hadoop.mapreduce.MRJobConfig;
+import org.apache.hadoop.tools.DistCp;
+import org.apache.tez.dag.api.TezConfiguration;
 import org.junit.Test;
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.any;
 
 
 public class TestHadoop23Shims {
 
+  private Path getMockedPath(boolean supportXAttr) throws IOException {
+    FileSystem fs = mock(FileSystem.class);
+    if (supportXAttr) {
+      when(fs.getXAttrs(any())).thenReturn(new HashMap<>());
+    } else {
+      when(fs.getXAttrs(any())).thenThrow(
+              new UnsupportedOperationException("XAttr not supported for file system."));
+    }
+    Path path = mock(Path.class);
+    when(path.getFileSystem(any())).thenReturn(fs);
+    return path;
+  }
+  
   @Test
-  public void testConstructDistCpParams() {
+  public void testConstructDistCpParams() throws Exception {
     Path copySrc = new Path("copySrc");
     Path copyDst = new Path("copyDst");
     Configuration conf = new Configuration();
@@ -41,7 +68,6 @@ public class TestHadoop23Shims {
     List<String> paramsDefault = shims.constructDistCpParams(Collections.singletonList(copySrc), copyDst, conf);
 
     assertEquals(5, paramsDefault.size());
-    assertTrue("Distcp -pbx set by default", paramsDefault.contains("-pbx"));
     assertTrue("Distcp -update set by default", paramsDefault.contains("-update"));
     assertTrue("Distcp -delete set by default", paramsDefault.contains("-delete"));
     assertEquals(copySrc.toString(), paramsDefault.get(3));
@@ -88,4 +114,126 @@ public class TestHadoop23Shims {
 
   }
 
+  @Test
+  public void testXAttrNotPreservedDueToDestFS() throws Exception {
+    Configuration conf = new Configuration();
+    Path copySrc = getMockedPath(true);
+    Path copyDst = getMockedPath(false);
+
+    Hadoop23Shims shims = new Hadoop23Shims();
+    List<String> paramsDefault = shims.constructDistCpParams(Collections.singletonList(copySrc), copyDst, conf);
+
+    assertEquals(5, paramsDefault.size());
+    assertTrue("Distcp -pb set by default", paramsDefault.contains("-pb"));
+    assertTrue("Distcp -update set by default", paramsDefault.contains("-update"));
+    assertTrue("Distcp -delete set by default", paramsDefault.contains("-delete"));
+    assertEquals(copySrc.toString(), paramsDefault.get(3));
+    assertEquals(copyDst.toString(), paramsDefault.get(4));
+  }
+
+  @Test
+  public void testXAttrNotPreservedDueToSrcFS() throws Exception {
+    Configuration conf = new Configuration();
+    Path copySrc = getMockedPath(false);
+    Path copyDst = getMockedPath(true);
+
+    Hadoop23Shims shims = new Hadoop23Shims();
+    List<String> paramsDefault = shims.constructDistCpParams(Collections.singletonList(copySrc), copyDst, conf);
+
+    assertEquals(5, paramsDefault.size());
+    assertTrue("Distcp -pb set by default", paramsDefault.contains("-pb"));
+    assertTrue("Distcp -update set by default", paramsDefault.contains("-update"));
+    assertTrue("Distcp -delete set by default", paramsDefault.contains("-delete"));
+    assertEquals(copySrc.toString(), paramsDefault.get(3));
+    assertEquals(copyDst.toString(), paramsDefault.get(4));
+  }
+
+  @Test
+  public void testXAttrPreserved() throws Exception {
+    Configuration conf = new Configuration();
+    Path copySrc = getMockedPath(true);
+    Path copyDst = getMockedPath(true);
+    Hadoop23Shims shims = new Hadoop23Shims();
+    List<String> paramsDefault = shims.constructDistCpParams(Collections.singletonList(copySrc), copyDst, conf);
+
+    assertEquals(5, paramsDefault.size());
+    assertTrue("Distcp -pbx set by default", paramsDefault.contains("-pbx"));
+    assertTrue("Distcp -update set by default", paramsDefault.contains("-update"));
+    assertTrue("Distcp -delete set by default", paramsDefault.contains("-delete"));
+    assertEquals(copySrc.toString(), paramsDefault.get(3));
+    assertEquals(copyDst.toString(), paramsDefault.get(4));
+  }
+
+  @Test
+  public void testPreserveOptionsOverwritenByUser() throws Exception {
+    Configuration conf = new Configuration();
+    conf.set("distcp.options.pbx", "");
+    Path copySrc = getMockedPath(false);
+    Path copyDst = getMockedPath(false);
+    Hadoop23Shims shims = new Hadoop23Shims();
+    List<String> paramsDefault = shims.constructDistCpParams(Collections.singletonList(copySrc), copyDst, conf);
+
+    assertEquals(5, paramsDefault.size());
+    assertTrue("Distcp -pbx set by default", paramsDefault.contains("-pbx"));
+    assertTrue("Distcp -update set by default", paramsDefault.contains("-update"));
+    assertTrue("Distcp -delete set by default", paramsDefault.contains("-delete"));
+    assertEquals(copySrc.toString(), paramsDefault.get(3));
+    assertEquals(copyDst.toString(), paramsDefault.get(4));
+  }
+
+  @Test(expected = FileNotFoundException.class)
+  public void testGetFileIdForNonexistingPath() throws Exception {
+    Hadoop23Shims shims = new Hadoop23Shims();
+
+    DistributedFileSystem fs = mock(DistributedFileSystem.class);
+    DFSClient dfsClient = mock(DFSClient.class);
+    doAnswer(invocationOnMock -> {
+      return dfsClient;
+    }).when(fs).getClient();
+
+    shims.getFileId(fs, "badpath");
+  }
+
+  @Test
+  public void testMapReduceQueueIsSetToTezQueue() throws Exception {
+    Configuration conf = new Configuration();
+    // there is a tez.queue.name, but hive.mapred.job.follow.tez.queue is not allowed
+    conf.set(TezConfiguration.TEZ_QUEUE_NAME, "helloQ");
+    conf.set("hive.execution.engine", "tez");
+    DistCp distCp = runMockDistCp(conf);
+    assertEquals("default", distCp.getConf().get(MRJobConfig.QUEUE_NAME));
+
+    // there is a tez.queue.name, and hive.mapred.job.follow.tez.queue is allowed
+    conf.set(TezConfiguration.TEZ_QUEUE_NAME, "helloQ");
+    conf.setBoolean("hive.mapred.job.follow.tez.queue", true);
+    conf.set("hive.execution.engine", "tez");
+    distCp = runMockDistCp(conf);
+    assertEquals("helloQ", distCp.getConf().get(MRJobConfig.QUEUE_NAME));
+
+    // there is a tez.queue.name, also hive.mapred.job.follow.tez.queue is allowed,
+    // but execution engine is set to legacy 'mr': queue follow is not activated
+    conf.set(TezConfiguration.TEZ_QUEUE_NAME, "helloQ");
+    conf.setBoolean("hive.mapred.job.follow.tez.queue", true);
+    conf.set("hive.execution.engine", "mr");
+    distCp = runMockDistCp(conf);
+    assertEquals("default", distCp.getConf().get(MRJobConfig.QUEUE_NAME));
+
+    // there is no tez.queue.name set at all
+    conf = new Configuration();
+    conf.setBoolean("hive.mapred.job.follow.tez.queue", true);
+    conf.set("hive.execution.engine", "tez");
+    distCp = runMockDistCp(conf);
+    assertEquals("default", distCp.getConf().get(MRJobConfig.QUEUE_NAME));
+  }
+
+  private DistCp runMockDistCp(Configuration conf) throws Exception {
+    Path copySrc = getMockedPath(false);
+    Path copyDst = getMockedPath(false);
+    Hadoop23Shims shims = new Hadoop23Shims();
+    List<String> params = shims.constructDistCpParams(Collections.singletonList(copySrc), copyDst, conf);
+
+    DistCp distCp = new DistCp(conf, null);
+    shims.runDistCpInternal(distCp, params);
+    return distCp;
+  }
 }

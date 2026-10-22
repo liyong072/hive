@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.security;
 
@@ -22,9 +23,10 @@ import static org.apache.hadoop.fs.permission.AclEntryType.GROUP;
 import static org.apache.hadoop.fs.permission.AclEntryType.OTHER;
 import static org.apache.hadoop.fs.permission.AclEntryType.USER;
 
+import org.junit.After;
+
 import java.lang.reflect.Method;
 import java.net.URI;
-import java.security.PrivilegedExceptionAction;
 import java.util.Arrays;
 import java.util.List;
 
@@ -47,6 +49,7 @@ public class TestStorageBasedMetastoreAuthorizationProviderWithACL
 
   protected static MiniDFSShim dfs = null;
   protected static Path warehouseDir = null;
+  protected static Path extWarehouseDir = null;
   protected UserGroupInformation userUgi = null;
   protected String testUserName = "test_user";
   protected String proxyUserName = null;
@@ -88,11 +91,14 @@ public class TestStorageBasedMetastoreAuthorizationProviderWithACL
 
     warehouseDir = new Path(new Path(fs.getUri()), "/warehouse");
     fs.mkdirs(warehouseDir);
-    conf.setVar(HiveConf.ConfVars.METASTOREWAREHOUSE, warehouseDir.toString());
+    conf.setVar(HiveConf.ConfVars.METASTORE_WAREHOUSE, warehouseDir.toString());
+    extWarehouseDir = new Path(new Path(fs.getUri()), "/external");
+    fs.mkdirs(extWarehouseDir);
+    conf.setVar(HiveConf.ConfVars.HIVE_METASTORE_WAREHOUSE_EXTERNAL, extWarehouseDir.toString());
 
     // Set up scratch directory
     Path scratchDir = new Path(new Path(fs.getUri()), "/scratchdir");
-    conf.setVar(HiveConf.ConfVars.SCRATCHDIR, scratchDir.toString());
+    conf.setVar(HiveConf.ConfVars.SCRATCH_DIR, scratchDir.toString());
 
     return conf;
   }
@@ -107,8 +113,8 @@ public class TestStorageBasedMetastoreAuthorizationProviderWithACL
     return userUgi.getShortUserName();
   }
 
-  @Override
-  protected void tearDown() throws Exception {
+  @After
+  public void tearDown() throws Exception {
     super.tearDown();
 
     if (dfs != null) {
@@ -175,9 +181,23 @@ public class TestStorageBasedMetastoreAuthorizationProviderWithACL
         .setPermission(permission).build();
   }
 
+  @Override
+  protected boolean mayTestLocation() {
+    return false;
+  }
+
+  @Override
   protected void allowCreateDatabase(String userName)
       throws Exception {
     allowWriteAccessViaAcl(userName, warehouseDir.toString());
+    allowWriteAccessViaAcl(userName, extWarehouseDir.toString());
+  }
+
+  @Override
+  protected void disallowCreateDatabase(String userName)
+      throws Exception {
+    disallowWriteAccessViaAcl(userName, warehouseDir.toString());
+    disallowWriteAccessViaAcl(userName, extWarehouseDir.toString());
   }
 
   @Override

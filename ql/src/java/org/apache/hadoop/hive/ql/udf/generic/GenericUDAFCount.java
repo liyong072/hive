@@ -9,15 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
 import java.util.HashSet;
+import java.util.Set;
 
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
@@ -180,14 +182,13 @@ public class GenericUDAFCount implements GenericUDAFResolver2 {
           if (((CountAgg) agg).uniqueObjects == null) {
             ((CountAgg) agg).uniqueObjects = new HashSet<ObjectInspectorObject>();
           }
-          HashSet<ObjectInspectorObject> uniqueObjs = ((CountAgg) agg).uniqueObjects;
+          Set<ObjectInspectorObject> uniqueObjs = ((CountAgg) agg).uniqueObjects;
 
           ObjectInspectorObject obj = new ObjectInspectorObject(
               ObjectInspectorUtils.copyToStandardObject(parameters, inputOI, ObjectInspectorCopyOption.JAVA),
               outputOI);
-          if (!uniqueObjs.contains(obj)) {
-            uniqueObjs.add(obj);
-          } else {
+          boolean inserted = uniqueObjs.add(obj);
+          if (!inserted){
             countThisRow = false;
           }
         }

@@ -9,18 +9,27 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
 
+import java.util.List;
+import java.util.Optional;
+
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentTypeException;
+import org.apache.hadoop.hive.ql.exec.vector.VectorizedExpressionsSupportDecimal64;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.plan.ColStatistics;
+import org.apache.hadoop.hive.ql.stats.estimator.StatEstimator;
+import org.apache.hadoop.hive.ql.stats.estimator.StatEstimatorProvider;
+import org.apache.hadoop.hive.ql.stats.estimator.PessimisticStatCombiner;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 
 /**
@@ -33,7 +42,8 @@ import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
     value = "_FUNC_(a1, a2, ...) - Returns the first non-null argument",
     extended = "Example:\n"
     + "  > SELECT _FUNC_(NULL, 1, NULL) FROM src LIMIT 1;\n" + "  1")
-public class GenericUDFCoalesce extends GenericUDF {
+@VectorizedExpressionsSupportDecimal64()
+public class GenericUDFCoalesce extends GenericUDF implements StatEstimatorProvider {
   private transient ObjectInspector[] argumentOIs;
   private transient GenericUDFUtils.ReturnObjectInspectorResolver returnOIResolver;
 
@@ -72,4 +82,20 @@ public class GenericUDFCoalesce extends GenericUDF {
     return getStandardDisplayString("COALESCE", children, ",");
   }
 
+  @Override
+  public StatEstimator getStatEstimator() {
+    return new CoalesceStatEstimator();
+  }
+
+  static class CoalesceStatEstimator implements StatEstimator {
+
+    @Override
+    public Optional<ColStatistics> estimate(List<ColStatistics> argStats) {
+      PessimisticStatCombiner combiner = new PessimisticStatCombiner();
+      for (int i = 0; i < argStats.size(); i++) {
+        combiner.add(argStats.get(i));
+      }
+      return combiner.getResult();
+    }
+  }
 }

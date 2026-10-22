@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.cache.results;
@@ -48,6 +49,7 @@ import java.util.stream.Stream;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.ContentSummary;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
@@ -61,11 +63,9 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.NotificationEvent;
 import org.apache.hadoop.hive.metastore.messaging.MessageBuilder;
-import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.hooks.Entity.Type;
 import org.apache.hadoop.hive.ql.hooks.ReadEntity;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
-import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.apache.hadoop.hive.ql.metadata.SessionHiveMetaStoreClient;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.metadata.events.EventConsumer;
@@ -86,13 +86,15 @@ public final class QueryResultsCache {
   private static final Logger LOG = LoggerFactory.getLogger(QueryResultsCache.class);
 
   public static class LookupInfo {
-    private String queryText;
-    private Supplier<ValidTxnWriteIdList> txnWriteIdListProvider;
+    private final String queryText;
+    private final Supplier<ValidTxnWriteIdList> txnWriteIdListProvider;
+    private final Set<Long> tableIds;
 
-    public LookupInfo(String queryText, Supplier<ValidTxnWriteIdList> txnWriteIdListProvider) {
+    public LookupInfo(String queryText, Supplier<ValidTxnWriteIdList> txnWriteIdListProvider, Set<Long> tableIds) {
       super();
       this.queryText = queryText;
       this.txnWriteIdListProvider = txnWriteIdListProvider;
+      this.tableIds = tableIds;
     }
 
     public String getQueryText() {
@@ -191,6 +193,7 @@ public final class QueryResultsCache {
     private QueryInfo queryInfo;
     private FetchWork fetchWork;
     private Path cachedResultsPath;
+    private Set<FileStatus> cachedResultPaths;
 
     // Cache administration
     private long size;
@@ -275,8 +278,9 @@ public final class QueryResultsCache {
 
     public FetchWork getFetchWork() {
       // FetchWork's sink is used to hold results, so each query needs a separate copy of FetchWork
-      FetchWork fetch = new FetchWork(cachedResultsPath, fetchWork.getTblDesc(), fetchWork.getLimit());
+      FetchWork fetch = new FetchWork(fetchWork.getTblDir(), fetchWork.getTblDesc(), fetchWork.getLimit());
       fetch.setCachedResult(true);
+      fetch.setFilesToFetch(this.cachedResultPaths);
       return fetch;
     }
 
@@ -362,7 +366,6 @@ public final class QueryResultsCache {
     // Set up cache directory
     Path rootCacheDir = new Path(conf.getVar(HiveConf.ConfVars.HIVE_QUERY_RESULTS_CACHE_DIRECTORY));
     LOG.info("Initializing query results cache at {}", rootCacheDir);
-    Utilities.ensurePathIsWritable(rootCacheDir, conf);
 
     String currentCacheDirName = "results-" + UUID.randomUUID().toString();
     cacheDirPath = new Path(rootCacheDir, currentCacheDirName);
@@ -398,7 +401,7 @@ public final class QueryResultsCache {
         if (metrics != null) {
           registerMetrics(metrics, instance);
         }
-      } catch (IOException err) {
+      } catch (Exception err) {
         inited.set(false);
         throw err;
       }
@@ -407,6 +410,10 @@ public final class QueryResultsCache {
 
   public static QueryResultsCache getInstance() {
     return instance;
+  }
+
+  public Path getCacheDirPath() {
+    return cacheDirPath;
   }
 
   /**
@@ -424,7 +431,7 @@ public final class QueryResultsCache {
     Set<CacheEntry> entriesToRemove = new HashSet<CacheEntry>();
     Lock readLock = rwLock.readLock();
     try {
-      // Note: ReentrantReadWriteLock deos not allow upgrading a read lock to a write lock.
+      // Note: ReentrantReadWriteLock does not allow upgrading a read lock to a write lock.
       // Care must be taken while under read lock, to make sure we do not perform any actions
       // which attempt to take a write lock.
       readLock.lock();
@@ -517,30 +524,26 @@ public final class QueryResultsCache {
    * @return
    */
   public boolean setEntryValid(CacheEntry cacheEntry, FetchWork fetchWork) {
-    String queryText = cacheEntry.getQueryText();
-    boolean dataDirMoved = false;
     Path queryResultsPath = null;
     Path cachedResultsPath = null;
 
     try {
-      boolean requiresMove = true;
+      // if we are here file sink op should have created files to fetch from
+      assert(fetchWork.getFilesToFetch() != null );
+
+      boolean requiresCaching = true;
       queryResultsPath = fetchWork.getTblDir();
       FileSystem resultsFs = queryResultsPath.getFileSystem(conf);
-      long resultSize;
-      if (resultsFs.exists(queryResultsPath)) {
-        ContentSummary cs = resultsFs.getContentSummary(queryResultsPath);
-        resultSize = cs.getLength();
-      } else {
-        // No actual result directory, no need to move anything.
-        cachedResultsPath = zeroRowsPath;
-        // Even if there are no results to move, at least check that we have permission
-        // to check the existence of zeroRowsPath, or the read using the cache will fail.
-        // A failure here will cause this query to not be added to the cache.
-        FileSystem cacheFs = cachedResultsPath.getFileSystem(conf);
-        boolean fakePathExists = cacheFs.exists(zeroRowsPath);
 
-        resultSize = 0;
-        requiresMove = false;
+      long resultSize = 0;
+      for(FileStatus fs:fetchWork.getFilesToFetch()) {
+        if(resultsFs.exists(fs.getPath())) {
+          resultSize +=  fs.getLen();
+        } else {
+          // No actual result directory, no need to cache anything.
+          requiresCaching = false;
+          break;
+        }
       }
 
       if (!shouldEntryBeAdded(cacheEntry, resultSize)) {
@@ -555,20 +558,22 @@ public final class QueryResultsCache {
           return false;
         }
 
-        if (requiresMove) {
-          // Move the query results to the query cache directory.
-          cachedResultsPath = moveResultsToCacheDirectory(queryResultsPath);
-          dataDirMoved = true;
+        if (requiresCaching) {
+          cacheEntry.cachedResultPaths = new HashSet<>();
+            for(FileStatus fs:fetchWork.getFilesToFetch()) {
+              cacheEntry.cachedResultPaths.add(fs);
+            }
+          LOG.info("Cached query result paths located at {} (size {}) for query '{}'",
+              queryResultsPath, resultSize, cacheEntry.getQueryText());
         }
-        LOG.info("Moved query results from {} to {} (size {}) for query '{}'",
-            queryResultsPath, cachedResultsPath, resultSize, queryText);
 
         // Create a new FetchWork to reference the new cache location.
         FetchWork fetchWorkForCache =
-            new FetchWork(cachedResultsPath, fetchWork.getTblDesc(), fetchWork.getLimit());
+            new FetchWork(fetchWork.getTblDir(), fetchWork.getTblDesc(), fetchWork.getLimit());
         fetchWorkForCache.setCachedResult(true);
+        fetchWorkForCache.setFilesToFetch(fetchWork.getFilesToFetch());
         cacheEntry.fetchWork = fetchWorkForCache;
-        cacheEntry.cachedResultsPath = cachedResultsPath;
+        //cacheEntry.cachedResultsPath = cachedResultsPath;
         cacheEntry.size = resultSize;
         this.cacheSize += resultSize;
 
@@ -585,23 +590,10 @@ public final class QueryResultsCache {
       incrementMetric(MetricsConstant.QC_VALID_ENTRIES);
       incrementMetric(MetricsConstant.QC_TOTAL_ENTRIES_ADDED);
     } catch (Exception err) {
+      String queryText = cacheEntry.getQueryText();
       LOG.error("Failed to create cache entry for query results for query: " + queryText, err);
-
-      if (dataDirMoved) {
-        // If data was moved from original location to cache directory, we need to move it back!
-        LOG.info("Restoring query results from {} back to {}", cachedResultsPath, queryResultsPath);
-        try {
-          FileSystem fs = cachedResultsPath.getFileSystem(conf);
-          fs.rename(cachedResultsPath, queryResultsPath);
-          cacheEntry.size = 0;
-          cacheEntry.cachedResultsPath = null;
-        } catch (Exception err2) {
-          String errMsg = "Failed cleanup during failed attempt to cache query: " + queryText;
-          LOG.error(errMsg);
-          throw new RuntimeException(errMsg);
-        }
-      }
-
+      cacheEntry.size = 0;
+      cacheEntry.cachedResultsPath = null;
       // Invalidate the entry. Rely on query cleanup to remove from lookup.
       cacheEntry.invalidate();
       return false;
@@ -681,10 +673,20 @@ public final class QueryResultsCache {
    */
   private boolean entryMatches(LookupInfo lookupInfo, CacheEntry entry, Set<CacheEntry> entriesToRemove) {
     QueryInfo queryInfo = entry.getQueryInfo();
+
     for (ReadEntity readEntity : queryInfo.getInputs()) {
-      // Check that the tables used do not resolve to temp tables.
       if (readEntity.getType() == Type.TABLE) {
         Table tableUsed = readEntity.getTable();
+        // we want that the lookupInfo.tableIds are all covered by the table ids of the cache entry
+        // the query is used as cache key, so the lookup and the entry should use the same number of tables
+        // so it is enough to check whether every cache table id is contained in the lookup
+        long id = tableUsed.getTTable().getId();
+        if (!lookupInfo.tableIds.contains(id)) {
+          LOG.debug("Cache entry contains a table (tableId={}) that is not present in the query", id);
+          return false;
+        }
+
+        // Check that the tables used do not resolve to temp tables.
         Map<String, Table> tempTables =
             SessionHiveMetaStoreClient.getTempTablesForDatabase(tableUsed.getDbName(), tableUsed.getTableName());
         if (tempTables != null && tempTables.containsKey(tableUsed.getTableName())) {
@@ -781,23 +783,6 @@ public final class QueryResultsCache {
     }
 
     return true;
-  }
-
-  private Path moveResultsToCacheDirectory(Path queryResultsPath) throws IOException {
-    String dirName = UUID.randomUUID().toString();
-    Path cachedResultsPath = new Path(cacheDirPath, dirName);
-    FileSystem fs = cachedResultsPath.getFileSystem(conf);
-    try {
-      boolean resultsMoved = Hive.moveFile(conf, queryResultsPath, cachedResultsPath, false, false, false);
-      if (!resultsMoved) {
-        throw new IOException("Failed to move " + queryResultsPath + " to " + cachedResultsPath);
-      }
-    } catch (IOException err) {
-      throw err;
-    } catch (Exception err) {
-      throw new IOException("Error moving " + queryResultsPath + " to " + cachedResultsPath, err);
-    }
-    return cachedResultsPath;
   }
 
   private boolean hasSpaceForCacheEntry(CacheEntry entry, long size) {
@@ -995,6 +980,7 @@ public final class QueryResultsCache {
       switch (event.getEventType()) {
       case MessageBuilder.ADD_PARTITION_EVENT:
       case MessageBuilder.ALTER_PARTITION_EVENT:
+      case MessageBuilder.ALTER_PARTITIONS_EVENT:
       case MessageBuilder.DROP_PARTITION_EVENT:
       case MessageBuilder.ALTER_TABLE_EVENT:
       case MessageBuilder.DROP_TABLE_EVENT:

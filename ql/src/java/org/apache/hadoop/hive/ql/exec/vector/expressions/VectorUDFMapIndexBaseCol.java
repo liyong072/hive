@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -33,8 +34,6 @@ public abstract class VectorUDFMapIndexBaseCol extends VectorExpression {
 
   private static final long serialVersionUID = 1L;
 
-  private int mapColumnNum;
-  private int indexColumnNum;
   private ColumnVector indexColumnVector;
 
   public VectorUDFMapIndexBaseCol() {
@@ -42,9 +41,7 @@ public abstract class VectorUDFMapIndexBaseCol extends VectorExpression {
   }
 
   public VectorUDFMapIndexBaseCol(int mapColumnNum, int indexColumnNum, int outputColumnNum) {
-    super(outputColumnNum);
-    this.mapColumnNum = mapColumnNum;
-    this.indexColumnNum = indexColumnNum;
+    super(mapColumnNum, indexColumnNum, outputColumnNum);
   }
 
   @Override
@@ -61,9 +58,9 @@ public abstract class VectorUDFMapIndexBaseCol extends VectorExpression {
     }
 
     ColumnVector outV = batch.cols[outputColumnNum];
-    MapColumnVector mapV = (MapColumnVector) batch.cols[mapColumnNum];
+    MapColumnVector mapV = (MapColumnVector) batch.cols[inputColumnNum[0]];
     // indexColumnVector includes the keys of Map
-    indexColumnVector = batch.cols[indexColumnNum];
+    indexColumnVector = batch.cols[inputColumnNum[1]];
     ColumnVector valuesV = mapV.values;
 
     int[] sel = batch.selected;
@@ -441,10 +438,10 @@ public abstract class VectorUDFMapIndexBaseCol extends VectorExpression {
   }
 
   public int getMapColumnNum() {
-    return mapColumnNum;
+    return inputColumnNum[0];
   }
 
   public int getIndexColumnNum() {
-    return indexColumnNum;
+    return inputColumnNum[1];
   }
 }

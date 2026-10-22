@@ -1,5 +1,5 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one 
+ * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
  * regarding copyright ownership.  The ASF licenses this file
@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.jdbc;
@@ -26,6 +27,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -38,10 +41,17 @@ import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+/**
+ * TestXSRFFilter test.
+ */
+@RunWith(Parameterized.class)
 public class TestXSRFFilter {
 
   private static MiniHS2 miniHS2 = null;
@@ -50,6 +60,15 @@ public class TestXSRFFilter {
   private static final String tmpDir = System.getProperty("test.tmp.dir");
 
   private Connection hs2Conn = null;
+
+  @Parameterized.Parameter
+  public String transportMode =  null;
+
+  @Parameterized.Parameters(name = "{index}: tranportMode={0}")
+  public static Collection<Object[]> transportModes() {
+    return Arrays.asList(new Object[][]{{MiniHS2.HS2_ALL_MODE}, {MiniHS2.HS2_HTTP_MODE}});
+  }
+
 
   @BeforeClass
   public static void beforeClass() throws IOException {
@@ -64,7 +83,6 @@ public class TestXSRFFilter {
   // This is not modeled as a @Before, because it needs to be parameterized per-test.
   // If there is a better way to do this, we should do it.
   private void initHS2(boolean enableXSRFFilter) throws Exception {
-    Class.forName(MiniHS2.getJdbcDriverName());
     HiveConf conf = new HiveConf();
     conf.setBoolVar(ConfVars.HIVE_SUPPORT_CONCURRENCY, false);
     miniHS2 = new MiniHS2.Builder().withConf(conf).cleanupLocalDirOnStartup(false).build();
@@ -72,7 +90,7 @@ public class TestXSRFFilter {
     kvDataFilePath = new Path(dataFileDir, "kv1.txt");
     Map<String,String> confOverlay = new HashMap<String, String>();
     confOverlay.put(ConfVars.HIVE_SERVER2_XSRF_FILTER_ENABLED.varname, String.valueOf(enableXSRFFilter));
-    confOverlay.put(ConfVars.HIVE_SERVER2_TRANSPORT_MODE.varname, "http");
+    confOverlay.put(ConfVars.HIVE_SERVER2_TRANSPORT_MODE.varname, transportMode);
     miniHS2.start(confOverlay);
   }
 
@@ -138,7 +156,7 @@ public class TestXSRFFilter {
 
 
   private void runBasicCommands() throws Exception {
-    hs2Conn = getConnection(miniHS2.getJdbcURL(), System.getProperty("user.name"), "bar");
+    hs2Conn = getConnection(miniHS2.getHttpJdbcURL(), System.getProperty("user.name"), "bar");
     String tableName = "testTab1";
     Statement stmt = hs2Conn.createStatement();
 

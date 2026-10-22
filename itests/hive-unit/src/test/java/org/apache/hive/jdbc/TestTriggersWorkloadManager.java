@@ -6,17 +6,21 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.jdbc;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.List;
@@ -53,10 +57,14 @@ public class TestTriggersWorkloadManager extends TestTriggersTezSessionPoolManag
 
   @BeforeClass
   public static void beforeTest() throws Exception {
-    Class.forName(MiniHS2.getJdbcDriverName());
-
     String confDir = "../../data/conf/llap/";
     HiveConf.setHiveSiteLocation(new URL("file://" + new File(confDir).toURI().getPath() + "/hive-site.xml"));
+    conf = new HiveConf();
+    conf.setVar(ConfVars.HIVE_AUTHENTICATOR_MANAGER, "org.apache.hadoop.hive.ql.security.SessionStateUserAuthenticator");
+    java.nio.file.Path confPath = File.createTempFile("hive", "test").toPath();
+    conf.writeXml(new FileWriter(confPath.toFile()));
+    HiveConf.setHiveSiteLocation(new URL("file://" + confPath.toString()));
+
     System.out.println("Setting hive-site: " + HiveConf.getHiveSiteLocation());
 
     conf = new HiveConf();
@@ -79,7 +87,6 @@ public class TestTriggersWorkloadManager extends TestTriggersTezSessionPoolManag
 
     Map<String, String> confOverlay = new HashMap<>();
     miniHS2.start(confOverlay);
-    miniHS2.getDFS().getFileSystem().mkdirs(new Path("/apps_staging_dir/anonymous"));
   }
 
   @Override

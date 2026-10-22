@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -39,14 +40,12 @@ public class StringUnaryUDF extends VectorExpression {
 
   private static final long serialVersionUID = 1L;
 
-  private final int colNum;
   private final IUDFUnaryString func;
 
   private Text s;
 
   StringUnaryUDF(int colNum, int outputColumnNum, IUDFUnaryString func) {
-    super(outputColumnNum);
-    this.colNum = colNum;
+    super(colNum, outputColumnNum);
     this.func = func;
     s = new Text();
   }
@@ -55,7 +54,6 @@ public class StringUnaryUDF extends VectorExpression {
     super();
 
     // Dummy final assignments.
-    colNum = -1;
     func = null;
   }
 
@@ -66,7 +64,7 @@ public class StringUnaryUDF extends VectorExpression {
       super.evaluateChildren(batch);
     }
 
-    BytesColumnVector inputColVector = (BytesColumnVector) batch.cols[colNum];
+    BytesColumnVector inputColVector = (BytesColumnVector) batch.cols[inputColumnNum[0]];
     int[] sel = batch.selected;
     int n = batch.size;
     byte[][] vector = inputColVector.vector;
@@ -187,7 +185,7 @@ public class StringUnaryUDF extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return getColumnParamString(0, colNum);
+    return getColumnParamString(0, inputColumnNum[0]);
   }
 
   @Override

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -36,21 +37,15 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 public abstract class MathFuncLongToLong extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  protected final int colNum;
-
   // Subclasses must override this with a function that implements the desired logic.
   protected abstract long func(long d);
 
   public MathFuncLongToLong(int colNum, int outputColumnNum) {
-    super(outputColumnNum);
-    this.colNum = colNum;
+    super(colNum, outputColumnNum);
   }
 
   public MathFuncLongToLong() {
     super();
-
-    // Dummy final assignments.
-    colNum = -1;
   }
 
   @Override
@@ -60,7 +55,7 @@ public abstract class MathFuncLongToLong extends VectorExpression {
       this.evaluateChildren(batch);
     }
 
-    LongColumnVector inputColVector = (LongColumnVector) batch.cols[colNum];
+    LongColumnVector inputColVector = (LongColumnVector) batch.cols[inputColumnNum[0]];
     LongColumnVector outputColVector = (LongColumnVector) batch.cols[outputColumnNum];
     int[] sel = batch.selected;
     boolean[] inputIsNull = inputColVector.isNull;
@@ -141,6 +136,6 @@ public abstract class MathFuncLongToLong extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return getColumnParamString(0, colNum);
+    return getColumnParamString(0, inputColumnNum[0]);
   }
 }

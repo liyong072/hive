@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -22,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -29,7 +31,11 @@ import java.util.Date;
 import java.util.Random;
 import java.util.TimeZone;
 
-import junit.framework.Assert;
+import org.apache.hadoop.hive.common.type.TimestampTZ;
+import org.apache.hadoop.hive.common.type.TimestampTZUtil;
+import org.apache.hadoop.hive.common.type.TimestampUtils;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.junit.Assert;
 
 import org.apache.hadoop.hive.ql.udf.UDFDayOfMonth;
 import org.apache.hadoop.hive.ql.udf.UDFHour;
@@ -61,6 +67,7 @@ import org.junit.Test;
  */
 public class TestVectorTimestampExpressions {
 
+  private HiveConf hiveConf = new HiveConf();
   private SimpleDateFormat dateFormat = getFormatter();
 
   private static SimpleDateFormat getFormatter() {
@@ -251,7 +258,7 @@ public class TestVectorTimestampExpressions {
       udf = new VectorUDFYearString(0, 1);
       udf.setInputTypeInfos(new TypeInfo[] {TypeInfoFactory.stringTypeInfo});
     }
-    udf.transientInit();
+    udf.transientInit(hiveConf);
     udf.evaluate(batch);
     final int in = 0;
     final int out = 1;
@@ -348,7 +355,7 @@ public class TestVectorTimestampExpressions {
       udf = new VectorUDFDayOfMonthString(0, 1);
       udf.setInputTypeInfos(new TypeInfo[] {TypeInfoFactory.stringTypeInfo});
     }
-    udf.transientInit();
+    udf.transientInit(hiveConf);
     udf.evaluate(batch);
     final int in = 0;
     final int out = 1;
@@ -437,7 +444,7 @@ public class TestVectorTimestampExpressions {
       udf = new VectorUDFHourString(0, 1);
       udf.setInputTypeInfos(new TypeInfo[] {TypeInfoFactory.stringTypeInfo});
     }
-    udf.transientInit();
+    udf.transientInit(hiveConf);
     udf.evaluate(batch);
     final int in = 0;
     final int out = 1;
@@ -527,7 +534,7 @@ public class TestVectorTimestampExpressions {
       udf = new VectorUDFMinuteString(0, 1);
       udf.setInputTypeInfos(new TypeInfo[] {TypeInfoFactory.stringTypeInfo});
     }
-    udf.transientInit();
+    udf.transientInit(hiveConf);
     udf.evaluate(batch);
     final int in = 0;
     final int out = 1;
@@ -616,7 +623,7 @@ public class TestVectorTimestampExpressions {
       udf = new VectorUDFMonthString(0, 1);
       udf.setInputTypeInfos(new TypeInfo[] {TypeInfoFactory.stringTypeInfo});
     }
-    udf.transientInit();
+    udf.transientInit(hiveConf);
     udf.evaluate(batch);
     final int in = 0;
     final int out = 1;
@@ -705,7 +712,7 @@ public class TestVectorTimestampExpressions {
       udf = new VectorUDFSecondString(0, 1);
       udf.setInputTypeInfos(new TypeInfo[] {TypeInfoFactory.stringTypeInfo});
     }
-    udf.transientInit();
+    udf.transientInit(hiveConf);
     udf.evaluate(batch);
     final int in = 0;
     final int out = 1;
@@ -776,9 +783,11 @@ public class TestVectorTimestampExpressions {
   }
 
   private void compareToUDFUnixTimeStampLong(Timestamp ts, long y) {
-    long seconds = ts.getTime() / 1000;
-    if(seconds != y) {
-      System.out.printf("%d vs %d for %s\n", seconds, y, ts.toString());
+    TimestampTZ tsTZ = TimestampTZUtil.convert(
+        org.apache.hadoop.hive.common.type.Timestamp.ofEpochMilli(ts.getTime()),
+        ZoneId.systemDefault());
+    if(tsTZ.getEpochSecond() != y) {
+      System.out.printf("%d vs %d for %s\n", tsTZ.getEpochSecond(), y, ts.toString());
       Assert.assertTrue(false);
     }
   }
@@ -793,7 +802,7 @@ public class TestVectorTimestampExpressions {
       udf = new VectorUDFUnixTimeStampString(0, 1);
       udf.setInputTypeInfos(new TypeInfo[] {TypeInfoFactory.stringTypeInfo});
     }
-    udf.transientInit();
+    udf.transientInit(hiveConf);
     udf.evaluate(batch);
     final int in = 0;
     final int out = 1;
@@ -881,7 +890,7 @@ public class TestVectorTimestampExpressions {
       udf = new VectorUDFWeekOfYearString(0, 1);
       udf.setInputTypeInfos(new TypeInfo[] {TypeInfoFactory.stringTypeInfo});
     }
-    udf.transientInit();
+    udf.transientInit(hiveConf);
     udf.evaluate(batch);
     final int in = 0;
     final int out = 1;

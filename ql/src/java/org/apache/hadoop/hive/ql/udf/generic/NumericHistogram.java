@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
@@ -172,7 +173,7 @@ public class NumericHistogram {
    */
   public void add(double v) {
     // Binary search to find the closest bucket that v should go into.
-    // 'bin' should be interpreted as the bin to shift right in order to accomodate
+    // 'bin' should be interpreted as the bin to shift right in order to accommodate
     // v. As a result, bin is in the range [0,N], where N means that the value v is
     // greater than all the N bins currently in the histogram. It is also possible that
     // a bucket centered at 'v' already exists, so this must be checked in the next step.

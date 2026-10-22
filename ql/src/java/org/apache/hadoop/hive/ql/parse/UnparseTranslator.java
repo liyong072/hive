@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
@@ -43,10 +44,14 @@ public class UnparseTranslator {
   private final NavigableMap<Integer, Translation> translations;
   private final List<CopyTranslation> copyTranslations;
   private boolean enabled;
-  private Configuration conf;
+  private Quotation quotation;
 
-  public UnparseTranslator(Configuration conf) {
-    this.conf = conf;
+  public UnparseTranslator(Configuration configuration) {
+    this(Quotation.from(configuration));
+  }
+
+  public UnparseTranslator(Quotation quotation) {
+    this.quotation = quotation;
     translations = new TreeMap<Integer, Translation>();
     copyTranslations = new ArrayList<CopyTranslation>();
   }
@@ -54,7 +59,7 @@ public class UnparseTranslator {
   /**
    * Enable this translator.
    */
-  void enable() {
+  public void enable() {
     enabled = true;
   }
 
@@ -137,10 +142,10 @@ public class UnparseTranslator {
   /**
    * Register a translation for an tabName.
    *
-   * @param node
+   * @param tableName
    *          source node (which must be an tabName) to be replaced
    */
-  void addTableNameTranslation(ASTNode tableName, String currentDatabaseName) {
+  public void addTableNameTranslation(ASTNode tableName, String currentDatabaseName) {
     if (!enabled) {
       return;
     }
@@ -149,21 +154,24 @@ public class UnparseTranslator {
       return;
     }
     assert (tableName.getToken().getType() == HiveParser.TOK_TABNAME);
-    assert (tableName.getChildCount() <= 2);
+    assert (tableName.getChildCount() <= 3);
 
-    if (tableName.getChildCount() == 2) {
+    if (tableName.getChildCount() == 2 || tableName.getChildCount() == 3) {
       addIdentifierTranslation((ASTNode)tableName.getChild(0));
       addIdentifierTranslation((ASTNode)tableName.getChild(1));
+      if (tableName.getChildCount() == 3) {
+        addIdentifierTranslation((ASTNode)tableName.getChild(2));
+      }
     }
     else {
       // transform the table reference to an absolute reference (i.e., "db.table")
       StringBuilder replacementText = new StringBuilder();
-      replacementText.append(HiveUtils.unparseIdentifier(currentDatabaseName, conf));
+      replacementText.append(HiveUtils.unparseIdentifier(currentDatabaseName, quotation));
       replacementText.append('.');
 
       ASTNode identifier = (ASTNode)tableName.getChild(0);
       String identifierText = BaseSemanticAnalyzer.unescapeIdentifier(identifier.getText());
-      replacementText.append(HiveUtils.unparseIdentifier(identifierText, conf));
+      replacementText.append(HiveUtils.unparseIdentifier(identifierText, quotation));
 
       addTranslation(identifier, replacementText.toString());
     }
@@ -172,19 +180,32 @@ public class UnparseTranslator {
   /**
    * Register a translation for an identifier.
    *
-   * @param node
+   * @param identifier
    *          source node (which must be an identifier) to be replaced
    */
-  void addIdentifierTranslation(ASTNode identifier) {
+  public void addIdentifierTranslation(ASTNode identifier) {
     if (!enabled) {
       return;
     }
     assert (identifier.getToken().getType() == HiveParser.Identifier);
     String replacementText = identifier.getText();
     replacementText = BaseSemanticAnalyzer.unescapeIdentifier(replacementText);
-    replacementText = HiveUtils.unparseIdentifier(replacementText, conf);
+    replacementText = HiveUtils.unparseIdentifier(replacementText, quotation);
     addTranslation(identifier, replacementText);
   }
+
+  public void addDefaultValueTranslation(ASTNode exprNode, String defaultValue) {
+    if (!(exprNode.getType() == HiveParser.TOK_TABLE_OR_COL
+            && exprNode.getChild(0).getType() == HiveParser.TOK_DEFAULT_VALUE)) {
+      return;
+    }
+
+    if (defaultValue == null) {
+      defaultValue = "NULL";
+    }
+    addTranslation(exprNode, defaultValue);
+  }
+
 
   /**
    * Register a "copy" translation in which a node will be translated into
@@ -198,7 +219,7 @@ public class UnparseTranslator {
    * @param sourceNode the node providing the replacement text
    *
    */
-  void addCopyTranslation(ASTNode targetNode, ASTNode sourceNode) {
+  public void addCopyTranslation(ASTNode targetNode, ASTNode sourceNode) {
     if (!enabled) {
       return;
     }
@@ -220,10 +241,15 @@ public class UnparseTranslator {
    *          rewrite-capable stream
    */
   void applyTranslations(TokenRewriteStream tokenRewriteStream) {
+    applyTranslations(tokenRewriteStream, TokenRewriteStream.DEFAULT_PROGRAM_NAME);
+  }
+
+  public void applyTranslations(TokenRewriteStream tokenRewriteStream, String programName) {
     for (Map.Entry<Integer, Translation> entry : translations.entrySet()) {
-      if (entry.getKey() > 0) { // negative means the key didn't exist in the original 
+      if (entry.getKey() > 0) { // negative means the key didn't exist in the original
                                 // stream (i.e.: we changed the tree)
         tokenRewriteStream.replace(
+           programName,
            entry.getKey(),
            entry.getValue().tokenStopIndex,
            entry.getValue().replacementText);
@@ -231,9 +257,11 @@ public class UnparseTranslator {
     }
     for (CopyTranslation copyTranslation : copyTranslations) {
       String replacementText = tokenRewriteStream.toString(
+        programName,
         copyTranslation.sourceNode.getTokenStartIndex(),
         copyTranslation.sourceNode.getTokenStopIndex());
       String currentText = tokenRewriteStream.toString(
+        programName,
         copyTranslation.targetNode.getTokenStartIndex(),
         copyTranslation.targetNode.getTokenStopIndex());
       if (currentText.equals(replacementText)) {
@@ -245,6 +273,7 @@ public class UnparseTranslator {
       // checking.
       addTranslation(copyTranslation.targetNode, replacementText);
       tokenRewriteStream.replace(
+        programName,
         copyTranslation.targetNode.getTokenStartIndex(),
         copyTranslation.targetNode.getTokenStopIndex(),
         replacementText);

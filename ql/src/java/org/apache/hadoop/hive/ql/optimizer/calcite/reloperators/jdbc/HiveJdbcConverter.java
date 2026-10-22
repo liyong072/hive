@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.jdbc;
 
@@ -27,7 +28,9 @@ import org.apache.calcite.plan.ConventionTraitDef;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelShuttle;
 import org.apache.calcite.rel.RelVisitor;
+import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.convert.ConverterImpl;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Project;
@@ -37,6 +40,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlDialect;
 
 import org.apache.calcite.util.ControlFlowException;
+import org.apache.hadoop.hive.ql.optimizer.calcite.HiveRelShuttle;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveRelNode;
 import org.apache.hadoop.hive.ql.optimizer.calcite.rules.jdbc.HiveJdbcImplementor;
 
@@ -58,6 +62,10 @@ public class HiveJdbcConverter extends ConverterImpl implements HiveRelNode {
     this.user = user;
   }
 
+  @Override public RelWriter explainTerms(RelWriter pw) {
+    return super.explainTerms(pw).item("convention", convention);
+  }
+
   public JdbcConvention getJdbcConvention() {
     return convention;
   }
@@ -75,15 +83,18 @@ public class HiveJdbcConverter extends ConverterImpl implements HiveRelNode {
   }
 
   @Override
-  public void implement(Implementor implementor) {
-
-  }
-
-  @Override
   public RelNode copy(
       RelTraitSet traitSet,
       List<RelNode> inputs) {
     return new HiveJdbcConverter(getCluster(), traitSet, sole(inputs), convention, url, user);
+  }
+
+  @Override
+  public RelNode accept(RelShuttle shuttle) {
+    if (shuttle instanceof HiveRelShuttle) {
+      return ((HiveRelShuttle) shuttle).visit(this);
+    }
+    return super.accept(shuttle);
   }
 
   public RelNode copy(RelTraitSet traitSet, RelNode input) {
@@ -114,7 +125,7 @@ public class HiveJdbcConverter extends ConverterImpl implements HiveRelNode {
           projects, nodeToTranslate.getRowType());
     }
     final HiveJdbcImplementor.Result result =
-        jdbcImplementor.translate(topProject);
+        jdbcImplementor.visitRoot(topProject);
     return result.asStatement().toSqlString(dialect).getSql();
   }
 

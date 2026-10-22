@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.avro;
 
@@ -21,7 +22,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.avro.Schema;
@@ -163,7 +163,7 @@ public class TestAvroObjectInspectorGenerator {
       "  \"fields\": [\n" +
       "   {\n" +
       "      \"name\":\"baddies\",\n" +
-      "      \"type\":{\"type\":\"enum\",\"name\":\"villians\", \"symbols\": " +
+      "      \"type\":{\"type\":\"enum\",\"name\":\"villains\", \"symbols\": " +
           "[\"DALEKS\", \"CYBERMEN\", \"SLITHEEN\", \"JAGRAFESS\"]}\n" +
       "      \n" +
       "      \n" +
@@ -207,7 +207,7 @@ public class TestAvroObjectInspectorGenerator {
       "  \"fields\": [\n" +
       "   {\n" +
       "      \"name\":\"nullableEnum\",\n" +
-      "      \"type\": [\"null\", {\"type\":\"enum\",\"name\":\"villians\", \"symbols\": " +
+      "      \"type\": [\"null\", {\"type\":\"enum\",\"name\":\"villains\", \"symbols\": " +
           "[\"DALEKS\", \"CYBERMEN\", \"SLITHEEN\", \"JAGRAFESS\"]}]\n" +
       "      \n" +
       "      \n" +
@@ -221,6 +221,26 @@ public class TestAvroObjectInspectorGenerator {
       "    {\"name\":\"bytesField\", \"type\":\"bytes\"}\n" +
       "  ]\n" +
       "}";
+
+  public static final String TIMESTAMP_SCHEMA = "{\n" +
+      "  \"type\": \"record\", \n" +
+      "  \"name\": \"timestampTest\",\n" +
+      "  \"fields\" : [\n" +
+      "    {\"name\":\"timestampField\", " +
+      "     \"type\":\"" + AvroSerDe.AVRO_LONG_TYPE_NAME + "\", " +
+      "         \"logicalType\":\"" + AvroSerDe.TIMESTAMP_TYPE_NAME_MILLIS + "\"}" +
+      "  ]\n" +
+      "}";
+
+  public static final String TIMESTAMP_SCHEMA_MICROS = "{\n" +
+          "  \"type\": \"record\", \n" +
+          "  \"name\": \"timestampTest\",\n" +
+          "  \"fields\" : [\n" +
+          "    {\"name\":\"timestampField\", " +
+          "     \"type\":\"" + AvroSerDe.AVRO_LONG_TYPE_NAME + "\", " +
+          "         \"logicalType\":\"" + AvroSerDe.TIMESTAMP_TYPE_NAME_MICROS + "\"}" +
+          "  ]\n" +
+          "}";
 
   public static final String KITCHEN_SINK_SCHEMA = "{\n" +
       "  \"namespace\": \"org.apache.hadoop.hive\",\n" +
@@ -403,8 +423,8 @@ public class TestAvroObjectInspectorGenerator {
   /**
    * Check a given AvroObjectInspectorGenerator to verify that it matches our test
    * schema's expected map.
-   * @param aoig should already have been intitialized, may not be null
-   * @param fieldName name of the contianed column, will always fail if null.
+   * @param aoig should already have been initialized, may not be null
+   * @param fieldName name of the contained column, will always fail if null.
    */
   private void verifyMap(final AvroObjectInspectorGenerator aoig, final String fieldName) {
     // Column names
@@ -458,8 +478,8 @@ public class TestAvroObjectInspectorGenerator {
     StructTypeInfo structTypeInfo = (StructTypeInfo)typeInfo;
 
     // Check individual elements of subrecord
-    ArrayList<String> allStructFieldNames = structTypeInfo.getAllStructFieldNames();
-    ArrayList<TypeInfo> allStructFieldTypeInfos = structTypeInfo.getAllStructFieldTypeInfos();
+    List<String> allStructFieldNames = structTypeInfo.getAllStructFieldNames();
+    List<TypeInfo> allStructFieldTypeInfos = structTypeInfo.getAllStructFieldTypeInfos();
     assertEquals(allStructFieldNames.size(), 3);
     String[] names = new String[]{"int1", "boolean1", "long1"};
     String [] typeInfoStrings = new String [] {"int", "boolean", "bigint"};

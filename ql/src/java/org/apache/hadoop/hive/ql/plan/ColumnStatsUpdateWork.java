@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -22,7 +23,8 @@ import java.io.Serializable;
 import java.util.Map;
 
 import org.apache.hadoop.hive.metastore.api.ColumnStatistics;
-import org.apache.hadoop.hive.ql.plan.DDLDesc.DDLDescWithWriteId;
+import org.apache.hadoop.hive.ql.ddl.DDLDesc.DDLDescWithWriteId;
+import org.apache.hadoop.hive.ql.parse.repl.metric.ReplicationMetricCollector;
 import org.apache.hadoop.hive.ql.plan.Explain.Level;
 
 
@@ -45,6 +47,9 @@ public class ColumnStatsUpdateWork implements Serializable, DDLDescWithWriteId {
   private final String colType;
   private final ColumnStatistics colStats;
   private long writeId;
+  private boolean isReplication;
+  private String dumpDirectory;
+  private transient ReplicationMetricCollector metricCollector;
 
   public ColumnStatsUpdateWork(String partName,
       Map<String, String> mapProp,
@@ -71,9 +76,31 @@ public class ColumnStatsUpdateWork implements Serializable, DDLDescWithWriteId {
     this.colType = null;
   }
 
+  public ColumnStatsUpdateWork(ColumnStatistics colStats, String dumpRoot, ReplicationMetricCollector metricCollector,
+                               boolean isReplication) {
+    this.colStats = colStats;
+    this.partName = null;
+    this.mapProp = null;
+    this.dbName = null;
+    this.tableName = null;
+    this.colName = null;
+    this.colType = null;
+    this.dumpDirectory = dumpRoot;
+    this.metricCollector = metricCollector;
+    this.isReplication = true;
+  }
+
   @Override
   public String toString() {
     return null;
+  }
+
+  public String getDumpDirectory() {
+    return dumpDirectory;
+  }
+
+  public boolean isReplication() {
+    return isReplication;
   }
 
   public String getPartName() {
@@ -102,10 +129,17 @@ public class ColumnStatsUpdateWork implements Serializable, DDLDescWithWriteId {
 
   public ColumnStatistics getColStats() { return colStats; }
 
+  public ReplicationMetricCollector getMetricCollector() {
+    return metricCollector;
+  }
+
+
   @Override
   public void setWriteId(long writeId) {
     this.writeId = writeId;
   }
+
+  public long getWriteId() { return writeId; }
 
   @Override
   public String getFullTableName() {

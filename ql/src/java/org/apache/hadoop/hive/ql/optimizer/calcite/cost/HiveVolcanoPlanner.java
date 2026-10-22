@@ -9,17 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.calcite.cost;
 
 import com.google.common.collect.Multimap;
-import org.apache.calcite.adapter.druid.DruidQuery;
 import org.apache.calcite.plan.Convention;
 import org.apache.calcite.plan.ConventionTraitDef;
 import org.apache.calcite.plan.RelOptCost;
@@ -28,14 +28,13 @@ import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.volcano.RelSubset;
 import org.apache.calcite.plan.volcano.VolcanoPlanner;
 import org.apache.calcite.rel.RelCollationTraitDef;
+import org.apache.calcite.rel.RelDistributionTraitDef;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
-import org.apache.calcite.util.Util;
 import org.apache.hadoop.hive.ql.optimizer.calcite.HiveConfPlannerContext;
 import org.apache.hadoop.hive.ql.optimizer.calcite.HivePlannerContext;
 import org.apache.hadoop.hive.ql.optimizer.calcite.RelOptHiveTable;
-import org.apache.hadoop.hive.ql.optimizer.calcite.rules.HiveDruidRules;
 
 /**
  * Refinement of {@link org.apache.calcite.plan.volcano.VolcanoPlanner} for Hive.
@@ -46,6 +45,7 @@ import org.apache.hadoop.hive.ql.optimizer.calcite.rules.HiveDruidRules;
  */
 public class HiveVolcanoPlanner extends VolcanoPlanner {
   private static final boolean ENABLE_COLLATION_TRAIT = true;
+  private static final boolean ENABLE_DISTRIBUTION_TRAIT = true;
 
   private final boolean isHeuristic;
 
@@ -62,29 +62,10 @@ public class HiveVolcanoPlanner extends VolcanoPlanner {
     if (ENABLE_COLLATION_TRAIT) {
       planner.addRelTraitDef(RelCollationTraitDef.INSTANCE);
     }
-    return planner;
-  }
-
-  @Override
-  public void registerClass(RelNode node) {
-    if (node instanceof DruidQuery) {
-      // Special handling for Druid rules here as otherwise
-      // planner will add Druid rules with logical builder
-      addRule(HiveDruidRules.FILTER);
-      addRule(HiveDruidRules.PROJECT_FILTER_TRANSPOSE);
-      addRule(HiveDruidRules.AGGREGATE_FILTER_TRANSPOSE);
-      addRule(HiveDruidRules.AGGREGATE_PROJECT);
-      addRule(HiveDruidRules.PROJECT);
-      addRule(HiveDruidRules.AGGREGATE);
-      addRule(HiveDruidRules.POST_AGGREGATION_PROJECT);
-      addRule(HiveDruidRules.FILTER_AGGREGATE_TRANSPOSE);
-      addRule(HiveDruidRules.FILTER_PROJECT_TRANSPOSE);
-      addRule(HiveDruidRules.SORT_PROJECT_TRANSPOSE);
-      addRule(HiveDruidRules.SORT);
-      addRule(HiveDruidRules.PROJECT_SORT_TRANSPOSE);
-      return;
+    if (ENABLE_DISTRIBUTION_TRAIT) {
+      planner.addRelTraitDef(RelDistributionTraitDef.INSTANCE);
     }
-    super.registerClass(node);
+    return planner;
   }
 
   /**
@@ -119,9 +100,12 @@ public class HiveVolcanoPlanner extends VolcanoPlanner {
     Multimap<Class<? extends RelNode>, RelNode> nodeTypes =
         mq.getNodeTypes(rel);
     for (RelNode scan : nodeTypes.get(TableScan.class)) {
-      if (((RelOptHiveTable) scan.getTable()).getHiveTableMD().isMaterializedView()) {
-        usesMaterializedViews = true;
-        break;
+      if (scan.getTable() instanceof RelOptHiveTable) {
+        RelOptHiveTable relOptHiveTable = (RelOptHiveTable) scan.getTable();
+        if (relOptHiveTable.getHiveTableMD().isMaterializedView()) {
+          usesMaterializedViews = true;
+          break;
+        }
       }
     }
     if (isHeuristic && usesMaterializedViews) {

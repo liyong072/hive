@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.metadata;
@@ -21,11 +22,14 @@ package org.apache.hadoop.hive.ql.metadata;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.hadoop.hive.common.StringInternUtils;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreUtils;
@@ -40,6 +44,7 @@ import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Order;
+import org.apache.hadoop.hive.ql.ddl.DDLUtils;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.io.HiveFileFormatUtils;
 import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
@@ -121,7 +126,7 @@ public class Partition implements Serializable {
 
   public static org.apache.hadoop.hive.metastore.api.Partition createMetaPartitionObject(
       Table tbl, Map<String, String> partSpec, Path location) throws HiveException {
-    List<String> pvals = new ArrayList<String>();
+    List<String> pvals = new ArrayList<>();
     for (FieldSchema field : tbl.getPartCols()) {
       String val = partSpec.get(field.getName());
       if (val == null || val.isEmpty()) {
@@ -164,18 +169,19 @@ public class Partition implements Serializable {
       return;
     }
 
-    if (table.isPartitioned()) {
+    if (table.isPartitioned() && tPartition.isSetSd()) {
       try {
         if (tPartition.getSd().getLocation() == null) {
           // set default if location is not set and this is a physical
           // table partition (not a view partition)
           if (table.getDataLocation() != null) {
-            Path partPath = new Path(table.getDataLocation(), Warehouse.makePartName(table.getPartCols(), tPartition.getValues()));
+            Path partPath = new Path(table.getDataLocation(),
+                Warehouse.makePartName(table.getPartCols(), tPartition.getValues()));
             tPartition.getSd().setLocation(partPath.toString());
           }
         }
         // set default if columns are not set
-        if (tPartition.getSd().getCols() == null) {
+        if (tPartition.getSd().getCols() == null  || tPartition.getSd().getCols().isEmpty()) {
           if (table.getCols() != null) {
             tPartition.getSd().setCols(table.getCols());
           }
@@ -214,15 +220,17 @@ public class Partition implements Serializable {
 
   public Path getDataLocation() {
     if (table.isPartitioned()) {
-      if (tPartition.getSd() == null)
+      if (tPartition.getSd() == null) {
         return null;
-      else
+      } else {
         return new Path(tPartition.getSd().getLocation());
+      }
     } else {
-      if (table.getTTable() == null || table.getTTable().getSd() == null)
+      if (table.getTTable() == null || table.getTTable().getSd() == null) {
         return null;
-      else
+      } else {
         return new Path(table.getTTable().getSd().getLocation());
+      }
     }
   }
 
@@ -411,7 +419,7 @@ public class Partition implements Serializable {
       }
 
       int scount = s.getSampleFraction();
-      ArrayList<Path> ret = new ArrayList<Path>();
+      List<Path> ret = new ArrayList<>();
 
       if (bcount == scount) {
         ret.add(getBucketPath(s.getSampleNum() - 1));
@@ -423,7 +431,7 @@ public class Partition implements Serializable {
         }
         // undersampling a bucket
         ret.add(getBucketPath((s.getSampleNum() - 1) % bcount));
-      } else if (bcount > scount) {
+      } else {
         if ((bcount / scount) * scount != bcount) {
           throw new HiveException("Sample Count" + scount
               + " is not a divisor of bucket count " + bcount + " for table "
@@ -434,11 +442,11 @@ public class Partition implements Serializable {
           ret.add(getBucketPath(i * scount + (s.getSampleNum() - 1)));
         }
       }
-      return (ret.toArray(new Path[ret.size()]));
+      return (ret.toArray(new Path[0]));
     }
   }
 
-  public LinkedHashMap<String, String> getSpec() {
+  public Map<String, String> getSpec() {
     return table.createSpec(tPartition);
   }
 
@@ -487,7 +495,14 @@ public class Partition implements Serializable {
   }
 
   public List<FieldSchema> getCols() {
-    return getColsInternal(false);
+    List<FieldSchema> nonPartFields = new ArrayList<>();
+    Set<String> partFieldsName = table.getPartCols().stream().map(FieldSchema::getName).collect(Collectors.toSet());
+    for (FieldSchema field : getColsInternal(false)) {
+      if (!partFieldsName.contains(field.getName())) {
+        nonPartFields.add(field);
+      }
+    }
+    return nonPartFields;
   }
 
   public List<FieldSchema> getColsForMetastore() {
@@ -503,15 +518,16 @@ public class Partition implements Serializable {
         return tPartition.getSd().getCols();
       } else if (forMs && !Table.shouldStoreFieldsInMetastore(
           SessionState.getSessionConf(), serializationLib, table.getParameters())) {
-        return Hive.getFieldsFromDeserializerForMsStorage(table, getDeserializer());
+        return Hive.getFieldsFromDeserializerForMsStorage(table, getDeserializer(), SessionState.getSessionConf());
       }
-      return HiveMetaStoreUtils.getFieldsFromDeserializer(table.getTableName(), getDeserializer());
+      return HiveMetaStoreUtils.getFieldsFromDeserializer(table.getTableName(), getDeserializer(),
+          SessionState.getSessionConf());
     } catch (Exception e) {
       LOG.error("Unable to get cols from serde: " +
           tPartition.getSd().getSerdeInfo().getSerializationLib(), e);
     }
 
-    return new ArrayList<FieldSchema>();
+    return Collections.emptyList();
   }
 
   public String getLocation() {
@@ -536,7 +552,7 @@ public class Partition implements Serializable {
    */
   public void setValues(Map<String, String> partSpec)
       throws HiveException {
-    List<String> pvals = new ArrayList<String>();
+    List<String> pvals = new ArrayList<>();
     for (FieldSchema field : table.getPartCols()) {
       String val = partSpec.get(field.getName());
       if (val == null) {
@@ -576,12 +592,11 @@ public class Partition implements Serializable {
     return tPartition.getSd().getSkewedInfo().getSkewedColNames();
   }
 
-  public void setSkewedValueLocationMap(List<String> valList, String dirName)
-      throws HiveException {
+  public void setSkewedValueLocationMap(List<String> valList, String dirName) {
     Map<List<String>, String> mappings = tPartition.getSd().getSkewedInfo()
         .getSkewedColValueLocationMaps();
     if (null == mappings) {
-      mappings = new HashMap<List<String>, String>();
+      mappings = new HashMap<>();
       tPartition.getSd().getSkewedInfo().setSkewedColValueLocationMaps(mappings);
     }
 
@@ -595,7 +610,21 @@ public class Partition implements Serializable {
 
   public void checkValidity() throws HiveException {
     if (!tPartition.getSd().equals(table.getSd())) {
-      Table.validateColumns(getCols(), table.getPartCols());
+      Table.validateColumns(getCols(), table.getPartCols(), DDLUtils.isIcebergTable(table));
     }
   }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(tPartition);
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    if (obj instanceof Partition o) {
+      return Objects.equals(tPartition, o.tPartition);
+    }
+    return false;
+  }
+
 }

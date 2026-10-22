@@ -9,19 +9,41 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.metadata;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+import java.util.Optional;
+import java.util.Stack;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.SetMultimap;
+import org.antlr.runtime.TokenRewriteStream;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.ql.lib.CostLessRuleDispatcher;
+import org.apache.hadoop.hive.ql.lib.ExpressionWalker;
+import org.apache.hadoop.hive.ql.lib.Node;
+import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
+import org.apache.hadoop.hive.ql.parse.ASTNode;
+import org.apache.hadoop.hive.ql.parse.HiveParser;
+import org.apache.hadoop.hive.ql.parse.Quotation;
+import org.apache.hadoop.hive.ql.parse.SemanticException;
+import org.apache.hadoop.hive.ql.parse.UnparseTranslator;
+import org.apache.hadoop.hive.ql.session.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -39,6 +61,8 @@ import org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHive
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.StringUtils;
+
+import static org.apache.hadoop.hive.metastore.utils.MetaStoreUtils.getDefaultCatalog;
 
 /**
  * General collection of helper functions.
@@ -79,7 +103,7 @@ public final class HiveUtils {
         escape.append('t');
         break;
       default:
-        // Control characeters! According to JSON RFC u0020
+        // Control characters! According to JSON RFC u0020
         if (c < ' ') {
           String hex = Integer.toHexString(c);
           escape.append('\\');
@@ -106,6 +130,8 @@ public final class HiveUtils {
   static final byte[] tabEscapeBytes = "\\t".getBytes();;
   static final byte[] tabUnescapeBytes = "\t".getBytes();
   static final byte[] ctrlABytes = "\u0001".getBytes();
+  static final Pattern TAG = Pattern.compile("tag_(.*)");
+  static final Pattern SNAPSHOT_REF = Pattern.compile("(?:branch_|tag_)(.*)");
 
 
   public static final Logger LOG = LoggerFactory.getLogger(HiveUtils.class);
@@ -274,22 +300,101 @@ public final class HiveUtils {
   /**
    * Regenerate an identifier as part of unparsing it back to SQL text.
    */
-  public static String unparseIdentifier(String identifier) {
-    return unparseIdentifier(identifier, null);
-  }
-
   public static String unparseIdentifier(String identifier, Configuration conf) {
-    // In the future, if we support arbitrary characters in
-    // identifiers, then we'll need to escape any backticks
+    // We support arbitrary characters in
+    // identifiers, then we need to escape any backticks
     // in identifier by doubling them up.
-
-    // the time has come
-    String qIdSupport = conf == null ? null :
-      HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_QUOTEDID_SUPPORT);
-    if ( qIdSupport != null && !"none".equals(qIdSupport) ) {
-      identifier = identifier.replaceAll("`", "``");
+    Quotation quotation = Quotation.from(conf);
+    if (quotation != Quotation.NONE) {
+      return unparseIdentifier(identifier, Quotation.BACKTICKS);
     }
     return "`" + identifier + "`";
+  }
+
+  public static String unparseIdentifier(String identifier, Quotation quotation) {
+    return String.format("%s%s%s",
+        quotation.getQuotationChar(),
+        identifier.replaceAll(
+            quotation.getQuotationChar(), quotation.getQuotationChar() + quotation.getQuotationChar()),
+        quotation.getQuotationChar());
+  }
+
+  public static String unparseIdentifier(String identifier) {
+    return unparseIdentifier(identifier, Quotation.BACKTICKS);
+  }
+
+  public static String getSqlTextWithQuotedIdentifiers(
+          ASTNode node, TokenRewriteStream tokenRewriteStream, String rewriteProgram)
+          throws SemanticException {
+    UnparseTranslator unparseTranslator = HiveUtils.collectUnescapeIdentifierTranslations(node);
+    unparseTranslator.applyTranslations(tokenRewriteStream, rewriteProgram);
+    return tokenRewriteStream.toString(rewriteProgram, node.getTokenStartIndex(), node.getTokenStopIndex());
+  }
+
+  public static UnparseTranslator collectUnescapeIdentifierTranslations(ASTNode node)
+      throws SemanticException {
+    UnparseTranslator unparseTranslator = new UnparseTranslator(Quotation.BACKTICKS);
+    unparseTranslator.enable();
+
+    SetMultimap<Integer, SemanticNodeProcessor> astNodeToProcessor = HashMultimap.create();
+    astNodeToProcessor.put(HiveParser.Identifier, new IdentifierProcessor());
+    NodeProcessorCtx nodeProcessorCtx = new QuotedIdExpressionContext(unparseTranslator);
+
+    CostLessRuleDispatcher costLessRuleDispatcher = new CostLessRuleDispatcher(
+        (nd, stack, procCtx, nodeOutputs) -> null, astNodeToProcessor, nodeProcessorCtx);
+    SemanticGraphWalker walker = new ExpressionWalker(costLessRuleDispatcher);
+    walker.startWalking(Collections.singletonList(node), null);
+    return unparseTranslator;
+  }
+
+  static class IdentifierProcessor implements SemanticNodeProcessor {
+
+    @Override
+    public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx, Object... nodeOutputs)
+            throws SemanticException {
+      UnparseTranslator unparseTranslator = ((QuotedIdExpressionContext)procCtx).getUnparseTranslator();
+      ASTNode identifier = (ASTNode) nd;
+      if (isFunctionNameToken(identifier)) {
+        return null;
+      }
+
+      unparseTranslator.addIdentifierTranslation(identifier);
+      return null;
+    }
+
+    /*
+     * Quote identifiers during unparse.
+     *
+     * Only skip quoting for function names.
+     * Always quote column names, even if they match function names.
+     * For example, use `alias`.`date` instead of `alias`.date.
+     */
+    private static boolean isFunctionNameToken(ASTNode identifier) {
+      ASTNode parent = (ASTNode) identifier.getParent();
+      if (parent == null || parent.getChildCount() == 0) {
+        return false;
+      }
+
+      int parentType = parent.getType();
+      boolean isFunctionNode =
+          parentType == HiveParser.TOK_FUNCTION
+              || parentType == HiveParser.TOK_FUNCTIONDI
+              || parentType == HiveParser.TOK_FUNCTIONSTAR;
+
+      return isFunctionNode && parent.getChild(0) == identifier;
+    }
+  }
+
+  static class QuotedIdExpressionContext implements NodeProcessorCtx {
+    private final UnparseTranslator unparseTranslator;
+
+    public QuotedIdExpressionContext(UnparseTranslator unparseTranslator) {
+      this.unparseTranslator = unparseTranslator;
+    }
+
+    public UnparseTranslator getUnparseTranslator() {
+      return unparseTranslator;
+    }
   }
 
   public static HiveStorageHandler getStorageHandler(
@@ -430,13 +535,11 @@ public final class HiveUtils {
     return null;
   }
 
-  public static String getReplPolicy(String dbName, String tableName) {
+  public static String getReplPolicy(String dbName) {
     if ((dbName == null) || (dbName.isEmpty())) {
       return "*.*";
-    } else if ((tableName == null) || (tableName.isEmpty())) {
-      return dbName.toLowerCase() + ".*";
     } else {
-      return dbName.toLowerCase() + "." + tableName.toLowerCase();
+      return dbName.toLowerCase() + ".*";
     }
   }
 
@@ -446,5 +549,29 @@ public final class HiveUtils {
       return new Path(root, dbName + "." + tableName);
     }
     return new Path(root, dbName);
+  }
+
+  public static String getTableSnapshotRef(String refName) {
+    Matcher ref = SNAPSHOT_REF.matcher(String.valueOf(refName));
+    return ref.matches() ? ref.group(1) : null;
+  }
+
+  public static Boolean isTableTag(String refName) {
+    Matcher ref = TAG.matcher(refName);
+    return ref.matches();
+  }
+
+  public static String getLowerCaseTableName(String refName) {
+    String[] refParts = refName.split("\\.");
+    if (refParts.length == 3 && SNAPSHOT_REF.matcher(refParts[2]).matches()) {
+      return (refParts[0] + "." + refParts[1]).toLowerCase() + "." + refParts[2];
+    }
+    return refName.toLowerCase();
+  }
+
+  public static String getCurrentCatalogOrDefault(Configuration conf) {
+    return Optional.ofNullable(SessionState.get())
+            .map(SessionState::getCurrentCatalog)
+            .orElseGet(() -> getDefaultCatalog(conf));
   }
 }

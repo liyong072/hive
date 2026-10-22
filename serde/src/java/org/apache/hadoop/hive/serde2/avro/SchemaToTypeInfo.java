@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.avro;
 
@@ -36,6 +37,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.avro.Schema;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.serde2.typeinfo.HiveDecimalUtils;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
@@ -136,8 +138,8 @@ class SchemaToTypeInfo {
       int precision = 0;
       int scale = 0;
       try {
-        precision = schema.getJsonProp(AvroSerDe.AVRO_PROP_PRECISION).getIntValue();
-        scale = schema.getJsonProp(AvroSerDe.AVRO_PROP_SCALE).getIntValue();
+        precision = getIntValue(schema.getObjectProp(AvroSerDe.AVRO_PROP_PRECISION));
+        scale = getIntValue(schema.getObjectProp(AvroSerDe.AVRO_PROP_SCALE));
       } catch (Exception ex) {
         throw new AvroSerdeException("Failed to obtain scale value from file schema: " + schema, ex);
       }
@@ -155,7 +157,7 @@ class SchemaToTypeInfo {
       AvroSerDe.CHAR_TYPE_NAME.equalsIgnoreCase(schema.getProp(AvroSerDe.AVRO_PROP_LOGICAL_TYPE))) {
       int maxLength = 0;
       try {
-        maxLength = schema.getJsonProp(AvroSerDe.AVRO_PROP_MAX_LENGTH).getValueAsInt();
+        maxLength = AvroSerdeUtils.getIntFromSchema(schema, AvroSerDe.AVRO_PROP_MAX_LENGTH);
       } catch (Exception ex) {
         throw new AvroSerdeException("Failed to obtain maxLength value from file schema: " + schema, ex);
       }
@@ -166,7 +168,7 @@ class SchemaToTypeInfo {
       .equalsIgnoreCase(schema.getProp(AvroSerDe.AVRO_PROP_LOGICAL_TYPE))) {
       int maxLength = 0;
       try {
-        maxLength = schema.getJsonProp(AvroSerDe.AVRO_PROP_MAX_LENGTH).getValueAsInt();
+        maxLength = AvroSerdeUtils.getIntFromSchema(schema, AvroSerDe.AVRO_PROP_MAX_LENGTH);
       } catch (Exception ex) {
         throw new AvroSerdeException("Failed to obtain maxLength value from file schema: " + schema, ex);
       }
@@ -178,12 +180,40 @@ class SchemaToTypeInfo {
       return TypeInfoFactory.dateTypeInfo;
     }
 
-    if (type == LONG &&
-      AvroSerDe.TIMESTAMP_TYPE_NAME.equals(schema.getProp(AvroSerDe.AVRO_PROP_LOGICAL_TYPE))) {
+    if (type == LONG && isTimestampType(schema)) {
       return TypeInfoFactory.timestampTypeInfo;
     }
 
     return typeInfoCache.retrieve(schema, seenSchemas);
+  }
+
+  private static int getIntValue(Object obj) {
+    int value = 0;
+    if (obj instanceof Integer) {
+      value = (int) obj;
+    } else if (obj instanceof String && StringUtils.isNumeric((String)obj)) {
+      value = Integer.parseInt((String)obj);
+    }
+    return value;
+  }
+
+  /**
+   * Checks if the given Avro schema represents a timestamp type
+   * based on its logical type property.
+   */
+  public static boolean isTimestampType(Schema schema) {
+    if (schema == null) {
+      return false;
+    }
+
+    String logicalType = schema.getProp(AvroSerDe.AVRO_PROP_LOGICAL_TYPE);
+    if (logicalType == null) {
+      return false;
+    }
+
+    // Supported timestamp logical types (extend this set as needed)
+    return AvroSerDe.TIMESTAMP_TYPE_NAME_MILLIS.equalsIgnoreCase(logicalType) ||
+            AvroSerDe.TIMESTAMP_TYPE_NAME_MICROS.equalsIgnoreCase(logicalType);
   }
 
   private static TypeInfo generateTypeInfoWorker(Schema schema,

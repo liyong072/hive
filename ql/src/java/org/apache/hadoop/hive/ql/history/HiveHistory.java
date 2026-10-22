@@ -9,17 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.history;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -68,9 +68,7 @@ public interface HiveHistory {
     TASK_COUNTERS,
     TASK_NUM_MAPPERS,
     TASK_NUM_REDUCERS,
-    ROWS_INSERTED,
-    SPARK_JOB_HANDLE_ID,
-    SPARK_JOB_ID
+    ROWS_INSERTED
   };
 
   /**
@@ -172,7 +170,7 @@ public interface HiveHistory {
    *
    * @param task
    */
-  public void startTask(String queryId, Task<? extends Serializable> task,
+  public void startTask(String queryId, Task<?> task,
       String taskName);
 
   /**
@@ -180,7 +178,7 @@ public interface HiveHistory {
    *
    * @param task
    */
-  public void endTask(String queryId, Task<? extends Serializable> task);
+  public void endTask(String queryId, Task<?> task);
 
   /**
    * Logs progress of a task if ConfVars.HIVE_LOG_INCREMENTAL_PLAN_PROGRESS is
@@ -188,7 +186,7 @@ public interface HiveHistory {
    *
    * @param task
    */
-  public void progressTask(String queryId, Task<? extends Serializable> task);
+  public void progressTask(String queryId, Task<?> task);
 
 
   /**

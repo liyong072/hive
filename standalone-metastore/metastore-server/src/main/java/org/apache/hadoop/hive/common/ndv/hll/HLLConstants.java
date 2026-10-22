@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common.ndv.hll;
@@ -25,9 +26,6 @@ public class HLLConstants {
   // range of register index bits
   public static final int MIN_P_VALUE = 4;
   public static final int MAX_P_VALUE = 16;
-
-  // number of entries to store before being merged to sparse map
-  public static final int TEMP_LIST_DEFAULT_SIZE = 1024;
 
   // constants for SPARSE encoding
   public static final int P_PRIME_VALUE = 25;

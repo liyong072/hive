@@ -6,21 +6,25 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p/>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p/>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.hooks;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
+import org.apache.hadoop.hive.ql.io.orc.Reader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.fs.FileStatus;
@@ -30,7 +34,6 @@ import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.QueryPlan;
 import org.apache.hadoop.hive.ql.exec.FetchTask;
-import org.apache.hadoop.hive.ql.io.HdfsUtils;
 import org.apache.orc.tools.FileDump;
 import org.apache.orc.FileFormatException;
 import org.apache.hadoop.hive.ql.io.orc.OrcFile;
@@ -80,13 +83,13 @@ public class PostExecOrcFileDump implements ExecuteWithHookContext {
       List<Path> directories;
       if (partitionedTable) {
         LOG.info("Printing orc file dump for files from partitioned directory..");
-        directories = fetchWork.getPartDir();
+        directories = Lists.newArrayList(fetchWork.getPartDir());
       } else {
         LOG.info("Printing orc file dump for files from table directory..");
-        directories = Lists.newArrayList();
-        directories.add(fetchWork.getTblDir());
+        directories = Lists.newArrayList(fetchWork.getTblDir());
       }
 
+      Collections.sort(directories);
       for (Path dir : directories) {
         printFileStatus(console, dir.getFileSystem(conf), dir);
       }
@@ -98,8 +101,8 @@ public class PostExecOrcFileDump implements ExecuteWithHookContext {
   }
 
   private void printFileStatus(SessionState.LogHelper console, FileSystem fs, Path dir) throws Exception {
-    List<FileStatus> fileList = HdfsUtils.listLocatedStatus(fs, dir,
-        hiddenFileFilter);
+    List<FileStatus> fileList = Arrays.asList(fs.listStatus(dir, hiddenFileFilter));
+    Collections.sort(fileList);
 
     for (FileStatus fileStatus : fileList) {
       if (fileStatus.isDirectory()) {
@@ -111,8 +114,9 @@ public class PostExecOrcFileDump implements ExecuteWithHookContext {
         LOG.info("Printing orc file dump for " + fileStatus.getPath());
         if (fileStatus.getLen() > 0) {
           try {
-            // just creating orc reader is going to do sanity checks to make sure its valid ORC file
-            OrcFile.createReader(fs, fileStatus.getPath());
+            try (Reader notUsed = OrcFile.createReader(fs, fileStatus.getPath())) {
+              // just creating orc reader is going to do sanity checks to make sure its valid ORC file
+            }
             console.printError("-- BEGIN ORC FILE DUMP --");
             FileDump.main(new String[]{fileStatus.getPath().toString(), "--rowindex=*"});
             console.printError("-- END ORC FILE DUMP --");

@@ -1,18 +1,20 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.accumulo.serde;
@@ -79,7 +81,7 @@ public class TestAccumuloSerDe {
     properties.setProperty(serdeConstants.LIST_COLUMNS, "row,field1,field2,field3,field4");
     properties.setProperty(serdeConstants.LIST_COLUMN_TYPES, "string,string,string,string,string");
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
     serde.deserialize(new Text("fail"));
   }
 
@@ -92,7 +94,7 @@ public class TestAccumuloSerDe {
     properties.setProperty(serdeConstants.LIST_COLUMNS, "row,field1,field2");
     properties.setProperty(serdeConstants.LIST_COLUMN_TYPES, "string,string,string");
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
     serde.deserialize(new Text("fail"));
   }
 
@@ -100,7 +102,7 @@ public class TestAccumuloSerDe {
   public void emptyConfiguration() throws SerDeException {
     Properties properties = new Properties();
     Configuration conf = new Configuration();
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
   }
 
   @Test
@@ -111,7 +113,7 @@ public class TestAccumuloSerDe {
     properties.setProperty(AccumuloSerDeParameters.COLUMN_MAPPINGS, ":rowID,cf:f1,cf:f2,cf:f3");
     properties.setProperty(serdeConstants.LIST_COLUMNS, "row,field1,field2,field3");
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
     assertNotNull(serde.getCachedRow());
   }
 
@@ -121,7 +123,7 @@ public class TestAccumuloSerDe {
     Configuration conf = new Configuration();
     properties.setProperty(AccumuloSerDeParameters.COLUMN_MAPPINGS, "cf:f1,:rowID,cf:f2,cf:f3");
     properties.setProperty(serdeConstants.LIST_COLUMNS, "field1,field2,field3,field4");
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
     assertNotNull(serde.getCachedRow());
   }
 
@@ -132,7 +134,7 @@ public class TestAccumuloSerDe {
     properties.setProperty(AccumuloSerDeParameters.COLUMN_MAPPINGS, "cf,cf:f2,cf:f3");
     properties.setProperty(serdeConstants.LIST_COLUMNS, "field2,field3,field4");
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
     AccumuloHiveRow row = new AccumuloHiveRow();
     row.setRowId("r1");
     Object obj = serde.deserialize(row);
@@ -149,7 +151,7 @@ public class TestAccumuloSerDe {
     properties.setProperty(serdeConstants.LIST_COLUMNS, "row,col1,col2");
     properties.setProperty(serdeConstants.LIST_COLUMN_TYPES, "string,string,string");
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
     serde.deserialize(new Text("fail"));
   }
 
@@ -166,7 +168,7 @@ public class TestAccumuloSerDe {
     // Get one of the default separators to avoid having to set a custom separator
     char separator = ':';
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
 
     AccumuloHiveRow row = new AccumuloHiveRow();
     row.setRowId("r1");
@@ -212,7 +214,7 @@ public class TestAccumuloSerDe {
     // Get one of the default separators to avoid having to set a custom separator
     char collectionSeparator = ':', kvSeparator = '=';
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
 
     AccumuloHiveRow row = new AccumuloHiveRow();
     row.setRowId("r1");
@@ -270,7 +272,7 @@ public class TestAccumuloSerDe {
     properties.setProperty(AccumuloSerDeParameters.COLUMN_MAPPINGS, ":rowID,cf:f1,cf:f2,cf:f3");
 
     properties.setProperty(serdeConstants.LIST_COLUMNS, "blah,field2,field3,field4");
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
 
     AccumuloHiveRow row = new AccumuloHiveRow();
     row.setRowId("r1");
@@ -305,7 +307,7 @@ public class TestAccumuloSerDe {
     properties.setProperty(AccumuloSerDeParameters.COLUMN_MAPPINGS, "cf:f1,:rowID");
     properties.setProperty(serdeConstants.LIST_COLUMNS, "field1,field2");
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
 
     AccumuloRowSerializer serializer = serde.getSerializer();
 
@@ -320,7 +322,7 @@ public class TestAccumuloSerDe {
     properties.setProperty(serdeConstants.LIST_COLUMNS, "field1,field2");
     properties.setProperty(AccumuloSerDeParameters.VISIBILITY_LABEL_KEY, "foobar");
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
 
     AccumuloRowSerializer serializer = serde.getSerializer();
 
@@ -339,7 +341,7 @@ public class TestAccumuloSerDe {
     properties.setProperty(AccumuloSerDeParameters.COMPOSITE_ROWID_FACTORY,
         DelimitedAccumuloRowIdFactory.class.getName());
 
-    serde.initialize(conf, properties);
+    serde.initialize(conf, properties, null);
 
     AccumuloHiveRow row = new AccumuloHiveRow();
     row.setRowId("p1_p2_p3");

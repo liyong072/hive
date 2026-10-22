@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.orc;
@@ -28,6 +29,7 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.llap.LlapDaemonInfo;
 import org.apache.hadoop.hive.llap.LlapUtil;
 import org.apache.hadoop.hive.llap.io.api.LlapProxy;
+import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.orc.FileMetadata;
@@ -68,6 +70,7 @@ public final class OrcFile extends org.apache.orc.OrcFile {
     public ReaderOptions(Configuration conf) {
       super(conf);
       useUTCTimestamp(true);
+      convertToProlepticGregorian(true);
     }
 
     public ReaderOptions filesystem(FileSystem fs) {
@@ -92,6 +95,11 @@ public final class OrcFile extends org.apache.orc.OrcFile {
 
     public ReaderOptions useUTCTimestamp(boolean value) {
       super.useUTCTimestamp(value);
+      return this;
+    }
+
+    public ReaderOptions convertToProlepticGregorian(boolean value) {
+      super.convertToProlepticGregorian(value);
       return this;
     }
   }
@@ -139,7 +147,8 @@ public final class OrcFile extends org.apache.orc.OrcFile {
   /**
    * Options for creating ORC file writers.
    */
-  public static class WriterOptions extends org.apache.orc.OrcFile.WriterOptions {
+  public static class WriterOptions extends org.apache.orc.OrcFile.WriterOptions
+          implements Cloneable {
     private boolean explicitSchema = false;
     private ObjectInspector inspector = null;
     // Setting the default batch size to 1000 makes the memory check at 5000
@@ -147,6 +156,7 @@ public final class OrcFile extends org.apache.orc.OrcFile {
     // the smallest stripe size would be 5120 rows, which changes the output
     // of some of the tests.)
     private int batchSize = 1000;
+    private boolean isCompaction;
 
     WriterOptions(Properties tableProperties, Configuration conf) {
       super(tableProperties, conf);
@@ -155,6 +165,11 @@ public final class OrcFile extends org.apache.orc.OrcFile {
         LlapProxy.isDaemon()) {
         memory(getThreadLocalOrcLlapMemoryManager(conf));
       }
+      isCompaction = AcidUtils.isCompactionTable(tableProperties);
+    }
+
+    public WriterOptions clone() {
+        return (WriterOptions) super.clone();
     }
 
    /**
@@ -331,12 +346,21 @@ public final class OrcFile extends org.apache.orc.OrcFile {
       return this;
     }
 
+    public WriterOptions setProlepticGregorian(boolean value) {
+      super.setProlepticGregorian(value);
+      return this;
+    }
+
     ObjectInspector getInspector() {
       return inspector;
     }
 
     int getBatchSize() {
       return batchSize;
+    }
+
+    boolean isCompaction() {
+      return isCompaction;
     }
   }
 

@@ -9,16 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
 
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentLengthException;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentTypeException;
@@ -34,6 +36,9 @@ import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectIn
 import org.apache.hadoop.io.BooleanWritable;
 
 @UDFType(deterministic = false)
+@Description(name = "assert_true_oom",
+        value = "_FUNC_(condition) - " +
+                "Throw an MapJoinMemoryExhaustionError if 'condition' is not true.")
 public class GenericUDFAssertTrueOOM extends GenericUDF {
   private ObjectInspectorConverters.Converter conditionConverter = null;
 
@@ -62,7 +67,7 @@ public class GenericUDFAssertTrueOOM extends GenericUDF {
   public Object evaluate(DeferredObject[] arguments) throws HiveException {
     BooleanWritable condition = (BooleanWritable) conditionConverter.convert(arguments[0].get());
     if (condition == null || !condition.get()) {
-      throw new MapJoinMemoryExhaustionError("assert_true_oom: assertation failed; Simulated OOM");
+      throw new MapJoinMemoryExhaustionError("assert_true_oom: assertion failed; Simulated OOM");
     }
     return null;
   }

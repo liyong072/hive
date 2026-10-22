@@ -28,6 +28,7 @@ import org.apache.hadoop.hive.cli.CliSessionState;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.DriverFactory;
 import org.apache.hadoop.hive.ql.IDriver;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorException;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hive.hcatalog.MiniCluster;
 import org.slf4j.Logger;
@@ -45,8 +46,8 @@ public class HCatDataCheckUtil {
     for (Entry e : cluster.getProperties().entrySet()) {
       hiveConf.set(e.getKey().toString(), e.getValue().toString());
     }
-    hiveConf.set(HiveConf.ConfVars.PREEXECHOOKS.varname, "");
-    hiveConf.set(HiveConf.ConfVars.POSTEXECHOOKS.varname, "");
+    hiveConf.set(HiveConf.ConfVars.PRE_EXEC_HOOKS.varname, "");
+    hiveConf.set(HiveConf.ConfVars.POST_EXEC_HOOKS.varname, "");
     hiveConf.set(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname, "false");
 
     LOG.debug("Hive conf : {}", hiveConf.getAllProperties());
@@ -64,19 +65,18 @@ public class HCatDataCheckUtil {
     MiniCluster.createInputFile(cluster, fileName, input);
   }
 
-  public static void createTable(IDriver driver, String tableName, String createTableArgs) throws IOException {
+  public static void createTable(IDriver driver, String tableName, String createTableArgs)
+      throws IOException, CommandProcessorException {
     String createTable = "create table " + tableName + createTableArgs;
-    int retCode = driver.run(createTable).getResponseCode();
-    if (retCode != 0) {
-      throw new IOException("Failed to create table. [" + createTable + "], return code from hive driver : [" + retCode + "]");
-    }
+    driver.run(createTable);
   }
 
-  public static void dropTable(IDriver driver, String tablename) throws IOException {
+  public static void dropTable(IDriver driver, String tablename) throws IOException, CommandProcessorException {
     driver.run("drop table if exists " + tablename);
   }
 
-  public static ArrayList<String> formattedRun(IDriver driver, String name, String selectCmd) throws IOException {
+  public static ArrayList<String> formattedRun(IDriver driver, String name, String selectCmd)
+      throws IOException, CommandProcessorException {
     driver.run(selectCmd);
     ArrayList<String> src_values = new ArrayList<String>();
     driver.getResults(src_values);

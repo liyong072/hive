@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.service.auth.ldap;
 
@@ -24,7 +25,7 @@ import javax.security.sasl.AuthenticationException;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 
 import org.junit.Before;
 import org.mockito.Mock;
@@ -142,7 +143,8 @@ public class TestGroupFilter {
       throws AuthenticationException, NamingException, IOException {
     conf.setVar(HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_GROUPFILTER, "hiveusers,containsg1");
 
-    when(search.findGroupsForUser(eq("user1"))).thenReturn(Arrays.asList("SuperUsers", "Office1", "G1", "G2"));
+    lenient().when(search.findGroupsForUser(eq("user1")))
+        .thenReturn(Arrays.asList("SuperUsers", "Office1", "G1", "G2"));
 
     Filter filter = factory.getInstance(conf);
     filter.apply(search, "user1");
@@ -153,7 +155,8 @@ public class TestGroupFilter {
       throws AuthenticationException, NamingException, IOException {
     conf.setVar(HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_GROUPFILTER, "HiveUsers");
 
-    when(search.findGroupsForUser(eq("user1"))).thenReturn(Arrays.asList("SuperUsers", "Office1", "G1", "G2"));
+    lenient().when(search.findGroupsForUser(eq("user1")))
+        .thenReturn(Arrays.asList("SuperUsers", "Office1", "G1", "G2"));
 
     Filter filter = factory.getInstance(conf);
     filter.apply(search, "user1");

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.shims;
 
@@ -42,6 +43,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.hdfs.protocol.EncryptionZone;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.mapred.ClusterStatus;
 import org.apache.hadoop.mapred.JobConf;
@@ -71,6 +73,8 @@ import org.apache.hadoop.util.Progressable;
  */
 public interface HadoopShims {
 
+  String USER_ID = "%s_User:%s";
+
   /**
    * Constructs and Returns TaskAttempt Logger Url
    * or null if the TaskLogServlet is not available
@@ -92,9 +96,6 @@ public interface HadoopShims {
       String nameNode, boolean usingLlap) throws IOException;
 
   public MiniMrShim getLocalMiniTezCluster(Configuration conf, boolean usingLlap);
-
-  public MiniMrShim getMiniSparkCluster(Configuration conf, int numberOfTaskTrackers,
-      String nameNode, int numDir) throws IOException;
 
 
   /**
@@ -250,6 +251,17 @@ public interface HadoopShims {
         Class<RecordReader<K, V>> rrClass) throws IOException;
   }
 
+  /**
+   * List a directory for file status with ID.
+   *
+   * @param fs The {@code FileSystem} to load the path
+   * @param path The directory to list
+   * @param filter A filter to use on the files in the directory
+   * @return A list of file status with IDs
+   * @throws IOException An I/O exception of some sort has occurred
+   * @throws UnsupportedOperationException the {@code FileSystem} is not a
+   *           {@code DistributedFileSystem}
+   */
   List<HdfsFileStatusWithId> listLocatedHdfsStatus(
       FileSystem fs, Path path, PathFilter filter) throws IOException;
 
@@ -501,7 +513,7 @@ public interface HadoopShims {
    * @param dst Path to the destination file or directory
    * @param conf The hadoop configuration object
    * @param proxyUser The user to perform the distcp as
-   * @return True if it is successfull; False otherwise.
+   * @return true if it is successful; false otherwise.
    */
   boolean runDistCpAs(List<Path> srcPaths, Path dst, Configuration conf, UserGroupInformation proxyUser)
           throws IOException;
@@ -514,9 +526,48 @@ public interface HadoopShims {
    * @param srcPaths List of Path to the source files or directories to copy
    * @param dst Path to the destination file or directory
    * @param conf The hadoop configuration object
-   * @return True if it is successfull; False otherwise.
+   * @return true if it is successful; false otherwise.
    */
-  public boolean runDistCp(List<Path> srcPaths, Path dst, Configuration conf) throws IOException;
+  public boolean runDistCp(List<Path> srcPaths, Path dst, Configuration conf)
+      throws IOException;
+
+  /**
+   * Copies a source dir/file to a destination by orchestrating the copy between hdfs nodes.
+   * This distributed process is meant to copy huge files that could take some time if a single
+   * copy is done. This method allows to specify usage of -diff feature of
+   * distcp
+   * @param oldSnapshot    initial snapshot
+   * @param newSnapshot    final snapshot
+   * @param srcPaths List of Path to the source files or directories to copy
+   * @param dst      Path to the destination file or directory
+   * @param overwriteTarget if true, in case the target is modified, restores back the target to the original state
+   *                        and reattempt copying using snapshots.
+   * @param conf     The hadoop configuration object
+   * @return true if it is successful; false otherwise.
+   */
+  boolean runDistCpWithSnapshots(String oldSnapshot, String newSnapshot, List<Path> srcPaths, Path dst,
+      boolean overwriteTarget, Configuration conf) throws IOException;
+
+  /**
+   * Copies a source dir/file to a destination by orchestrating the copy between hdfs nodes.
+   * This distributed process is meant to copy huge files that could take some time if a single
+   * copy is done. This method allows to specify usage of -diff feature of
+   * distcp. This is a variation which allows proxying as a different
+   * user to perform
+   * the distcp, and requires that the caller have requisite proxy user privileges.
+   * @param oldSnapshot     initial snapshot
+   * @param newSnapshot     final snapshot
+   * @param srcPaths  List of Path to the source files or directories to copy
+   * @param dst       Path to the destination file or directory
+   * @param overwriteTarget if true, in case the target is modified, restores back the target to the original state
+   *                        and reattempt copying using snapshots.
+   * @param proxyUser The user to perform the distcp as
+   * @param conf      The hadoop configuration object
+   * @return true if it is successful; false otherwise.
+   */
+  boolean runDistCpWithSnapshotsAs(String oldSnapshot, String newSnapshot, List<Path> srcPaths, Path dst,
+      boolean overwriteTarget, UserGroupInformation proxyUser, Configuration conf) throws IOException;
+
 
   /**
    * This interface encapsulates methods used to get encryption information from
@@ -558,19 +609,27 @@ public interface HadoopShims {
      *
      * @param path1 HDFS path to compare.
      * @param path2 HDFS path to compare.
+     * @param encryptionShim2 The encryption-shim corresponding to path2.
      * @return 1 if path1 is stronger; 0 if paths are equals; -1 if path1 is weaker.
      * @throws IOException If an error occurred attempting to get encryption/key metadata
      */
-    public int comparePathKeyStrength(Path path1, Path path2) throws IOException;
+    public int comparePathKeyStrength(Path path1, Path path2, HdfsEncryptionShim encryptionShim2) throws IOException;
 
     /**
-     * create encryption zone by path and keyname
+     * Create encryption zone by path and keyname.
      * @param path HDFS path to create encryption zone
      * @param keyName keyname
      * @throws IOException
      */
     @VisibleForTesting
     public void createEncryptionZone(Path path, String keyName) throws IOException;
+
+    /**
+     * Get encryption zone by path.
+     * @param path HDFS path to create encryption zone.
+     * @throws IOException
+     */
+    EncryptionZone getEncryptionZoneForPath(Path path) throws IOException;
 
     /**
      * Creates an encryption key.
@@ -614,7 +673,7 @@ public interface HadoopShims {
     }
 
     @Override
-    public int comparePathKeyStrength(Path path1, Path path2) throws IOException {
+    public int comparePathKeyStrength(Path path1, Path path2, HdfsEncryptionShim encryptionShim2) throws IOException {
     /* not supported */
       return 0;
     }
@@ -622,6 +681,11 @@ public interface HadoopShims {
     @Override
     public void createEncryptionZone(Path path, String keyName) {
     /* not supported */
+    }
+
+    @Override
+    public EncryptionZone getEncryptionZoneForPath(Path path) throws IOException {
+      return null;
     }
 
     @Override

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -23,12 +24,12 @@ import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorExpression;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 
 /**
- * VectorGroupByAggregrationInfo.
+ * VectorGroupByAggregationInfo.
  *
  * A convenience data structure that has information needed to vectorize reduce sink.
  *
  * It is created by the Vectorizer when it is determining whether it can specialize so the
- * information doesn't have to be recreated again and agains by the VectorReduceSinkOperator's
+ * information doesn't have to be recreated again and against by the VectorReduceSinkOperator's
  * constructors and later during execution.
  */
 public class VectorReduceSinkInfo {

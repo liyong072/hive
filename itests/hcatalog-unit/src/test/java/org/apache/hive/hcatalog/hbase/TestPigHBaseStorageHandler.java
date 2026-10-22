@@ -27,18 +27,15 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
@@ -50,7 +47,6 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.ql.DriverFactory;
 import org.apache.hadoop.hive.ql.IDriver;
-import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hive.hcatalog.common.HCatUtil;
 import org.apache.hive.hcatalog.mapreduce.HCatBaseTest;
@@ -63,26 +59,24 @@ import org.junit.Test;
 
 public class TestPigHBaseStorageHandler extends SkeletonHBaseTest {
 
-  private static HiveConf   hcatConf;
+  private static HiveConf hcatConf;
   private static IDriver driver;
-  private static String mypath;
 
   private final byte[] FAMILY     = Bytes.toBytes("testFamily");
   private final byte[] QUALIFIER1 = Bytes.toBytes("testQualifier1");
   private final byte[] QUALIFIER2 = Bytes.toBytes("testQualifier2");
 
-  public void Initialize() throws Exception {
-
+  public void initialize() throws Exception {
     hcatConf = new HiveConf(this.getClass());
-    //hcatConf.set(ConfVars.SEMANTIC_ANALYZER_HOOK.varname,
-    //		HCatSemanticAnalyzer.class.getName());
+    //TODO: HIVE-27998: hcatalog tests on Tez
+    hcatConf.setVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE, "mr");
     URI fsuri = getFileSystem().getUri();
     Path whPath = new Path(fsuri.getScheme(), fsuri.getAuthority(),
         getTestDir());
     hcatConf.set(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname, "false");
-    hcatConf.set(HiveConf.ConfVars.PREEXECHOOKS.varname, "");
-    hcatConf.set(HiveConf.ConfVars.POSTEXECHOOKS.varname, "");
-    hcatConf.set(ConfVars.METASTOREWAREHOUSE.varname, whPath.toString());
+    hcatConf.set(HiveConf.ConfVars.PRE_EXEC_HOOKS.varname, "");
+    hcatConf.set(HiveConf.ConfVars.POST_EXEC_HOOKS.varname, "");
+    hcatConf.set(ConfVars.METASTORE_WAREHOUSE.varname, whPath.toString());
     hcatConf
     .setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
         "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
@@ -113,8 +107,6 @@ public class TestPigHBaseStorageHandler extends SkeletonHBaseTest {
   }
 
   private List<Put> generatePuts(String tableName) throws IOException {
-
-    List<String> columnFamilies = Arrays.asList("testFamily");
     List<Put> myPuts;
     myPuts = new ArrayList<Put>();
     for (int i = 1; i <=10; i++) {
@@ -148,7 +140,7 @@ public class TestPigHBaseStorageHandler extends SkeletonHBaseTest {
 
   @Test
   public void testPigHBaseSchema() throws Exception {
-    Initialize();
+    initialize();
 
     String tableName = newTableName("MyTable");
     String databaseName = newTableName("MyDatabase");
@@ -167,15 +159,9 @@ public class TestPigHBaseStorageHandler extends SkeletonHBaseTest {
         + " WITH SERDEPROPERTIES ('hbase.columns.mapping'=':key,testFamily:testQualifier1,testFamily:testQualifier2')"
         +  " TBLPROPERTIES ('hbase.table.name'='"+hbaseTableName+"')";
 
-    CommandProcessorResponse responseOne = driver.run(deleteQuery);
-    assertEquals(0, responseOne.getResponseCode());
-
-
-    CommandProcessorResponse responseTwo = driver.run(dbQuery);
-    assertEquals(0, responseTwo.getResponseCode());
-
-
-    CommandProcessorResponse responseThree = driver.run(tableQuery);
+    driver.run(deleteQuery);
+    driver.run(dbQuery);
+    driver.run(tableQuery);
 
     Connection connection = null;
     Admin hAdmin = null;
@@ -214,10 +200,9 @@ public class TestPigHBaseStorageHandler extends SkeletonHBaseTest {
 
   }
 
-
   @Test
   public void testPigFilterProjection() throws Exception {
-    Initialize();
+    initialize();
 
     String tableName = newTableName("MyTable");
     String databaseName = newTableName("MyDatabase");
@@ -236,15 +221,9 @@ public class TestPigHBaseStorageHandler extends SkeletonHBaseTest {
         " WITH SERDEPROPERTIES ('hbase.columns.mapping'=':key,testFamily:testQualifier1,testFamily:testQualifier2')" +
         " TBLPROPERTIES ('hbase.table.default.storage.type'='binary')";
 
-    CommandProcessorResponse responseOne = driver.run(deleteQuery);
-    assertEquals(0, responseOne.getResponseCode());
-
-
-    CommandProcessorResponse responseTwo = driver.run(dbQuery);
-    assertEquals(0, responseTwo.getResponseCode());
-
-
-    CommandProcessorResponse responseThree = driver.run(tableQuery);
+    driver.run(deleteQuery);
+    driver.run(dbQuery);
+    driver.run(tableQuery);
 
     Connection connection = null;
     Admin hAdmin = null;
@@ -301,7 +280,7 @@ public class TestPigHBaseStorageHandler extends SkeletonHBaseTest {
 
   @Test
   public void testPigPopulation() throws Exception {
-    Initialize();
+    initialize();
 
     String tableName = newTableName("MyTable");
     String databaseName = newTableName("MyDatabase");
@@ -322,19 +301,11 @@ public class TestPigHBaseStorageHandler extends SkeletonHBaseTest {
         + " WITH SERDEPROPERTIES ('hbase.columns.mapping'=':key,testFamily:testQualifier1,testFamily:testQualifier2')"
         + " TBLPROPERTIES ('hbase.table.default.storage.type'='binary')";
 
-
     String selectQuery = "SELECT * from "+databaseName.toLowerCase()+"."+tableName.toLowerCase();
 
-
-    CommandProcessorResponse responseOne = driver.run(deleteQuery);
-    assertEquals(0, responseOne.getResponseCode());
-
-
-    CommandProcessorResponse responseTwo = driver.run(dbQuery);
-    assertEquals(0, responseTwo.getResponseCode());
-
-
-    CommandProcessorResponse responseThree = driver.run(tableQuery);
+    driver.run(deleteQuery);
+    driver.run(dbQuery);
+    driver.run(tableQuery);
 
     Connection connection = null;
     Admin hAdmin = null;
@@ -426,9 +397,7 @@ public class TestPigHBaseStorageHandler extends SkeletonHBaseTest {
     }
 
     //delete the table from the database
-    CommandProcessorResponse responseFour = driver.run(deleteQuery);
-    assertEquals(0, responseFour.getResponseCode());
-
+    driver.run(deleteQuery);
   }
 
 }

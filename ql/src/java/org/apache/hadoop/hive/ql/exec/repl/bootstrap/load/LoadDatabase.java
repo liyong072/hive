@@ -9,20 +9,26 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.repl.bootstrap.load;
 
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.common.repl.ReplConst;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.InvalidOperationException;
-import org.apache.hadoop.hive.ql.ddl.DDLWork2;
-import org.apache.hadoop.hive.ql.ddl.database.AlterDatabaseDesc;
-import org.apache.hadoop.hive.ql.ddl.database.CreateDatabaseDesc;
+import org.apache.hadoop.hive.metastore.api.MetaException;
+import org.apache.hadoop.hive.ql.ddl.DDLWork;
+import org.apache.hadoop.hive.ql.ddl.database.alter.owner.AlterDatabaseSetOwnerDesc;
+import org.apache.hadoop.hive.ql.ddl.database.alter.poperties.AlterDatabaseSetPropertiesDesc;
+import org.apache.hadoop.hive.ql.ddl.database.create.CreateDatabaseDesc;
+import org.apache.hadoop.hive.ql.ddl.privilege.PrincipalDesc;
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.exec.TaskFactory;
 import org.apache.hadoop.hive.ql.exec.repl.bootstrap.events.DatabaseEvent;
@@ -31,14 +37,14 @@ import org.apache.hadoop.hive.ql.exec.repl.util.TaskTracker;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.parse.ReplicationSpec;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
-import org.apache.hadoop.hive.ql.plan.PrincipalDesc;
 import org.apache.hadoop.hive.ql.exec.repl.util.ReplUtils;
 import org.apache.hadoop.hive.ql.exec.repl.util.ReplUtils.ReplLoadOpType;
+import org.apache.hadoop.hive.ql.parse.repl.metric.ReplicationMetricCollector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 
 public class LoadDatabase {
@@ -48,22 +54,29 @@ public class LoadDatabase {
 
   private final DatabaseEvent event;
   private final String dbNameToLoadIn;
-  private final boolean isTableLevelLoad;
+  transient ReplicationMetricCollector metricCollector;
+  protected static Logger LOG = LoggerFactory.getLogger(LoadDatabase.class);
 
-  public LoadDatabase(Context context, DatabaseEvent event, String dbNameToLoadIn, String tblNameToLoadIn,
-      TaskTracker loadTaskTracker) {
+  public LoadDatabase(Context context, DatabaseEvent event, String dbNameToLoadIn, TaskTracker loadTaskTracker) {
     this.context = context;
     this.event = event;
     this.dbNameToLoadIn = dbNameToLoadIn;
     this.tracker = new TaskTracker(loadTaskTracker);
-    //TODO : Load database should not be called for table level load.
-    isTableLevelLoad = tblNameToLoadIn != null && !tblNameToLoadIn.isEmpty();
+  }
+
+  public LoadDatabase(Context context, DatabaseEvent event, String dbNameToLoadIn,
+                      TaskTracker loadTaskTracker, ReplicationMetricCollector metricCollector) {
+    this.context = context;
+    this.event = event;
+    this.dbNameToLoadIn = dbNameToLoadIn;
+    this.tracker = new TaskTracker(loadTaskTracker);
+    this.metricCollector = metricCollector;
   }
 
   public TaskTracker tasks() throws Exception {
     Database dbInMetadata = readDbMetadata();
     String dbName = dbInMetadata.getName();
-    Task<? extends Serializable> dbRootTask = null;
+    Task<?> dbRootTask = null;
     ReplLoadOpType loadDbType = getLoadDbType(dbName);
     switch (loadDbType) {
       case LOAD_NEW:
@@ -84,6 +97,26 @@ public class LoadDatabase {
 
   Database readDbMetadata() throws SemanticException {
     return event.dbInMetadata(dbNameToLoadIn);
+  }
+
+  String getDbLocation(Database dbInMetadata) {
+    if (context.hiveConf.getBoolVar(HiveConf.ConfVars.REPL_RETAIN_CUSTOM_LOCATIONS_FOR_DB_ON_TARGET)
+            && Boolean.parseBoolean(dbInMetadata.getParameters().get(ReplConst.REPL_IS_CUSTOM_DB_LOC))) {
+      String locOnTarget = new Path(dbInMetadata.getLocationUri()).toUri().getPath().toString();
+      LOG.info("Using the custom location {} on the target", locOnTarget);
+      return locOnTarget;
+    }
+    return null;
+  }
+
+  String getDbManagedLocation(Database dbInMetadata) {
+    if (context.hiveConf.getBoolVar(HiveConf.ConfVars.REPL_RETAIN_CUSTOM_LOCATIONS_FOR_DB_ON_TARGET)
+            && Boolean.parseBoolean(dbInMetadata.getParameters().get(ReplConst.REPL_IS_CUSTOM_DB_MANAGEDLOC))) {
+      String locOnTarget = new Path(dbInMetadata.getManagedLocationUri()).toUri().getPath().toString();
+      LOG.info("Using the custom managed location {} on the target", locOnTarget);
+      return locOnTarget;
+    }
+    return null;
   }
 
   private ReplLoadOpType getLoadDbType(String dbName) throws InvalidOperationException, HiveException {
@@ -108,67 +141,76 @@ public class LoadDatabase {
   private boolean isDbAlreadyBootstrapped(Database db) {
     Map<String, String> props = db.getParameters();
     return ((props != null)
-            && props.containsKey(ReplicationSpec.KEY.CURR_STATE_ID.toString())
-            && !props.get(ReplicationSpec.KEY.CURR_STATE_ID.toString()).isEmpty());
+            && props.containsKey(ReplicationSpec.KEY.CURR_STATE_ID_SOURCE.toString())
+            && !props.get(ReplicationSpec.KEY.CURR_STATE_ID_SOURCE.toString()).isEmpty());
   }
 
   private boolean isDbEmpty(String dbName) throws HiveException {
-    List<String> allTables = context.hiveDb.getAllTables(dbName);
-    List<String> allFunctions = context.hiveDb.getFunctions(dbName, "*");
-    return allTables.isEmpty() && allFunctions.isEmpty();
+    return context.hiveDb.getAllTables(dbName).isEmpty() && context.hiveDb.getFunctions(dbName, "*").isEmpty();
   }
 
-  private Task<? extends Serializable> createDbTask(Database dbObj) {
+  private Task<?> createDbTask(Database dbObj) throws MetaException {
     // note that we do not set location - for repl load, we want that auto-created.
-    CreateDatabaseDesc createDbDesc = new CreateDatabaseDesc(dbObj.getName(), dbObj.getDescription(), null, false,
-        updateDbProps(dbObj, context.dumpDirectory, !isTableLevelLoad));
+    CreateDatabaseDesc createDbDesc = new CreateDatabaseDesc(dbObj.getCatalogName(), dbObj.getName(), dbObj.getDescription(),
+            getDbLocation(dbObj), getDbManagedLocation(dbObj), false, updateDbProps(dbObj, context.dumpDirectory));
     // If it exists, we want this to be an error condition. Repl Load is not intended to replace a
     // db.
     // TODO: we might revisit this in create-drop-recreate cases, needs some thinking on.
-    DDLWork2 work = new DDLWork2(new HashSet<>(), new HashSet<>(), createDbDesc);
+    DDLWork work = new DDLWork(new HashSet<>(), new HashSet<>(), createDbDesc, true,
+            (new Path(context.dumpDirectory)).getParent().toString(), this.metricCollector);
     return TaskFactory.get(work, context.hiveConf);
   }
 
-  private Task<? extends Serializable> alterDbTask(Database dbObj) {
-    return alterDbTask(dbObj.getName(), updateDbProps(dbObj, context.dumpDirectory, !isTableLevelLoad),
-            context.hiveConf);
+  private Task<?> alterDbTask(Database dbObj) {
+    return alterDbTask(dbObj.getCatalogName(), dbObj.getName(), updateDbProps(dbObj, context.dumpDirectory),
+            context.hiveConf, context.dumpDirectory, this.metricCollector);
   }
 
-  private Task<? extends Serializable> setOwnerInfoTask(Database dbObj) {
-    AlterDatabaseDesc alterDbDesc = new AlterDatabaseDesc(dbObj.getName(), new PrincipalDesc(dbObj.getOwnerName(),
-        dbObj.getOwnerType()), null);
-    DDLWork2 work = new DDLWork2(new HashSet<>(), new HashSet<>(), alterDbDesc);
+  private Task<?> setOwnerInfoTask(Database dbObj) {
+    AlterDatabaseSetOwnerDesc alterDbDesc = new AlterDatabaseSetOwnerDesc(dbObj.getCatalogName(), dbObj.getName(),
+        new PrincipalDesc(dbObj.getOwnerName(), dbObj.getOwnerType()), null);
+    DDLWork work = new DDLWork(new HashSet<>(), new HashSet<>(), alterDbDesc, true,
+            (new Path(context.dumpDirectory)).getParent().toString(), this.metricCollector);
     return TaskFactory.get(work, context.hiveConf);
   }
 
-  private static Map<String, String> updateDbProps(Database dbObj, String dumpDirectory, boolean needSetIncFlag) {
+  private static Map<String, String> updateDbProps(Database dbObj, String dumpDirectory) {
     /*
     explicitly remove the setting of last.repl.id from the db object parameters as loadTask is going
     to run multiple times and explicit logic is in place which prevents updates to tables when db level
     last repl id is set and we create a AlterDatabaseTask at the end of processing a database.
      */
     Map<String, String> parameters = new HashMap<>(dbObj.getParameters());
-    parameters.remove(ReplicationSpec.KEY.CURR_STATE_ID.toString());
+    parameters.remove(ReplicationSpec.KEY.CURR_STATE_ID_SOURCE.toString());
+
+    parameters.remove(ReplicationSpec.KEY.CURR_STATE_ID_TARGET.toString());
+
+    parameters.remove(ReplConst.REPL_IS_CUSTOM_DB_LOC);
+
+    parameters.remove(ReplConst.REPL_IS_CUSTOM_DB_MANAGEDLOC);
 
     // Add the checkpoint key to the Database binding it to current dump directory.
     // So, if retry using same dump, we shall skip Database object update.
-    parameters.put(ReplUtils.REPL_CHECKPOINT_KEY, dumpDirectory);
+    parameters.put(ReplConst.REPL_TARGET_DB_PROPERTY, dumpDirectory);
 
-    if (needSetIncFlag) {
-      // This flag will be set to false after first incremental load is done. This flag is used by repl copy task to
-      // check if duplicate file check is required or not. This flag is used by compaction to check if compaction can be
-      // done for this database or not. If compaction is done before first incremental then duplicate check will fail as
-      // compaction may change the directory structure.
-      parameters.put(ReplUtils.REPL_FIRST_INC_PENDING_FLAG, "true");
-    }
+    // This flag will be set to false after first incremental load is done. This flag is used by repl copy task to
+    // check if duplicate file check is required or not. This flag is used by compaction to check if compaction can be
+    // done for this database or not. If compaction is done before first incremental then duplicate check will fail as
+    // compaction may change the directory structure.
+    parameters.put(ReplConst.REPL_FIRST_INC_PENDING_FLAG, "true");
+    //This flag will be set to identify its a target of replication. Repl dump won't be allowed on a database
+    //which is a target of replication.
+    parameters.put(ReplConst.TARGET_OF_REPLICATION, "true");
 
     return parameters;
   }
 
-  private static Task<? extends Serializable> alterDbTask(String dbName, Map<String, String> props,
-                                                          HiveConf hiveConf) {
-    AlterDatabaseDesc alterDbDesc = new AlterDatabaseDesc(dbName, props, null);
-    DDLWork2 work = new DDLWork2(new HashSet<>(), new HashSet<>(), alterDbDesc);
+  private static Task<?> alterDbTask(String catName, String dbName, Map<String, String> props,
+                                     HiveConf hiveConf, String dumpDirectory,
+                                     ReplicationMetricCollector metricCollector) {
+    AlterDatabaseSetPropertiesDesc alterDbDesc = new AlterDatabaseSetPropertiesDesc(catName, dbName, props, null);
+    DDLWork work = new DDLWork(new HashSet<>(), new HashSet<>(), alterDbDesc, true,
+            (new Path(dumpDirectory)).getParent().toString(), metricCollector);
     return TaskFactory.get(work, hiveConf);
   }
 
@@ -176,13 +218,19 @@ public class LoadDatabase {
 
     public AlterDatabase(Context context, DatabaseEvent event, String dbNameToLoadIn,
         TaskTracker loadTaskTracker) {
-      super(context, event, dbNameToLoadIn, null, loadTaskTracker);
+      super(context, event, dbNameToLoadIn, loadTaskTracker);
+    }
+
+    public AlterDatabase(Context context, DatabaseEvent event, String dbNameToLoadIn,
+                         TaskTracker loadTaskTracker, ReplicationMetricCollector metricCollector) {
+      super(context, event, dbNameToLoadIn, loadTaskTracker, metricCollector);
     }
 
     @Override
     public TaskTracker tasks() throws SemanticException {
       Database dbObj = readDbMetadata();
-      tracker.addTask(alterDbTask(dbObj.getName(), dbObj.getParameters(), context.hiveConf));
+      tracker.addTask(alterDbTask(dbObj.getCatalogName(), dbObj.getName(), dbObj.getParameters(), context.hiveConf,
+              context.dumpDirectory, this.metricCollector ));
       return tracker;
     }
   }

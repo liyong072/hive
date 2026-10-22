@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.signature;
@@ -21,10 +22,8 @@ package org.apache.hadoop.hive.ql.optimizer.signature;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import java.io.IOException;
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-
 import org.apache.hadoop.hive.ql.CompilationOpContext;
 import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.exec.OperatorFactory;
@@ -37,6 +36,7 @@ import org.apache.hadoop.hive.ql.plan.FilterDesc;
 import org.apache.hadoop.hive.ql.plan.JoinCondDesc;
 import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 import org.apache.hadoop.hive.ql.plan.TableScanDesc;
+import org.apache.hadoop.hive.ql.plan.mapper.PersistedRuntimeStats;
 import org.apache.hadoop.hive.ql.stats.OperatorStats;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFConcat;
@@ -119,18 +119,17 @@ public class TestRuntimeStatsPersistence {
 
   }
 
+  // FIXME: redo test
   @Test
-  public void checkCanStoreMap() throws Exception {
+  public void checkCanStore() throws Exception {
 
-    Map<OpTreeSignature, OperatorStats> map = new HashMap<>();
-    map.put(signatureFactory.getSignature(getTsOp(0)), new OperatorStats("ts0"));
-    map.put(signatureFactory.getSignature(getTsOp(1)), new OperatorStats("ts1"));
+    List<PersistedRuntimeStats> rsm = new ArrayList<>();
+    rsm.add(new PersistedRuntimeStats(signatureFactory.getSignature(getTsOp(0)), new OperatorStats("ts0"), null));
+    rsm.add(new PersistedRuntimeStats(signatureFactory.getSignature(getTsOp(1)), new OperatorStats("ts1"), null));
 
-    RuntimeStatsMap rsm = new RuntimeStatsMap(map);
-
-    RuntimeStatsMap rsm2 = persistenceLoop(rsm, RuntimeStatsMap.class);
-    OpTreeSignature k1 = rsm.toMap().keySet().iterator().next();
-    OpTreeSignature k2 = rsm2.toMap().keySet().iterator().next();
+    List<PersistedRuntimeStats> rsm2 = persistenceLoop(rsm, List.class);
+    OpTreeSignature k1 = rsm.iterator().next().sig;
+    OpTreeSignature k2 = rsm2.iterator().next().sig;
     assertEquals(k1, k2);
     assertEquals(rsm, rsm2);
   }

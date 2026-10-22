@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan.mapper;
@@ -37,6 +38,9 @@ import org.apache.hadoop.hive.ql.optimizer.signature.OpTreeSignature;
 import org.apache.hadoop.hive.ql.optimizer.signature.OpTreeSignatureFactory;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
+import org.apache.hadoop.hive.ql.stats.OperatorStats;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Enables to connect related objects to eachother.
@@ -44,9 +48,10 @@ import com.google.common.collect.Sets;
  * Most importantly it aids to connect Operators to OperatorStats and probably RelNodes.
  */
 public class PlanMapper {
+  private static final Logger LOG = LoggerFactory.getLogger(PlanMapper.class);
 
   Set<EquivGroup> groups = new HashSet<>();
-  private Map<Object, EquivGroup> objectMap = new CompositeMap<>(OpTreeSignature.class);
+  private Map<Object, EquivGroup> objectMap = new CompositeMap<>(OpTreeSignature.class, AuxOpTreeSignature.class);
 
   /**
    * Specialized class which can compare by identity or value; based on the key type.
@@ -189,6 +194,17 @@ public class PlanMapper {
    * then those two can be linked.
    */
   public void link(Object o1, Object o2) {
+    link(o1, o2, false);
+  }
+
+  /**
+   * Links and optionally merges the groups identified by the two objects.
+   */
+  public void merge(Object o1, Object o2) {
+    link(o1, o2, true);
+  }
+
+  private void link(Object o1, Object o2, boolean mayMerge) {
 
     Set<Object> keySet = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
     keySet.add(o1);
@@ -205,12 +221,27 @@ public class PlanMapper {
       }
     }
     if (mGroups.size() > 1) {
-      throw new RuntimeException("equivalence mapping violation");
+      if (!mayMerge) {
+        LOG.warn("Illegally linking {} and {}", o1, o2);
+        mGroups.forEach(g -> g.add(new OperatorStats.IncorrectRuntimeStatsMarker()));
+        return;
+      }
+      EquivGroup newGrp = new EquivGroup();
+      newGrp.add(o1);
+      newGrp.add(o2);
+      for (EquivGroup g : mGroups) {
+        for (Object o : g.members) {
+          newGrp.add(o);
+        }
+      }
+      groups.add(newGrp);
+      groups.removeAll(mGroups);
+    } else {
+      EquivGroup targetGroup = mGroups.isEmpty() ? new EquivGroup() : mGroups.iterator().next();
+      groups.add(targetGroup);
+      targetGroup.add(o1);
+      targetGroup.add(o2);
     }
-    EquivGroup targetGroup = mGroups.isEmpty() ? new EquivGroup() : mGroups.iterator().next();
-    groups.add(targetGroup);
-    targetGroup.add(o1);
-    targetGroup.add(o2);
 
   }
 
@@ -232,13 +263,7 @@ public class PlanMapper {
     return ret;
   }
 
-  public void runMapper(GroupTransformer mapper) {
-    for (EquivGroup equivGroup : groups) {
-      mapper.map(equivGroup);
-    }
-  }
-
-  public <T> List<T> lookupAll(Class<T> clazz, Object key) {
+  private <T> List<T> lookupAll(Class<T> clazz, Object key) {
     EquivGroup group = objectMap.get(key);
     if (group == null) {
       throw new NoSuchElementException(Objects.toString(key));
@@ -246,6 +271,7 @@ public class PlanMapper {
     return group.getAll(clazz);
   }
 
+  @VisibleForTesting
   public <T> T lookup(Class<T> clazz, Object key) {
     List<T> all = lookupAll(clazz, key);
     if (all.size() != 1) {
@@ -255,7 +281,6 @@ public class PlanMapper {
     return all.get(0);
   }
 
-  @VisibleForTesting
   public Iterator<EquivGroup> iterateGroups() {
     return groups.iterator();
 
@@ -264,6 +289,17 @@ public class PlanMapper {
   public OpTreeSignature getSignatureOf(Operator<?> op) {
     OpTreeSignature sig = signatureCache.getSignature(op);
     return sig;
+  }
+
+  public void clearSignatureCache() {
+    //    auxSignatureCache.clear();
+  }
+
+  private OpTreeSignatureFactory auxSignatureCache = OpTreeSignatureFactory.newCache();
+
+  public AuxOpTreeSignature getAuxSignatureOf(Operator<?> op) {
+    OpTreeSignature x = auxSignatureCache.getSignature(op);
+    return new AuxOpTreeSignature(x);
   }
 
 }

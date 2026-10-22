@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.client;
@@ -24,6 +25,7 @@ import org.apache.hadoop.hive.metastore.MetaStoreTestUtils;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.minihms.AbstractMetaStoreService;
 import org.apache.hadoop.hive.metastore.minihms.MiniHMS;
+import org.apache.hadoop.hive.metastore.utils.MetaStoreServerUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -87,7 +89,8 @@ public final class MetaStoreFactoryForTests {
 
     // Create Embedded MetaStore
     conf.set("javax.jdo.option.ConnectionURL",
-        "jdbc:derby:memory:${test.tmp.dir}/junit_metastore_db1;create=true");
+        "jdbc:derby:memory:${test.tmp.dir}/" + MetaStoreServerUtils.JUNIT_DATABASE_PREFIX
+            + "1;create=true");
     MetastoreConf.setBoolVar(conf, MetastoreConf.ConfVars.TRY_DIRECT_SQL, false);
     AbstractMetaStoreService embedded =
         new MiniHMS.Builder()
@@ -98,7 +101,8 @@ public final class MetaStoreFactoryForTests {
 
     // Create Remote MetaStore
     conf.set("javax.jdo.option.ConnectionURL",
-        "jdbc:derby:memory:${test.tmp.dir}/junit_metastore_db2;create=true");
+        "jdbc:derby:memory:${test.tmp.dir}/" + MetaStoreServerUtils.JUNIT_DATABASE_PREFIX
+        + "2;create=true");
     MetastoreConf.setBoolVar(conf, MetastoreConf.ConfVars.TRY_DIRECT_SQL, true);
     AbstractMetaStoreService remote =
         new MiniHMS.Builder()

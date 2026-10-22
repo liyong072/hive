@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.tez;
 
@@ -26,7 +27,11 @@ import java.util.Map;
 
 import org.apache.hadoop.hive.llap.LlapDaemonInfo;
 import org.apache.hadoop.hive.ql.exec.MemoryMonitorInfo;
+import org.apache.hadoop.hive.ql.exec.Operator;
+import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.mapjoin.MapJoinMemoryExhaustionError;
+import org.apache.tez.common.counters.TaskCounter;
+import org.apache.tez.common.counters.TezCounter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -53,6 +58,7 @@ import org.apache.hadoop.io.Writable;
 import org.apache.tez.runtime.api.Input;
 import org.apache.tez.runtime.api.LogicalInput;
 import org.apache.tez.runtime.library.api.KeyValueReader;
+import org.apache.tez.runtime.api.AbstractLogicalInput;
 
 /**
  * HashTableLoader for Tez constructs the hashtable from records read from
@@ -66,6 +72,7 @@ public class HashTableLoader implements org.apache.hadoop.hive.ql.exec.HashTable
   private MapJoinDesc desc;
   private TezContext tezContext;
   private String cacheKey;
+  private TezCounter htLoadCounter;
 
   @Override
   public void init(ExecMapperContext context, MapredContext mrContext, Configuration hconf,
@@ -74,6 +81,10 @@ public class HashTableLoader implements org.apache.hadoop.hive.ql.exec.HashTable
     this.hconf = hconf;
     this.desc = joinOp.getConf();
     this.cacheKey = joinOp.getCacheKey();
+    String counterGroup = HiveConf.getVar(hconf, HiveConf.ConfVars.HIVE_COUNTER_GROUP);
+    String vertexName = hconf.get(Operator.CONTEXT_NAME_KEY, "");
+    String counterName = Utilities.getVertexCounterName(HashTableLoaderCounters.HASHTABLE_LOAD_TIME_MS.name(), vertexName);
+    this.htLoadCounter = tezContext.getTezProcessorContext().getCounters().findCounter(counterGroup, counterName);
   }
 
   @Override
@@ -91,7 +102,7 @@ public class HashTableLoader implements org.apache.hadoop.hive.ql.exec.HashTable
     }
 
     boolean useOptimizedTables = HiveConf.getBoolVar(
-        hconf, HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
+        hconf, HiveConf.ConfVars.HIVE_MAPJOIN_USE_OPTIMIZED_TABLE);
     boolean useHybridGraceHashJoin = desc.isHybridHashJoin();
     boolean isFirstKey = true;
 
@@ -100,13 +111,13 @@ public class HashTableLoader implements org.apache.hadoop.hive.ql.exec.HashTable
     LOG.info("Memory manager allocates " + totalMapJoinMemory + " bytes for the loading hashtable.");
     if (totalMapJoinMemory <= 0) {
       totalMapJoinMemory = HiveConf.getLongVar(
-        hconf, HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
+        hconf, HiveConf.ConfVars.HIVE_CONVERT_JOIN_NOCONDITIONAL_TASK_THRESHOLD);
     }
 
     long processMaxMemory = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getMax();
     if (totalMapJoinMemory > processMaxMemory) {
       float hashtableMemoryUsage = HiveConf.getFloatVar(
-          hconf, HiveConf.ConfVars.HIVEHASHTABLEFOLLOWBYGBYMAXMEMORYUSAGE);
+          hconf, HiveConf.ConfVars.HIVE_HASHTABLE_FOLLOWBY_GBY_MAX_MEMORY_USAGE);
       LOG.warn("totalMapJoinMemory value of " + totalMapJoinMemory +
           " is greater than the max memory size of " + processMaxMemory);
       // Don't want to attempt to grab more memory than we have available .. percentage is a bit arbitrary
@@ -144,8 +155,8 @@ public class HashTableLoader implements org.apache.hadoop.hive.ql.exec.HashTable
       int numPartitions = 0;
       try {
         numPartitions = HybridHashTableContainer.calcNumPartitions(memory, maxSize,
-            HiveConf.getIntVar(hconf, HiveConf.ConfVars.HIVEHYBRIDGRACEHASHJOINMINNUMPARTITIONS),
-            HiveConf.getIntVar(hconf, HiveConf.ConfVars.HIVEHYBRIDGRACEHASHJOINMINWBSIZE));
+            HiveConf.getIntVar(hconf, HiveConf.ConfVars.HIVE_HYBRIDGRACE_HASHJOIN_MIN_NUM_PARTITIONS),
+            HiveConf.getIntVar(hconf, HiveConf.ConfVars.HIVE_HYBRIDGRACE_HASHJOIN_MIN_WB_SIZE));
       } catch (IOException e) {
         throw new HiveException(e);
       }
@@ -164,16 +175,12 @@ public class HashTableLoader implements org.apache.hadoop.hive.ql.exec.HashTable
       }
       if (memoryMonitorInfo.doMemoryMonitoring()) {
         doMemCheck = true;
-        if (LOG.isInfoEnabled()) {
-          LOG.info("Memory monitoring for hash table loader enabled. {}", memoryMonitorInfo);
-        }
+        LOG.info("Memory monitoring for hash table loader enabled. {}", memoryMonitorInfo);
       }
     }
 
     if (!doMemCheck) {
-      if (LOG.isInfoEnabled()) {
-        LOG.info("Not doing hash table memory monitoring. {}", memoryMonitorInfo);
-      }
+      LOG.info("Not doing hash table memory monitoring. {}", memoryMonitorInfo);
     }
     for (int pos = 0; pos < mapJoinTables.length; pos++) {
       if (pos == desc.getPosBigTable()) {
@@ -211,7 +218,16 @@ public class HashTableLoader implements org.apache.hadoop.hive.ql.exec.HashTable
         }
         isFirstKey = false;
         Long keyCountObj = parentKeyCounts.get(pos);
-        long keyCount = (keyCountObj == null) ? -1 : keyCountObj.longValue();
+        long estKeyCount = (keyCountObj == null) ? -1 : keyCountObj;
+
+        long inputRecords = -1;
+        try {
+          inputRecords = ((AbstractLogicalInput) input).getContext().getCounters()
+              .findCounter(TaskCounter.APPROXIMATE_INPUT_RECORDS).getValue();
+        } catch (Exception e) {
+          LOG.debug("Failed to get value for counter APPROXIMATE_INPUT_RECORDS", e);
+        }
+        long keyCount = Math.max(estKeyCount, inputRecords);
 
         long memory = 0;
         if (useHybridGraceHashJoin) {
@@ -234,10 +250,12 @@ public class HashTableLoader implements org.apache.hadoop.hive.ql.exec.HashTable
           tableContainer = new HashMapWrapper(hconf, keyCount);
         }
 
-        LOG.info("Loading hash table for input: {} cacheKey: {} tableContainer: {} smallTablePos: {}", inputName,
-          cacheKey, tableContainer.getClass().getSimpleName(), pos);
+        LOG.info("Loading hash table for input: {} cacheKey: {} tableContainer: {} smallTablePos: {} " +
+                        "estKeyCount : {} keyCount : {}", inputName, cacheKey,
+                tableContainer.getClass().getSimpleName(), pos, estKeyCount, keyCount);
 
         tableContainer.setSerde(keyCtx, valCtx);
+        long startTime = System.currentTimeMillis();
         while (kvReader.next()) {
           tableContainer.putRow((Writable) kvReader.getCurrentKey(), (Writable) kvReader.getCurrentValue());
           numEntries++;
@@ -250,22 +268,24 @@ public class HashTableLoader implements org.apache.hadoop.hive.ql.exec.HashTable
               LOG.error(msg);
               throw new MapJoinMemoryExhaustionError(msg);
             } else {
-              if (LOG.isInfoEnabled()) {
-                LOG.info("Checking hash table loader memory usage for input: {} numEntries: {} " +
-                  "estimatedMemoryUsage: {} effectiveThreshold: {}", inputName, numEntries, estMemUsage,
-                  effectiveThreshold);
-              }
+              LOG.info(
+                  "Checking hash table loader memory usage for input: {} numEntries: {} "
+                      + "estimatedMemoryUsage: {} effectiveThreshold: {}",
+                  inputName, numEntries, estMemUsage, effectiveThreshold);
             }
           }
         }
+        long delta = System.currentTimeMillis() - startTime;
+        htLoadCounter.increment(delta);
         tableContainer.seal();
         mapJoinTables[pos] = tableContainer;
         if (doMemCheck) {
-          LOG.info("Finished loading hash table for input: {} cacheKey: {} numEntries: {} estimatedMemoryUsage: {}",
-            inputName, cacheKey, numEntries, tableContainer.getEstimatedMemorySize());
+          LOG.info("Finished loading hash table for input: {} cacheKey: {} numEntries: {} " +
+                          "estimatedMemoryUsage: {} Load Time : {} ",
+            inputName, cacheKey, numEntries, tableContainer.getEstimatedMemorySize(), delta);
         } else {
-          LOG.info("Finished loading hash table for input: {} cacheKey: {} numEntries: {}", inputName, cacheKey,
-            numEntries);
+          LOG.info("Finished loading hash table for input: {} cacheKey: {} numEntries: {} Load Time : {} ",
+                  inputName, cacheKey, numEntries, delta);
         }
       } catch (Exception e) {
         throw new HiveException(e);

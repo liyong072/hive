@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.cache;
 
@@ -21,6 +22,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.hadoop.hive.metastore.api.Partition;
 import org.apache.hadoop.hive.metastore.api.SkewedInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
@@ -32,6 +34,14 @@ import org.apache.hadoop.hive.metastore.utils.StringUtils;
 public class CacheUtils {
   private static final String delimit = "\u0001";
 
+  /**
+   * Constant variable that stores engine value needed to store / access
+   * Hive column statistics.
+   * TODO: Once CachedStore supports multiple engines, this constant variable
+   * can be removed.
+   */
+  protected static final String HIVE_ENGINE = "hive";
+
   public static String buildCatalogKey(String catName) {
     return catName;
   }
@@ -40,20 +50,22 @@ public class CacheUtils {
     return buildKey(catName.toLowerCase(), dbName.toLowerCase());
   }
 
+  public static String buildDbKeyWithDelimiterSuffix(String catName, String dbName) {
+    return buildKey(catName.toLowerCase(), dbName.toLowerCase()) + delimit;
+  }
+
   /**
    * Builds a key for the partition cache which is concatenation of partition values, each value
    * separated by a delimiter
    *
    */
   public static String buildPartitionCacheKey(List<String> partVals) {
-    if (partVals == null || partVals.isEmpty()) {
-      return "";
-    }
-    return String.join(delimit, partVals);
+    return CollectionUtils.isNotEmpty(partVals) ? String.join(delimit, partVals) : "";
   }
 
   public static String buildTableKey(String catName, String dbName, String tableName) {
-    return buildKey(catName.toLowerCase(), dbName.toLowerCase(), tableName.toLowerCase());
+    return buildKey(StringUtils.normalizeIdentifier(catName), StringUtils.normalizeIdentifier(dbName),
+        StringUtils.normalizeIdentifier(tableName));
   }
 
   public static String buildTableColKey(String catName, String dbName, String tableName,
@@ -61,8 +73,8 @@ public class CacheUtils {
     return buildKey(catName, dbName, tableName, colName);
   }
 
-  private static String buildKey(String... elements) {
-    return org.apache.commons.lang.StringUtils.join(elements, delimit);
+  public static String buildKey(String... elements) {
+    return org.apache.commons.lang3.StringUtils.join(elements, delimit);
   }
 
   public static String[] splitDbName(String key) {

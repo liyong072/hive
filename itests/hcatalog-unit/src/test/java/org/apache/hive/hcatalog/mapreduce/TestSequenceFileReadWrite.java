@@ -49,7 +49,6 @@ import org.apache.hive.hcatalog.common.HCatUtil;
 import org.apache.hive.hcatalog.data.DefaultHCatRecord;
 import org.apache.hive.hcatalog.data.schema.HCatFieldSchema;
 import org.apache.hive.hcatalog.data.schema.HCatSchema;
-import org.apache.pig.ExecType;
 import org.apache.pig.PigServer;
 import org.apache.pig.data.Tuple;
 import org.junit.After;
@@ -71,13 +70,14 @@ public class TestSequenceFileReadWrite {
     dataDir = new File(System.getProperty("java.io.tmpdir") + File.separator +
         TestSequenceFileReadWrite.class.getCanonicalName() + "-" + System.currentTimeMillis());
     hiveConf = new HiveConf(this.getClass());
+    //TODO: HIVE-27998: hcatalog tests on Tez
+    hiveConf.setVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE, "mr");
     warehouseDir = HCatUtil.makePathASafeFileName(dataDir + File.separator + "warehouse");
     inputFileName = HCatUtil.makePathASafeFileName(dataDir + File.separator + "input.data");
-    hiveConf = new HiveConf(this.getClass());
-    hiveConf.set(HiveConf.ConfVars.PREEXECHOOKS.varname, "");
-    hiveConf.set(HiveConf.ConfVars.POSTEXECHOOKS.varname, "");
+    hiveConf.set(HiveConf.ConfVars.PRE_EXEC_HOOKS.varname, "");
+    hiveConf.set(HiveConf.ConfVars.POST_EXEC_HOOKS.varname, "");
     hiveConf.set(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname, "false");
-    hiveConf.set(HiveConf.ConfVars.METASTOREWAREHOUSE.varname, warehouseDir);
+    hiveConf.set(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname, warehouseDir);
     hiveConf
     .setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
         "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
@@ -109,8 +109,7 @@ public class TestSequenceFileReadWrite {
   public void testSequenceTableWriteRead() throws Exception {
     String createTable = "CREATE TABLE demo_table(a0 int, a1 String, a2 String) STORED AS SEQUENCEFILE";
     driver.run("drop table demo_table");
-    int retCode1 = driver.run(createTable).getResponseCode();
-    assertTrue(retCode1 == 0);
+    driver.run(createTable);
 
     server.setBatchOn();
     server.registerQuery("A = load '"
@@ -137,8 +136,7 @@ public class TestSequenceFileReadWrite {
   public void testTextTableWriteRead() throws Exception {
     String createTable = "CREATE TABLE demo_table_1(a0 int, a1 String, a2 String) STORED AS TEXTFILE";
     driver.run("drop table demo_table_1");
-    int retCode1 = driver.run(createTable).getResponseCode();
-    assertTrue(retCode1 == 0);
+    driver.run(createTable);
 
     server.setBatchOn();
     server.registerQuery("A = load '"
@@ -166,8 +164,7 @@ public class TestSequenceFileReadWrite {
   public void testSequenceTableWriteReadMR() throws Exception {
     String createTable = "CREATE TABLE demo_table_2(a0 int, a1 String, a2 String) STORED AS SEQUENCEFILE";
     driver.run("drop table demo_table_2");
-    int retCode1 = driver.run(createTable).getResponseCode();
-    assertTrue(retCode1 == 0);
+    driver.run(createTable);
 
     Configuration conf = new Configuration();
     conf.set(HCatConstants.HCAT_KEY_HIVE_CONF,
@@ -213,8 +210,7 @@ public class TestSequenceFileReadWrite {
   public void testTextTableWriteReadMR() throws Exception {
     String createTable = "CREATE TABLE demo_table_3(a0 int, a1 String, a2 String) STORED AS TEXTFILE";
     driver.run("drop table demo_table_3");
-    int retCode1 = driver.run(createTable).getResponseCode();
-    assertTrue(retCode1 == 0);
+    driver.run(createTable);
 
     Configuration conf = new Configuration();
     conf.set(HCatConstants.HCAT_KEY_HIVE_CONF,

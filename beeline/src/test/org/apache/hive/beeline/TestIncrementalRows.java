@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.beeline;
@@ -94,7 +95,7 @@ public class TestIncrementalRows {
 
     convertedIr.next();
     String row = convertedIr.next().toString();
-    Assert.assertEquals("[[77, 77, 77]]", row);
+    Assert.assertEquals("[TU1N]", row);
   }
 
   public void initNrOfResultSetCalls(final int iter) throws SQLException {
@@ -115,6 +116,7 @@ public class TestIncrementalRows {
     initNrOfResultSetCalls(10);
 
     when(mockResultSet.getObject(1)).thenReturn("Hello World");
+    when(mockResultSet.getString(1)).thenReturn("Hello World");
 
     // IncrementalRows constructor should buffer the first "incrementalBufferRows" rows
     IncrementalRowsWithNormalization incrementalRowsWithNormalization = new IncrementalRowsWithNormalization(

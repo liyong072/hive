@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -30,7 +31,8 @@ import org.apache.hadoop.hive.ql.exec.tez.TezContext;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.AppMasterEventDesc;
 import org.apache.hadoop.hive.ql.plan.api.OperatorType;
-import org.apache.hadoop.hive.serde2.Serializer;
+import org.apache.hadoop.hive.serde2.AbstractSerDe;
+import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.io.Writable;
@@ -45,7 +47,7 @@ import org.apache.tez.runtime.api.events.InputInitializerEvent;
 @SuppressWarnings({ "deprecation", "serial" })
 public class AppMasterEventOperator extends Operator<AppMasterEventDesc> {
 
-  protected transient Serializer serializer;
+  protected transient AbstractSerDe serializer;
   protected transient DataOutputBuffer buffer;
   protected transient boolean hasReachedMaxSize = false;
   protected transient long MAX_SIZE;
@@ -65,7 +67,13 @@ public class AppMasterEventOperator extends Operator<AppMasterEventDesc> {
 
     MAX_SIZE = HiveConf.getLongVar(hconf, ConfVars.TEZ_DYNAMIC_PARTITION_PRUNING_MAX_EVENT_SIZE);
     serializer =
-        (Serializer) ReflectionUtils.newInstance(conf.getTable().getDeserializerClass(), null);
+        (AbstractSerDe) ReflectionUtils.newInstance(conf.getTable().getSerDeClass(), null);
+    try {
+      serializer.initialize(null, conf.getTable().getProperties(), null);
+    } catch (SerDeException e) {
+      LOG.error("Initialization failed for serializer", e);
+      throw new HiveException(e.getMessage());
+    }
     initDataBuffer(false);
   }
 
@@ -93,9 +101,7 @@ public class AppMasterEventOperator extends Operator<AppMasterEventDesc> {
       Writable writableRow = serializer.serialize(row, rowInspector);
       writableRow.write(buffer);
       if (buffer.getLength() > MAX_SIZE) {
-        if (LOG.isInfoEnabled()) {
-          LOG.info("Disabling AM events. Buffer size too large: " + buffer.getLength());
-        }
+        LOG.info("Disabling AM events. Buffer size too large: " + buffer.getLength());
         hasReachedMaxSize = true;
         buffer = null;
       }
@@ -103,9 +109,8 @@ public class AppMasterEventOperator extends Operator<AppMasterEventDesc> {
       throw new HiveException(e);
     }
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("AppMasterEvent: " + row);
-    }
+    LOG.debug("AppMasterEvent: {}", row);
+
     forward(row, rowInspector);
   }
 
@@ -130,10 +135,8 @@ public class AppMasterEventOperator extends Operator<AppMasterEventDesc> {
           InputInitializerEvent.create(vertexName, inputName,
               ByteBuffer.wrap(payload, 0, payload.length));
 
-      if (LOG.isInfoEnabled()) {
-        LOG.info("Sending Tez event to vertex = " + vertexName + ", input = " + inputName
-          + ". Payload size = " + payload.length);
-      }
+      LOG.info("Sending Tez event to vertex = " + vertexName + ", input = " + inputName + ". Payload size = "
+          + payload.length);
 
       context.getTezProcessorContext().sendEvents(Collections.singletonList(event));
     }

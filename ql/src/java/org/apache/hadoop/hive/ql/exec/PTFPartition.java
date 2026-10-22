@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -38,7 +39,6 @@ import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
 /*
  * represents a collection of rows that is acted upon by a TableFunction or a WindowFunction.
  */
-@SuppressWarnings("deprecation")
 public class PTFPartition {
   protected static Logger LOG = LoggerFactory.getLogger(PTFPartition.class);
 
@@ -46,7 +46,19 @@ public class PTFPartition {
   StructObjectInspector inputOI;
   StructObjectInspector outputOI;
   private final PTFRowContainer<List<Object>> elems;
-  private final BoundaryCache boundaryCache;
+  protected BoundaryCache boundaryCache;
+  protected PTFValueCache valueCache;
+
+  /*
+   * Used by VectorPTFGroupBatches. Currently, VectorPTFGroupBatches extends from PTFPartition in
+   * order to use already implemented classes for range calculation (e.g. BoundaryScanner) on
+   * vectorized codepaths. The optimal solution would be to change PTFPartition to be an interface
+   * and put the used methods there, e.g. getAt(i).
+   */
+  protected PTFPartition() {
+    elems = null;
+    boundaryCache = null;
+  }
 
   protected PTFPartition(Configuration cfg,
       AbstractSerDe serDe, StructObjectInspector inputOI,
@@ -64,15 +76,28 @@ public class PTFPartition {
     this.inputOI = inputOI;
     this.outputOI = outputOI;
     if ( createElemContainer ) {
-      int containerNumRows = HiveConf.getIntVar(cfg, ConfVars.HIVEJOINCACHESIZE);
+      int containerNumRows = HiveConf.getIntVar(cfg, ConfVars.HIVE_JOIN_CACHE_SIZE);
       elems = new PTFRowContainer<List<Object>>(containerNumRows, cfg, null);
       elems.setSerDe(serDe, outputOI);
       elems.setTableDesc(PTFRowContainer.createTableDesc(inputOI));
     } else {
       elems = null;
     }
+    initBoundaryCache(cfg);
+    initValueCache(cfg);
+  }
+
+  protected void initBoundaryCache(Configuration cfg) {
     int boundaryCacheSize = HiveConf.getIntVar(cfg, ConfVars.HIVE_PTF_RANGECACHE_SIZE);
-    boundaryCache = boundaryCacheSize > 1 ? new BoundaryCache(boundaryCacheSize) : null;
+    boundaryCache = boundaryCacheSize >= 1 ? new BoundaryCache(boundaryCacheSize) : null;
+  }
+
+  protected void initValueCache(Configuration cfg) {
+    int valueCacheSize = HiveConf.getIntVar(cfg, ConfVars.HIVE_PTF_VALUECACHE_SIZE);
+    boolean valueCacheCollectStatistics =
+        HiveConf.getBoolVar(cfg, ConfVars.HIVE_PTF_VALUECACHE_COLLECT_STATISTICS);
+    valueCache =
+        valueCacheSize >= 1 ? new PTFValueCache(valueCacheSize, valueCacheCollectStatistics) : null;
   }
 
   public void reset() throws HiveException {
@@ -123,6 +148,10 @@ public class PTFPartition {
     assert (end <= size());
     assert (start <= end);
     return new PItr(start, end);
+  }
+
+  public PTFPartitionIterator<Object> range(int start, int end, boolean optimisedIteration) {
+    return (optimisedIteration) ? new OptimisedPItr(start, end) : range(start, end);
   }
 
   public void close() {
@@ -215,7 +244,31 @@ public class PTFPartition {
     public void reset() {
       idx = start;
     }
+
+    @Override
+    public long count() {
+      return (end - start);
+    }
   };
+
+  /**
+   * This can be used for functions with no parameters.
+   * next() function in this impl does not fetch anything from rowContainer, thus saving IO.
+   * It just increments the pointer to maintain iterator contract.
+   */
+  class OptimisedPItr extends PItr {
+
+    OptimisedPItr(int start, int end) {
+      super(start, end);
+    }
+
+    @Override
+    public Object next() {
+      checkForComodification();
+      idx++;
+      return null;
+    }
+  }
 
   /*
    * provide an Iterator on the rows in a Partition.
@@ -239,6 +292,8 @@ public class PTFPartition {
     PTFPartition getPartition();
 
     void reset() throws HiveException;
+
+    long count();
   }
 
   public static PTFPartition create(Configuration cfg,

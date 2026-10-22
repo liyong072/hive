@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.parquet;
@@ -29,9 +30,9 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.RecordConsumer;
+import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.Types;
 
-import static org.apache.parquet.schema.OriginalType.*;
 import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.*;
 
 public class TestMapStructures extends AbstractTestParquetDirect {
@@ -40,9 +41,9 @@ public class TestMapStructures extends AbstractTestParquetDirect {
   public void testStringMapRequiredPrimitive() throws Exception {
     Path test = writeDirect("StringMapRequiredPrimitive",
         Types.buildMessage()
-            .optionalGroup().as(MAP)
+            .optionalGroup().as(LogicalTypeAnnotation.mapType())
                 .repeatedGroup()
-                    .required(BINARY).as(UTF8).named("key")
+                    .required(BINARY).as(LogicalTypeAnnotation.stringType()).named("key")
                     .required(INT32).named("value")
                     .named("key_value")
                 .named("votes")
@@ -100,9 +101,9 @@ public class TestMapStructures extends AbstractTestParquetDirect {
   public void testStringMapOptionalPrimitive() throws Exception {
     Path test = writeDirect("StringMapOptionalPrimitive",
         Types.buildMessage()
-            .optionalGroup().as(MAP)
+            .optionalGroup().as(LogicalTypeAnnotation.mapType())
                 .repeatedGroup()
-                    .required(BINARY).as(UTF8).named("key")
+                    .required(BINARY).as(LogicalTypeAnnotation.stringType()).named("key")
                     .optional(INT32).named("value")
                     .named("key_value")
                 .named("votes")
@@ -170,12 +171,12 @@ public class TestMapStructures extends AbstractTestParquetDirect {
 
     Path test = writeDirect("StringMapOfOptionalArray",
         Types.buildMessage()
-            .optionalGroup().as(MAP)
+            .optionalGroup().as(LogicalTypeAnnotation.mapType())
                 .repeatedGroup()
-                    .required(BINARY).as(UTF8).named("key")
-                    .optionalGroup().as(LIST)
+                    .required(BINARY).as(LogicalTypeAnnotation.stringType()).named("key")
+                    .optionalGroup().as(LogicalTypeAnnotation.listType())
                         .repeatedGroup()
-                            .optional(BINARY).as(UTF8).named("element")
+                            .optional(BINARY).as(LogicalTypeAnnotation.stringType()).named("element")
                             .named("list")
                         .named("value")
                     .named("key_value")
@@ -250,10 +251,10 @@ public class TestMapStructures extends AbstractTestParquetDirect {
 
     Path test = writeDirect("StringMapOfOptionalIntArray",
         Types.buildMessage()
-            .optionalGroup().as(MAP)
+            .optionalGroup().as(LogicalTypeAnnotation.mapType())
                 .repeatedGroup()
-                    .required(BINARY).as(UTF8).named("key")
-                        .optionalGroup().as(LIST)
+                    .required(BINARY).as(LogicalTypeAnnotation.stringType()).named("key")
+                        .optionalGroup().as(LogicalTypeAnnotation.listType())
                             .repeatedGroup()
                             .optional(INT32).named("element")
                             .named("list")
@@ -343,7 +344,7 @@ public class TestMapStructures extends AbstractTestParquetDirect {
   public void testMapWithComplexKey() throws Exception {
     Path test = writeDirect("MapWithComplexKey",
         Types.buildMessage()
-            .optionalGroup().as(MAP)
+            .optionalGroup().as(LogicalTypeAnnotation.mapType())
                 .repeatedGroup()
                     .requiredGroup()
                         .required(INT32).named("x")
@@ -404,7 +405,7 @@ public class TestMapStructures extends AbstractTestParquetDirect {
   public void testDoubleMapWithStructValue() throws Exception {
     Path test = writeDirect("DoubleMapWithStructValue",
         Types.buildMessage()
-            .optionalGroup().as(MAP)
+            .optionalGroup().as(LogicalTypeAnnotation.mapType())
                 .repeatedGroup()
                     .optional(DOUBLE).named("key")
                     .optionalGroup()
@@ -465,12 +466,12 @@ public class TestMapStructures extends AbstractTestParquetDirect {
   public void testNestedMap() throws Exception {
     Path test = writeDirect("DoubleMapWithStructValue",
         Types.buildMessage()
-            .optionalGroup().as(MAP)
+            .optionalGroup().as(LogicalTypeAnnotation.mapType())
                 .repeatedGroup()
-                    .optional(BINARY).as(UTF8).named("key")
-                        .optionalGroup().as(MAP)
+                    .optional(BINARY).as(LogicalTypeAnnotation.stringType()).named("key")
+                        .optionalGroup().as(LogicalTypeAnnotation.mapType())
                             .repeatedGroup()
-                                .optional(BINARY).as(UTF8).named("key")
+                                .optional(BINARY).as(LogicalTypeAnnotation.stringType()).named("key")
                                 .required(INT32).named("value")
                             .named("key_value")
                         .named("value")

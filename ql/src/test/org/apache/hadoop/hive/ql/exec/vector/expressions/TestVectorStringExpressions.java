@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -25,7 +26,8 @@ import java.util.Arrays;
 import java.util.Random;
 import java.util.StringTokenizer;
 
-import junit.framework.Assert;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.junit.Assert;
 
 import org.apache.commons.codec.binary.Hex;
 import org.apache.hadoop.hive.common.type.HiveChar;
@@ -321,6 +323,8 @@ public class TestVectorStringExpressions {
     }
     return i;
   }
+
+  private HiveConf hiveConf = new HiveConf();
 
   private boolean vectorEqual(BytesColumnVector vector, int i, byte[] bytes, int offset, int length) {
     byte[] bytesSlice = new byte[length];
@@ -1815,6 +1819,11 @@ public class TestVectorStringExpressions {
       resultLen = StringExpr.rightTrimAndTruncate(blanksLeft, 0, blanksLeft.length, 5);
       Assert.assertTrue(resultLen == blanksLeft.length);
 
+      // Truncate everything and nothing to trim
+      Assert.assertTrue(StringExpr.characterCount(blanksLeft, 0, blanksLeft.length) == 5);
+      resultLen = StringExpr.rightTrimAndTruncate(blanksLeft, 0, blanksLeft.length, 0);
+      Assert.assertTrue(resultLen == 0);
+
       // Simple trims.
       Assert.assertTrue(StringExpr.characterCount(blanksRight, 0, blanksRight.length) == 5);
       resultLen = StringExpr.rightTrimAndTruncate(blanksRight, 0, blanksRight.length, 5);
@@ -2208,7 +2217,6 @@ public class TestVectorStringExpressions {
       resultLen = StringExpr.rightTrimAndTruncate(sentenceBlankRanges, 7, 17, 11);
       Assert.assertTrue(resultLen == 12);
       Assert.assertTrue(StringExpr.characterCount(sentenceBlankRanges, 7, resultLen) == 8);
-
   }
 
   @Test
@@ -4236,7 +4244,7 @@ public class TestVectorStringExpressions {
     batch = makeStringBatchMixedCharSize();
     pattern = new Text(mixPercentPattern);
     FilterStringColLikeStringScalar expr = new FilterStringColLikeStringScalar(0, mixPercentPattern);
-    expr.transientInit();
+    expr.transientInit(hiveConf);
     expr.evaluate(batch);
 
     // verify that the beginning entry is the only one that matches
@@ -4291,45 +4299,140 @@ public class TestVectorStringExpressions {
 
     // BEGIN pattern
     expr = new FilterStringColLikeStringScalar(0, "abc%".getBytes());
-    expr.transientInit();
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.BeginChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "abc\\%def%".getBytes());
+    expr.transientInit(hiveConf);
     expr.evaluate(vrb);
     Assert.assertEquals(FilterStringColLikeStringScalar.BeginChecker.class,
         expr.checker.getClass());
 
     // END pattern
     expr = new FilterStringColLikeStringScalar(0, "%abc".getBytes(StandardCharsets.UTF_8));
-    expr.transientInit();
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.EndChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "%abc\\%def".getBytes(StandardCharsets.UTF_8));
+    expr.transientInit(hiveConf);
     expr.evaluate(vrb);
     Assert.assertEquals(FilterStringColLikeStringScalar.EndChecker.class,
         expr.checker.getClass());
 
     // MIDDLE pattern
     expr = new FilterStringColLikeStringScalar(0, "%abc%".getBytes());
-    expr.transientInit();
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.MiddleChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "%abc\\%def%".getBytes());
+    expr.transientInit(hiveConf);
     expr.evaluate(vrb);
     Assert.assertEquals(FilterStringColLikeStringScalar.MiddleChecker.class,
         expr.checker.getClass());
 
     // CHAIN pattern
     expr = new FilterStringColLikeStringScalar(0, "%abc%de".getBytes());
-    expr.transientInit();
+    expr.transientInit(hiveConf);
     expr.evaluate(vrb);
     Assert.assertEquals(FilterStringColLikeStringScalar.ChainedChecker.class,
         expr.checker.getClass());
 
     // COMPLEX pattern
     expr = new FilterStringColLikeStringScalar(0, "%abc_%de".getBytes());
-    expr.transientInit();
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "abc_".getBytes());
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "abc\\_def_".getBytes());
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "_abc".getBytes(StandardCharsets.UTF_8));
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "_abc\\_def".getBytes(StandardCharsets.UTF_8));
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "_abc_".getBytes());
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "_abc\\_def_".getBytes());
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
+        expr.checker.getClass());
+
+    expr = new FilterStringColLikeStringScalar(0, "_abc_de".getBytes());
+    expr.transientInit(hiveConf);
+    expr.evaluate(vrb);
+    Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
+        expr.checker.getClass());
+
+
+    expr = new FilterStringColLikeStringScalar(0,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_b".getBytes());
+    expr.transientInit(hiveConf);
     expr.evaluate(vrb);
     Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
         expr.checker.getClass());
 
     // NONE pattern
     expr = new FilterStringColLikeStringScalar(0, "abc".getBytes());
-    expr.transientInit();
+    expr.transientInit(hiveConf);
     expr.evaluate(vrb);
     Assert.assertEquals(FilterStringColLikeStringScalar.NoneChecker.class,
         expr.checker.getClass());
+  }
+
+  // Regression: vec ComplexChecker must apply Pattern.DOTALL (mirroring HIVE-22008).
+  @Test
+  public void testStringLikeComplexCheckerMultiLine() throws HiveException {
+    VectorizedRowBatch batch = new VectorizedRowBatch(1);
+    BytesColumnVector col = new BytesColumnVector();
+    batch.cols[0] = col;
+    byte[] rowA = "first\nsecond".getBytes(StandardCharsets.UTF_8);
+    byte[] rowB = "first_second\nthird".getBytes(StandardCharsets.UTF_8);
+    col.setRef(0, rowA, 0, rowA.length);
+    col.setRef(1, rowB, 0, rowB.length);
+    col.isNull[0] = false;
+    col.isNull[1] = false;
+    col.noNulls = true;
+    batch.size = 2;
+
+    FilterStringColLikeStringScalar expr =
+        new FilterStringColLikeStringScalar(0, "%first_second%".getBytes(StandardCharsets.UTF_8));
+    expr.transientInit(hiveConf);
+    Assert.assertEquals(FilterStringColLikeStringScalar.ComplexChecker.class,
+        expr.checker.getClass());
+
+    expr.evaluate(batch);
+
+    // Both rows must survive the LIKE filter.
+    Assert.assertEquals(2, batch.size);
   }
 
   @Test
@@ -4340,14 +4443,14 @@ public class TestVectorStringExpressions {
     // verify that a multi byte LIKE expression matches a matching string
     batch = makeStringBatchMixedCharSize();
     expr = new FilterStringColLikeStringScalar(0, ('%' + new String(multiByte) + '%').getBytes(StandardCharsets.UTF_8));
-    expr.transientInit();
+    expr.transientInit(hiveConf);
     expr.evaluate(batch);
     Assert.assertEquals(1, batch.size);
 
     // verify that a multi byte LIKE expression doesn't match a non-matching string
     batch = makeStringBatchMixedCharSize();
     expr = new FilterStringColLikeStringScalar(0, ('%' + new String(multiByte) + 'x').getBytes(StandardCharsets.UTF_8));
-    expr.transientInit();
+    expr.transientInit(hiveConf);
     expr.evaluate(batch);
     Assert.assertEquals(0, batch.size);
   }
@@ -4437,7 +4540,7 @@ public class TestVectorStringExpressions {
     UDFLike udf = new UDFLike();
     for (String pattern : patterns) {
       VectorExpression expr = new FilterStringColLikeStringScalar(0, pattern.getBytes(StandardCharsets.UTF_8));
-      expr.transientInit();
+      expr.transientInit(hiveConf);
       VectorizedRowBatch batch = VectorizedRowGroupGenUtil.getVectorizedRowBatch(1, 1, 1);
       batch.cols[0] = new BytesColumnVector(1);
       BytesColumnVector bcv = (BytesColumnVector) batch.cols[0];
@@ -5444,7 +5547,7 @@ public class TestVectorStringExpressions {
   @Test
   public void testVectorLTrim() throws HiveException {
     VectorizedRowBatch b = makeTrimBatch();
-    VectorExpression expr = new StringLTrim(0, 1);
+    VectorExpression expr = new StringLTrimCol(0, 1);
     expr.evaluate(b);
     BytesColumnVector outV = (BytesColumnVector) b.cols[1];
     Assert.assertEquals(0,
@@ -5464,7 +5567,7 @@ public class TestVectorStringExpressions {
   @Test
   public void testVectorRTrim() throws HiveException {
     VectorizedRowBatch b = makeTrimBatch();
-    VectorExpression expr = new StringRTrim(0, 1);
+    VectorExpression expr = new StringRTrimCol(0, 1);
     expr.evaluate(b);
     BytesColumnVector outV = (BytesColumnVector) b.cols[1];
     Assert.assertEquals(0,
@@ -5484,7 +5587,7 @@ public class TestVectorStringExpressions {
   @Test
   public void testVectorTrim() throws HiveException {
     VectorizedRowBatch b = makeTrimBatch();
-    VectorExpression expr = new StringTrim(0, 1);
+    VectorExpression expr = new StringTrimCol(0, 1);
     expr.evaluate(b);
     BytesColumnVector outV = (BytesColumnVector) b.cols[1];
     Assert.assertEquals(0,
@@ -5564,7 +5667,7 @@ public class TestVectorStringExpressions {
   public void testRegex() throws HiveException {
     VectorizedRowBatch b = makeStringBatch();
     FilterStringColRegExpStringScalar expr = new FilterStringColRegExpStringScalar(0, "a.*".getBytes());
-    expr.transientInit();
+    expr.transientInit(hiveConf);
     b.size = 5;
     b.selectedInUse = false;
     BytesColumnVector v = (BytesColumnVector) b.cols[0];

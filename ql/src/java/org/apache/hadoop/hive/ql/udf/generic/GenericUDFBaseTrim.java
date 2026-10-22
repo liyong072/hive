@@ -9,16 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
 
-import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -28,7 +28,11 @@ import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectIn
 import org.apache.hadoop.io.Text;
 
 public abstract class GenericUDFBaseTrim extends GenericUDF {
-  private transient TextConverter converter;
+
+  public static final String DEFAULT_TRIM_CHARS = " ";
+
+  private transient TextConverter stringToTrimConverter;
+  private transient TextConverter trimCharsConverter;
   private Text result = new Text();
   private String udfName;
 
@@ -38,28 +42,43 @@ public abstract class GenericUDFBaseTrim extends GenericUDF {
 
   @Override
   public ObjectInspector initialize(ObjectInspector[] arguments) throws UDFArgumentException {
-    if (arguments.length != 1) {
-      throw new UDFArgumentException(udfName + " requires one value argument. Found :"
+    if (arguments.length < 1) {
+      throw new UDFArgumentException(udfName + " requires at least one value argument. Found :"
+              + arguments.length);
+    }
+    if (arguments.length > 2) {
+      throw new UDFArgumentException(udfName + " requires no more than two value arguments. Found :"
         + arguments.length);
     }
+    stringToTrimConverter = new TextConverter(getArgumentObjectInspector(arguments[0]));
+    if (arguments.length == 2) {
+      trimCharsConverter = new TextConverter(getArgumentObjectInspector(arguments[1]));
+    } else {
+      trimCharsConverter = null;
+    }
+
+    return PrimitiveObjectInspectorFactory.writableStringObjectInspector;
+  }
+
+  private PrimitiveObjectInspector getArgumentObjectInspector(ObjectInspector argument) throws UDFArgumentException {
     PrimitiveObjectInspector argumentOI;
-    if(arguments[0] instanceof PrimitiveObjectInspector) {
-      argumentOI = (PrimitiveObjectInspector) arguments[0];
+    if (argument instanceof PrimitiveObjectInspector) {
+      argumentOI = (PrimitiveObjectInspector) argument;
     } else {
       throw new UDFArgumentException(udfName + " takes only primitive types. found "
-        + arguments[0].getTypeName());
+              + argument.getTypeName());
     }
     switch (argumentOI.getPrimitiveCategory()) {
-    case STRING:
-    case CHAR:
-    case VARCHAR:
-      break;
-    default:
-      throw new UDFArgumentException(udfName + " takes only STRING/CHAR/VARCHAR types. Found "
-        + argumentOI.getPrimitiveCategory());
+      case STRING:
+      case CHAR:
+      case VARCHAR:
+      case VOID:
+        break;
+      default:
+        throw new UDFArgumentException(udfName + " takes only STRING/CHAR/VARCHAR types. Found "
+                + argumentOI.getPrimitiveCategory());
     }
-    converter = new TextConverter(argumentOI);
-    return PrimitiveObjectInspectorFactory.writableStringObjectInspector;
+    return argumentOI;
   }
 
   @Override
@@ -68,11 +87,24 @@ public abstract class GenericUDFBaseTrim extends GenericUDF {
     if (valObject == null) {
       return null;
     }
-    String val = ((Text) converter.convert(valObject)).toString();
+    String val = stringToTrimConverter.convert(valObject).toString();
     if (val == null) {
       return null;
     }
-    result.set(performOp(val.toString()));
+
+    String trimChars = DEFAULT_TRIM_CHARS;
+    if (trimCharsConverter != null && arguments.length == 2) {
+      Object trimCharsObject = arguments[1].get();
+      if (trimCharsObject == null) {
+        return null;
+      }
+      trimChars = trimCharsConverter.convert(trimCharsObject).toString();
+      if (trimChars == null) {
+        return null;
+      }
+    }
+
+    result.set(performOp(val, trimChars));
     return result;
   }
 
@@ -81,6 +113,6 @@ public abstract class GenericUDFBaseTrim extends GenericUDF {
     return getStandardDisplayString(udfName, children);
   }
 
-  protected abstract String performOp(String val);
+  protected abstract String performOp(String val, String trimChars);
 
 }

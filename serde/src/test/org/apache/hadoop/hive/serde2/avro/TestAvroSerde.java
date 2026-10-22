@@ -7,24 +7,22 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.avro;
 
 import org.apache.avro.Schema;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.serde2.SerDeException;
-import org.apache.hadoop.hive.serde2.SerDeUtils;
-import org.apache.hadoop.io.Writable;
 import org.junit.Test;
 
-import java.util.List;
 import java.util.Properties;
 
 //import static org.apache.hadoop.hive.serde2.avro.AvroSerdeUtils.AVRO_SERDE_SCHEMA;
@@ -73,7 +71,7 @@ public class TestAvroSerde {
 
 
     AvroSerDe asd = new AvroSerDe();
-    SerDeUtils.initializeSerDe(asd, conf, props, null);
+    asd.initialize(conf, props, null);
 
     // Verify that the schema now within the configuration is the one passed
     // in via the properties
@@ -131,7 +129,7 @@ public class TestAvroSerde {
   private void verifyExpectedException(Properties props) {
     AvroSerDe asd = new AvroSerDe();
     try {
-      SerDeUtils.initializeSerDe(asd, new Configuration(), props, null);
+      asd.initialize(new Configuration(), props, null);
       fail("Expected Exception did not be thrown");
     } catch (SerDeException e) {
       // good

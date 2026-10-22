@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
  
 package org.apache.hadoop.hive.ql.history;
@@ -24,7 +25,7 @@ import java.lang.reflect.Proxy;
 import java.util.LinkedList;
 import java.util.Map;
 
-import junit.framework.TestCase;
+
 
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -34,6 +35,7 @@ import org.apache.hadoop.hive.common.LogUtils.LogInitializationException;
 import org.apache.hadoop.hive.common.io.SessionStream;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.ql.DriverFactory;
 import org.apache.hadoop.hive.ql.IDriver;
@@ -46,12 +48,19 @@ import org.apache.hadoop.hive.ql.plan.LoadTableDesc.LoadFileType;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.ql.tools.LineageInfo;
 import org.apache.hadoop.mapred.TextInputFormat;
+import org.apache.hadoop.util.ExitUtil;
+
+import static org.junit.Assert.fail;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import org.junit.Before;
+import org.junit.Test;
 
 /**
  * TestHiveHistory.
  *
  */
-public class TestHiveHistory extends TestCase {
+public class TestHiveHistory {
 
   static HiveConf conf;
 
@@ -63,10 +72,10 @@ public class TestHiveHistory extends TestCase {
    * intialize the tables
    */
 
-  @Override
-  protected void setUp() {
+  @Before
+  public void setUp() {
     try {
-      conf = new HiveConf(HiveHistory.class);
+      conf = getHiveConf();
       SessionState.start(conf);
 
       fs = FileSystem.get(conf);
@@ -107,7 +116,7 @@ public class TestHiveHistory extends TestCase {
         db.createTable(src, cols, null, TextInputFormat.class,
             IgnoreKeyTextOutputFormat.class);
         db.loadTable(hadoopDataFile[i], src,
-          LoadFileType.KEEP_EXISTING, false, false, false, false, null, 0, false);
+          LoadFileType.KEEP_EXISTING, false, false, false, false, null, 0, false, false);
         i++;
       }
 
@@ -120,6 +129,7 @@ public class TestHiveHistory extends TestCase {
   /**
    * Check history file output for this query.
    */
+  @Test
   public void testSimpleQuery() {
     new LineageInfo();
     try {
@@ -130,7 +140,7 @@ public class TestHiveHistory extends TestCase {
         LogUtils.initHiveLog4j();
       } catch (LogInitializationException e) {
       }
-      HiveConf hconf = new HiveConf(SessionState.class);
+      HiveConf hconf = getHiveConf();
       hconf.setBoolVar(ConfVars.HIVE_SESSION_HISTORY_ENABLED, true);
       CliSessionState ss = new CliSessionState(hconf);
       ss.in = System.in;
@@ -138,17 +148,14 @@ public class TestHiveHistory extends TestCase {
         ss.out = new SessionStream(System.out, true, "UTF-8");
         ss.err = new SessionStream(System.err, true, "UTF-8");
       } catch (UnsupportedEncodingException e) {
-        System.exit(3);
+        ExitUtil.terminate(3);
       }
 
       SessionState.start(ss);
 
       String cmd = "select a.key+1 from src a";
       IDriver d = DriverFactory.newDriver(conf);
-      int ret = d.run(cmd).getResponseCode();
-      if (ret != 0) {
-        fail("Failed");
-      }
+      d.run(cmd);
       HiveHistoryViewer hv = new HiveHistoryViewer(SessionState.get()
           .getHiveHistory().getHistFileName());
       Map<String, QueryInfo> jobInfoMap = hv.getJobInfoMap();
@@ -174,6 +181,7 @@ public class TestHiveHistory extends TestCase {
     }
   }
 
+  @Test
   public void testQueryloglocParentDirNotExist() throws Exception {
     String parentTmpDir = tmpdir + "/HIVE2654";
     Path parentDirPath = new Path(parentTmpDir);
@@ -183,8 +191,8 @@ public class TestHiveHistory extends TestCase {
     }
     try {
       String actualDir = parentTmpDir + "/test";
-      HiveConf conf = new HiveConf(SessionState.class);
-      conf.set(HiveConf.ConfVars.HIVEHISTORYFILELOC.toString(), actualDir);
+      HiveConf conf = getHiveConf();
+      conf.set(HiveConf.ConfVars.HIVE_HISTORY_FILE_LOC.toString(), actualDir);
       SessionState ss = new CliSessionState(conf);
       HiveHistory hiveHistory = new HiveHistoryImpl(ss);
       Path actualPath = new Path(actualDir);
@@ -203,8 +211,9 @@ public class TestHiveHistory extends TestCase {
    * Check if HiveHistoryImpl class is returned when hive history is enabled
    * @throws Exception
    */
+  @Test
   public void testHiveHistoryConfigEnabled() throws Exception {
-      HiveConf conf = new HiveConf(SessionState.class);
+      HiveConf conf = getHiveConf();
       conf.setBoolVar(ConfVars.HIVE_SESSION_HISTORY_ENABLED, true);
       SessionState ss = new CliSessionState(conf);
       SessionState.start(ss);
@@ -216,8 +225,9 @@ public class TestHiveHistory extends TestCase {
    * Check if HiveHistory class is a Proxy class when hive history is disabled
    * @throws Exception
    */
+  @Test
   public void testHiveHistoryConfigDisabled() throws Exception {
-    HiveConf conf = new HiveConf(SessionState.class);
+    HiveConf conf = getHiveConf();
     conf.setBoolVar(ConfVars.HIVE_SESSION_HISTORY_ENABLED, false);
     SessionState ss = new CliSessionState(conf);
     SessionState.start(ss);
@@ -230,7 +240,10 @@ public class TestHiveHistory extends TestCase {
 
   }
 
-
-
-
+  private HiveConf getHiveConf() {
+    HiveConf conf = new HiveConfForTest(getClass());
+    // to get consistent number of tasks in assertions
+    conf.setVar(ConfVars.HIVE_FETCH_TASK_CONVERSION, "none");
+    return conf;
+  }
 }

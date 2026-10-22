@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -46,6 +47,16 @@ public class DynamicPruningEventDesc extends AppMasterEventDesc {
 
   // the partition column we're interested in
   private ExprNodeDesc partKey;
+
+  private ExprNodeDesc predicate;
+
+  public ExprNodeDesc getPredicate() {
+    return predicate;
+  }
+
+  public void setPredicate(ExprNodeDesc predicate) {
+    this.predicate = predicate;
+  }
 
   public TableScanOperator getTableScan() {
     return tableScan;

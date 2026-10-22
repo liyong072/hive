@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.beeline.hs2connection;
 
@@ -90,8 +91,9 @@ public class BeelineSiteParser implements HS2ConnectionFileParser {
       for (Entry<String, String> kv : conf) {
         String key = kv.getKey();
         if (key.startsWith(BEELINE_CONNECTION_NAMED_JDBC_URL_PREFIX)) {
+          // using conf.get(key) to help with variable substitution
           props.setProperty(key.substring(BEELINE_CONNECTION_NAMED_JDBC_URL_PREFIX.length()),
-              kv.getValue());
+              conf.get(key));
         }
       }
     } catch (Exception e) {
@@ -117,7 +119,7 @@ public class BeelineSiteParser implements HS2ConnectionFileParser {
         if (key.startsWith(BEELINE_CONNECTION_NAMED_JDBC_URL_PREFIX)
             && (propertyValue.equalsIgnoreCase(kv.getValue()))) {
           props.setProperty(key.substring(BEELINE_CONNECTION_NAMED_JDBC_URL_PREFIX.length()),
-              kv.getValue());
+              conf.get(key));
         }
       }
     } catch (Exception e) {

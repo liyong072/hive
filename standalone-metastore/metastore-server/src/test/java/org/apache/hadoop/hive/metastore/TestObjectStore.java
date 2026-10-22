@@ -9,40 +9,53 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore;
 
 import com.codahale.metrics.Counter;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
-import org.apache.hadoop.hive.metastore.ObjectStore.RetryingExecutor;
+import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.common.DatabaseName;
+import org.apache.hadoop.hive.common.StatsSetupConst;
+import org.apache.hadoop.hive.common.TableName;
 import org.apache.hadoop.hive.metastore.annotation.MetastoreUnitTest;
-import org.apache.hadoop.hive.metastore.api.BooleanColumnStatsData;
 import org.apache.hadoop.hive.metastore.api.Catalog;
 import org.apache.hadoop.hive.metastore.api.ColumnStatistics;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsData;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsDesc;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
+import org.apache.hadoop.hive.metastore.api.CreationMetadata;
 import org.apache.hadoop.hive.metastore.api.CurrentNotificationEventId;
 import org.apache.hadoop.hive.metastore.api.Database;
+import org.apache.hadoop.hive.metastore.api.DecimalColumnStatsData;
+import org.apache.hadoop.hive.metastore.api.AddPackageRequest;
+import org.apache.hadoop.hive.metastore.api.AggrStats;
+import org.apache.hadoop.hive.metastore.api.DropPackageRequest;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.metastore.api.Function;
+import org.apache.hadoop.hive.metastore.api.ForeignKeysRequest;
+import org.apache.hadoop.hive.metastore.api.GetPackageRequest;
 import org.apache.hadoop.hive.metastore.api.HiveObjectPrivilege;
 import org.apache.hadoop.hive.metastore.api.HiveObjectRef;
 import org.apache.hadoop.hive.metastore.api.InvalidInputException;
 import org.apache.hadoop.hive.metastore.api.InvalidObjectException;
+import org.apache.hadoop.hive.metastore.api.ListPackageRequest;
+import org.apache.hadoop.hive.metastore.api.ListStoredProcedureRequest;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 import org.apache.hadoop.hive.metastore.api.NotificationEvent;
 import org.apache.hadoop.hive.metastore.api.NotificationEventRequest;
 import org.apache.hadoop.hive.metastore.api.NotificationEventResponse;
+import org.apache.hadoop.hive.metastore.api.Package;
 import org.apache.hadoop.hive.metastore.api.Partition;
+import org.apache.hadoop.hive.metastore.api.PrimaryKeysRequest;
 import org.apache.hadoop.hive.metastore.api.PrincipalType;
 import org.apache.hadoop.hive.metastore.api.PrivilegeBag;
 import org.apache.hadoop.hive.metastore.api.PrivilegeGrantInfo;
@@ -51,20 +64,31 @@ import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
 import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
+import org.apache.hadoop.hive.metastore.api.StoredProcedure;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.client.builder.CatalogBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.DatabaseBuilder;
+import org.apache.hadoop.hive.metastore.client.builder.GetPartitionsArgs;
 import org.apache.hadoop.hive.metastore.client.builder.PartitionBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.HiveObjectPrivilegeBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.HiveObjectRefBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.PrivilegeGrantInfoBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.TableBuilder;
+import org.apache.hadoop.hive.metastore.columnstats.ColStatsBuilder;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf.ConfVars;
+import org.apache.hadoop.hive.metastore.directsql.MetaStoreDirectSql;
 import org.apache.hadoop.hive.metastore.messaging.EventMessage;
+import org.apache.hadoop.hive.metastore.metastore.GetHelper;
 import org.apache.hadoop.hive.metastore.metrics.Metrics;
 import org.apache.hadoop.hive.metastore.metrics.MetricsConstants;
 import org.apache.hadoop.hive.metastore.model.MNotificationLog;
 import org.apache.hadoop.hive.metastore.model.MNotificationNextId;
+import org.apache.hadoop.hive.metastore.model.MTable;
+import org.apache.hadoop.hive.metastore.metastore.iface.TableStore;
+import org.apache.hadoop.hive.metastore.utils.DirectSqlConfigurator;
+import org.apache.hadoop.hive.metastore.utils.MetaStoreServerUtils;
+import org.apache.hadoop.hive.metastore.utils.RetryingExecutor;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Before;
@@ -73,6 +97,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.mockito.Mockito;
+import org.mockito.ArgumentMatchers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -81,15 +106,19 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Random;
 import java.util.Set;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
@@ -98,18 +127,25 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static java.util.concurrent.Executors.newFixedThreadPool;
+import static org.apache.hadoop.hive.metastore.StatisticsTestUtils.assertEqualStatistics;
+import static org.apache.hadoop.hive.metastore.TestHiveMetaStore.createSourceTable;
 import static org.apache.hadoop.hive.metastore.Warehouse.DEFAULT_CATALOG_NAME;
+import static org.hamcrest.CoreMatchers.hasItems;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.core.Is.is;
+import static org.hamcrest.core.IsNot.not;
+import static org.junit.Assert.assertEquals;
 
 @Category(MetastoreUnitTest.class)
 public class TestObjectStore {
   private ObjectStore objectStore = null;
   private Configuration conf;
 
+  private static final String ENGINE = "hive";
   private static final String DB1 = "testobjectstoredb1";
   private static final String DB2 = "testobjectstoredb2";
   private static final String TABLE1 = "testobjectstoretable1";
@@ -119,6 +155,9 @@ public class TestObjectStore {
   private static final String USER1 = "testobjectstoreuser1";
   private static final String ROLE1 = "testobjectstorerole1";
   private static final String ROLE2 = "testobjectstorerole2";
+  private static final String SQLI_PART_NAME = "test_part_col=missing') OR 1=1 -- ";
+  private static final List<String> ALL_PART_NAMES =
+      Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2");
   private static final Logger LOG = LoggerFactory.getLogger(TestObjectStore.class.getName());
 
   private static final class LongSupplier implements Supplier<Long> {
@@ -134,12 +173,28 @@ public class TestObjectStore {
   public void setUp() throws Exception {
     conf = MetastoreConf.newMetastoreConf();
     MetastoreConf.setBoolVar(conf, MetastoreConf.ConfVars.HIVE_IN_TEST, true);
+
+    // Events that get cleaned happen in batches of 1 to exercise batching code
+    MetastoreConf.setLongVar(conf, MetastoreConf.ConfVars.EVENT_CLEAN_MAX_EVENTS, 1L);
+    MetastoreConf.setBoolVar(conf, ConfVars.STATS_FETCH_BITVECTOR, true);
+    MetastoreConf.setBoolVar(conf, ConfVars.STATS_FETCH_KLL, true);
+
     MetaStoreTestUtils.setConfForStandloneMode(conf);
+
+    setupRandomObjectStoreUrl();
 
     objectStore = new ObjectStore();
     objectStore.setConf(conf);
-    dropAllStoreObjects(objectStore);
-    HiveMetaStore.HMSHandler.createDefaultCatalog(objectStore, new Warehouse(conf));
+
+    HMSHandler.createDefaultCatalog(objectStore, new Warehouse(conf));
+  }
+
+  private void setupRandomObjectStoreUrl(){
+    String currentUrl = MetastoreConf.getVar(conf, ConfVars.CONNECT_URL_KEY);
+    currentUrl = currentUrl.replace(MetaStoreServerUtils.JUNIT_DATABASE_PREFIX,
+        String.format("%s_%s", MetaStoreServerUtils.JUNIT_DATABASE_PREFIX, UUID.randomUUID().toString()));
+
+    MetastoreConf.setVar(conf, ConfVars.CONNECT_URL_KEY, currentUrl);
   }
 
   @After
@@ -226,6 +281,66 @@ public class TestObjectStore {
   }
 
   /**
+   * Test database objects operations
+   */
+  @Test
+  public void testDatabaseObjectsOps() throws MetaException, InvalidObjectException,
+      NoSuchObjectException {
+    String catName = "tdo2_cat";
+    createTestCatalog(catName);
+
+    Database db1 = new Database(DB1, "db1 description", "/db1/location", null);
+    db1.setCatalogName(catName);
+    db1.setOwnerName("user1");
+    db1.setOwnerType(PrincipalType.USER);
+
+    Database db2 = new Database(DB2, "db2 description", "/db2/location", null);
+    db2.setCatalogName(catName);
+    db2.setOwnerName("user2");
+    db2.setOwnerType(PrincipalType.USER);
+
+    Map<String, String> db1Params = new HashMap<>();
+    db1Params.put("key1", "value1");
+    db1Params.put("environment", "test");
+    db1.setParameters(db1Params);
+
+    Map<String, String> db2Params = new HashMap<>();
+    db2Params.put("key2", "value2");
+    db2Params.put("environment", "prod");
+    db2.setParameters(db2Params);
+
+    objectStore.createDatabase(db1);
+    objectStore.createDatabase(db2);
+
+    List<Database> allDbs = objectStore.getDatabaseObjects(catName, "*");
+    Assert.assertEquals("Should return 2 database objects", 2, allDbs.size());
+
+    Database fetchedDb1 = allDbs.stream()
+        .filter(db -> DB1.equals(db.getName()))
+        .findFirst()
+        .orElse(null);
+    Assert.assertNotNull("DB1 should be found", fetchedDb1);
+    Assert.assertEquals("DB1 description should match", "db1 description", fetchedDb1.getDescription());
+    Assert.assertEquals("DB1 location should match", "/db1/location", fetchedDb1.getLocationUri());
+    Assert.assertEquals("DB1 owner should match", "user1", fetchedDb1.getOwnerName());
+    Assert.assertEquals("DB1 parameters should match", db1Params, fetchedDb1.getParameters());
+
+    // Test getDatabaseObjects with pattern
+    List<Database> db1Match = objectStore.getDatabaseObjects(catName, DB1);
+    Assert.assertEquals("Pattern matching DB1 should return 1 result", 1, db1Match.size());
+    Assert.assertEquals("Result should be DB1", DB1, db1Match.get(0).getName());
+
+    // Test pattern matching with wildcards
+    List<Database> dbsWithPattern = objectStore.getDatabaseObjects(catName, "testobject*");
+    Assert.assertEquals("Wildcard pattern should match both databases", 2, dbsWithPattern.size());
+
+    objectStore.dropDatabase(catName, DB1);
+    objectStore.dropDatabase(catName, DB2);
+    List<Database> remainingDbs = objectStore.getDatabaseObjects(catName, "*");
+    Assert.assertEquals("No databases should remain", 0, remainingDbs.size());
+  }
+
+  /**
    * Test table operations
    */
   @Test
@@ -241,6 +356,7 @@ public class TestObjectStore {
         new StorageDescriptor(ImmutableList.of(new FieldSchema("pk_col", "double", null)),
             "location", null, null, false, 0, new SerDeInfo("SerDeName", "serializationLib", null),
             null, null, null);
+    sd1.getSerdeInfo().setDescription("this is sd1 description");
     HashMap<String, String> params = new HashMap<>();
     params.put("EXTERNAL", "false");
     Table tbl1 =
@@ -255,6 +371,7 @@ public class TestObjectStore {
         new StorageDescriptor(ImmutableList.of(new FieldSchema("fk_col", "double", null)),
             "location", null, null, false, 0, new SerDeInfo("SerDeName", "serializationLib", null),
             null, null, null);
+    sd2.getSerdeInfo().setDescription("this is sd2 description");
     Table newTbl1 = new Table("new" + TABLE1, DB1, "owner", 1, 2, 3, sd2, null, params, null, null,
         "MANAGED_TABLE");
 
@@ -272,11 +389,15 @@ public class TestObjectStore {
     Assert.assertEquals("Owner of table was not altered", newTbl1.getOwner(), alteredTable.getOwner());
     Assert.assertEquals("Owner type of table was not altered", newTbl1.getOwnerType(), alteredTable.getOwnerType());
 
+    // Verify serde description is altered during the alterTable operation
+    Assert.assertNotEquals("Serde Description was not altered", tbl1.getSd().getSerdeInfo().getDescription(), alteredTable.getSd().getSerdeInfo().getDescription());
+    Assert.assertEquals("Serde Description was not altered", newTbl1.getSd().getSerdeInfo().getDescription(), alteredTable.getSd().getSerdeInfo().getDescription());
+
     objectStore.createTable(tbl1);
     tables = objectStore.getAllTables(DEFAULT_CATALOG_NAME, DB1);
     Assert.assertEquals(2, tables.size());
 
-    List<SQLForeignKey> foreignKeys = objectStore.getForeignKeys(DEFAULT_CATALOG_NAME, DB1, TABLE1, null, null);
+    List<SQLForeignKey> foreignKeys = objectStore.getForeignKeys(newForeignKeysRequest(DB1, TABLE1, null, null));
     Assert.assertEquals(0, foreignKeys.size());
 
     SQLPrimaryKey pk = new SQLPrimaryKey(DB1, TABLE1, "pk_col", 1,
@@ -289,10 +410,10 @@ public class TestObjectStore {
     objectStore.addForeignKeys(ImmutableList.of(fk));
 
     // Retrieve from PK side
-    foreignKeys = objectStore.getForeignKeys(DEFAULT_CATALOG_NAME, null, null, DB1, "new" + TABLE1);
+    foreignKeys = objectStore.getForeignKeys(newForeignKeysRequest(null, null, DB1, "new" + TABLE1));
     Assert.assertEquals(1, foreignKeys.size());
 
-    List<SQLForeignKey> fks = objectStore.getForeignKeys(DEFAULT_CATALOG_NAME, null, null, DB1, "new" + TABLE1);
+    List<SQLForeignKey> fks = objectStore.getForeignKeys(newForeignKeysRequest(null, null, DB1, "new" + TABLE1));
     if (fks != null) {
       for (SQLForeignKey fkcol : fks) {
         objectStore.dropConstraint(fkcol.getCatName(), fkcol.getFktable_db(), fkcol.getFktable_name(),
@@ -300,10 +421,10 @@ public class TestObjectStore {
       }
     }
     // Retrieve from FK side
-    foreignKeys = objectStore.getForeignKeys(DEFAULT_CATALOG_NAME, DB1, TABLE1, null, null);
+    foreignKeys = objectStore.getForeignKeys(newForeignKeysRequest(DB1, TABLE1, null, null));
     Assert.assertEquals(0, foreignKeys.size());
     // Retrieve from PK side
-    foreignKeys = objectStore.getForeignKeys(DEFAULT_CATALOG_NAME, null, null, DB1, "new" + TABLE1);
+    foreignKeys = objectStore.getForeignKeys(newForeignKeysRequest(null, null, DB1, "new" + TABLE1));
     Assert.assertEquals(0, foreignKeys.size());
 
     objectStore.dropTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
@@ -317,6 +438,23 @@ public class TestObjectStore {
     objectStore.dropDatabase(db1.getCatalogName(), DB1);
   }
 
+  static ForeignKeysRequest newForeignKeysRequest(String parentDb, String parentTbl,
+      String childDb, String childTbl) {
+    ForeignKeysRequest request = new ForeignKeysRequest(parentDb, parentTbl, childDb, childTbl);
+    request.setCatName(DEFAULT_CATALOG_NAME);
+    return request;
+  }
+
+  static GetPartitionsArgs limitGetPartitions(int max) {
+    return new GetPartitionsArgs.GetPartitionsArgsBuilder().max(max).build();
+  }
+
+  @Test (expected = NoSuchObjectException.class)
+  public void testTableOpsWhenTableDoesNotExist() throws NoSuchObjectException, MetaException {
+    List<String> colNames = Arrays.asList("c0", "c1");
+    objectStore.getTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, "not_existed_table", colNames, ENGINE, "");
+  }
+
   private StorageDescriptor createFakeSd(String location) {
     return new StorageDescriptor(null, location, null, null, false, 0,
         new SerDeInfo("SerDeName", "serializationLib", null), null, null, null);
@@ -327,14 +465,15 @@ public class TestObjectStore {
    * Tests partition operations
    */
   @Test
-  public void testPartitionOps() throws MetaException, InvalidObjectException,
-      NoSuchObjectException, InvalidInputException {
+  public void testPartitionOps() throws Exception {
     Database db1 = new DatabaseBuilder()
         .setName(DB1)
         .setDescription("description")
         .setLocation("locationurl")
         .build(conf);
-    objectStore.createDatabase(db1);
+    try (AutoCloseable c = deadline()) {
+      objectStore.createDatabase(db1);
+    }
     StorageDescriptor sd = createFakeSd("location");
     HashMap<String, String> tableParams = new HashMap<>();
     tableParams.put("EXTERNAL", "false");
@@ -343,38 +482,236 @@ public class TestObjectStore {
     Table tbl1 =
         new Table(TABLE1, DB1, "owner", 1, 2, 3, sd, Arrays.asList(partitionKey1, partitionKey2),
             tableParams, null, null, "MANAGED_TABLE");
-    objectStore.createTable(tbl1);
+    try (AutoCloseable c = deadline()) {
+      objectStore.createTable(tbl1);
+    }
     HashMap<String, String> partitionParams = new HashMap<>();
     partitionParams.put("PARTITION_LEVEL_PRIVILEGE", "true");
     List<String> value1 = Arrays.asList("US", "CA");
     Partition part1 = new Partition(value1, DB1, TABLE1, 111, 111, sd, partitionParams);
     part1.setCatName(DEFAULT_CATALOG_NAME);
-    objectStore.addPartition(part1);
+    try (AutoCloseable c = deadline()) {
+      objectStore.addPartition(part1);
+    }
     List<String> value2 = Arrays.asList("US", "MA");
     Partition part2 = new Partition(value2, DB1, TABLE1, 222, 222, sd, partitionParams);
     part2.setCatName(DEFAULT_CATALOG_NAME);
-    objectStore.addPartition(part2);
+    try (AutoCloseable c = deadline()) {
+      objectStore.addPartition(part2);
+    }
 
-    Deadline.startTimer("getPartition");
-    List<Partition> partitions = objectStore.getPartitions(DEFAULT_CATALOG_NAME, DB1, TABLE1, 10);
+    List<Partition> partitions;
+    try (AutoCloseable c = deadline()) {
+      partitions = objectStore.getPartitions(DEFAULT_CATALOG_NAME, DB1, TABLE1, limitGetPartitions(10));
+    }
     Assert.assertEquals(2, partitions.size());
     Assert.assertEquals(111, partitions.get(0).getCreateTime());
     Assert.assertEquals(222, partitions.get(1).getCreateTime());
 
-    int numPartitions = objectStore.getNumPartitionsByFilter(DEFAULT_CATALOG_NAME, DB1, TABLE1, "");
+    int numPartitions;
+    try (AutoCloseable c = deadline()) {
+      numPartitions = objectStore.getNumPartitionsByFilter(DEFAULT_CATALOG_NAME, DB1, TABLE1, "");
+    }
     Assert.assertEquals(partitions.size(), numPartitions);
 
-    numPartitions = objectStore.getNumPartitionsByFilter(DEFAULT_CATALOG_NAME, DB1, TABLE1, "country = \"US\"");
+    List<String> partVal = Collections.singletonList("");
+    try (AutoCloseable c = deadline()) {
+      numPartitions = objectStore.getNumPartitionsByPs(DEFAULT_CATALOG_NAME, DB1, TABLE1, partVal);
+    }
+    Assert.assertEquals(partitions.size(), numPartitions);
+
+    try (AutoCloseable c = deadline()) {
+      numPartitions = objectStore.getNumPartitionsByFilter(DEFAULT_CATALOG_NAME, DB1, TABLE1, "country = \"US\"");
+    }
     Assert.assertEquals(2, numPartitions);
 
-    objectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, value1);
-    partitions = objectStore.getPartitions(DEFAULT_CATALOG_NAME, DB1, TABLE1, 10);
+    partVal = Collections.singletonList("US");
+    try (AutoCloseable c = deadline()) {
+      numPartitions = objectStore.getNumPartitionsByPs(DEFAULT_CATALOG_NAME, DB1, TABLE1, partVal);
+    }
+    Assert.assertEquals(2, numPartitions);
+
+    try (AutoCloseable c = deadline()) {
+      objectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Warehouse.makePartName(tbl1.getPartitionKeys(), value1));
+      partitions = objectStore.getPartitions(DEFAULT_CATALOG_NAME, DB1, TABLE1, limitGetPartitions(10));
+    }
     Assert.assertEquals(1, partitions.size());
     Assert.assertEquals(222, partitions.get(0).getCreateTime());
 
-    objectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, value2);
-    objectStore.dropTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
-    objectStore.dropDatabase(db1.getCatalogName(), DB1);
+    try (AutoCloseable c = deadline()) {
+      objectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Warehouse.makePartName(tbl1.getPartitionKeys(), value2));
+      objectStore.dropTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+      objectStore.dropDatabase(db1.getCatalogName(), DB1);
+    }
+  }
+
+  @Test
+  public void testPartitionOpsWhenTableDoesNotExist() throws InvalidObjectException, MetaException {
+    List<String> value1 = Arrays.asList("US", "CA");
+    StorageDescriptor sd1 = createFakeSd("location1");
+    HashMap<String, String> partitionParams = new HashMap<>();
+    partitionParams.put("PARTITION_LEVEL_PRIVILEGE", "true");
+    Partition part1 = new Partition(value1, DB1, "not_existed_table", 111, 111, sd1, partitionParams);
+    try {
+      objectStore.addPartition(part1);
+    } catch (InvalidObjectException e) {
+      // expected
+    }
+    try {
+      objectStore.getPartition(DEFAULT_CATALOG_NAME, DB1, "not_existed_table", value1);
+    } catch (NoSuchObjectException e) {
+      // expected
+    }
+
+    List<String> value2 = Arrays.asList("US", "MA");
+    StorageDescriptor sd2 = createFakeSd("location2");
+    Partition part2 = new Partition(value2, DB1, "not_existed_table", 222, 222, sd2, partitionParams);
+    List<Partition> parts = Arrays.asList(part1, part2);
+    try {
+      objectStore.addPartitions(DEFAULT_CATALOG_NAME, DB1, "not_existed_table", parts);
+    } catch (InvalidObjectException e) {
+      // expected
+    }
+
+    List<List<String>> part_vals = Arrays.asList(Arrays.asList("US", "GA"), Arrays.asList("US", "WA"));
+    try {
+      objectStore.alterPartitions(DEFAULT_CATALOG_NAME, DB1, "not_existed_table", part_vals, parts, 0, "");
+    } catch (MetaException e) {
+      // expected
+      Assert.assertEquals(e.getMessage(), "Specified catalog.database.table does not exist : hive.testobjectstoredb1.not_existed_table");
+    }
+  }
+
+  @Test
+  public void testListPartitionNamesByFilter() throws Exception {
+    Database db1 = new DatabaseBuilder()
+        .setName(DB1)
+        .setDescription("description")
+        .setLocation("locationurl")
+        .build(conf);
+    try (AutoCloseable c = deadline()) {
+      objectStore.createDatabase(db1);
+    }
+    StorageDescriptor sd = createFakeSd("location");
+    HashMap<String, String> tableParams = new HashMap<>();
+    tableParams.put("EXTERNAL", "false");
+    FieldSchema partitionKey1 = new FieldSchema("Country", ColumnType.STRING_TYPE_NAME, "");
+    FieldSchema partitionKey2 = new FieldSchema("State", ColumnType.STRING_TYPE_NAME, "");
+    Table tbl1 =
+        new Table(TABLE1, DB1, "owner", 1, 2, 3, sd, Arrays.asList(partitionKey1, partitionKey2),
+            tableParams, null, null, "MANAGED_TABLE");
+    try (AutoCloseable c = deadline()) {
+      objectStore.createTable(tbl1);
+    }
+    HashMap<String, String> partitionParams = new HashMap<>();
+    partitionParams.put("PARTITION_LEVEL_PRIVILEGE", "true");
+    List<String> value1 = Arrays.asList("US", "CA");
+    Partition part1 = new Partition(value1, DB1, TABLE1, 111, 111, sd, partitionParams);
+    part1.setCatName(DEFAULT_CATALOG_NAME);
+    try (AutoCloseable c = deadline()) {
+      objectStore.addPartition(part1);
+    }
+    List<String> value2 = Arrays.asList("US", "MA");
+    Partition part2 = new Partition(value2, DB1, TABLE1, 222, 222, sd, partitionParams);
+    part2.setCatName(DEFAULT_CATALOG_NAME);
+    try (AutoCloseable c = deadline()) {
+      objectStore.addPartition(part2);
+    }
+
+    List<String> partNames;
+    try (AutoCloseable c = deadline()) {
+      partNames = objectStore.listPartitionNamesByFilter(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          new GetPartitionsArgs.GetPartitionsArgsBuilder().filter("Country = 'US'").build());
+    }
+    Assert.assertEquals(2, partNames.size());
+    Assert.assertEquals("country=US/state=CA", partNames.get(0));
+    Assert.assertEquals("country=US/state=MA", partNames.get(1));
+
+    try (AutoCloseable c = deadline()) {
+      partNames = objectStore.listPartitionNamesByFilter(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          new GetPartitionsArgs.GetPartitionsArgsBuilder().filter("State = 'MA'").build());
+    }
+    Assert.assertEquals(1, partNames.size());
+    Assert.assertEquals("country=US/state=MA", partNames.get(0));
+
+    try (AutoCloseable c = deadline()) {
+      partNames = objectStore.listPartitionNamesByFilter(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          new GetPartitionsArgs.GetPartitionsArgsBuilder().filter("Country = 'US' and State = 'MA'").build());
+    }
+    Assert.assertEquals(1, partNames.size());
+    Assert.assertEquals("country=US/state=MA", partNames.get(0));
+
+    try (AutoCloseable c = deadline()) {
+      partNames = objectStore.listPartitionNamesByFilter(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          new GetPartitionsArgs.GetPartitionsArgsBuilder().filter("Country != ''").build());
+    }
+    Assert.assertEquals(2, partNames.size());
+    Assert.assertEquals("country=US/state=CA", partNames.get(0));
+    Assert.assertEquals("country=US/state=MA", partNames.get(1));
+  }
+
+  @Test
+  public void testDropPartitionByName() throws Exception {
+    Database db1 = new DatabaseBuilder()
+        .setName(DB1)
+        .setDescription("description")
+        .setLocation("locationurl")
+        .build(conf);
+    try (AutoCloseable c = deadline()) {
+      objectStore.createDatabase(db1);
+    }
+    StorageDescriptor sd = createFakeSd("location");
+    HashMap<String, String> tableParams = new HashMap<>();
+    tableParams.put("EXTERNAL", "false");
+    FieldSchema partitionKey1 = new FieldSchema("Country", ColumnType.STRING_TYPE_NAME, "");
+    FieldSchema partitionKey2 = new FieldSchema("State", ColumnType.STRING_TYPE_NAME, "");
+    Table tbl1 =
+        new Table(TABLE1, DB1, "owner", 1, 2, 3, sd, Arrays.asList(partitionKey1, partitionKey2),
+            tableParams, null, null, "MANAGED_TABLE");
+    try (AutoCloseable c = deadline()) {
+      objectStore.createTable(tbl1);
+    }
+    HashMap<String, String> partitionParams = new HashMap<>();
+    partitionParams.put("PARTITION_LEVEL_PRIVILEGE", "true");
+    List<String> value1 = Arrays.asList("US", "CA");
+    Partition part1 = new Partition(value1, DB1, TABLE1, 111, 111, sd, partitionParams);
+    part1.setCatName(DEFAULT_CATALOG_NAME);
+    try (AutoCloseable c = deadline()) {
+      objectStore.addPartition(part1);
+    }
+    List<String> value2 = Arrays.asList("US", "MA");
+    Partition part2 = new Partition(value2, DB1, TABLE1, 222, 222, sd, partitionParams);
+    part2.setCatName(DEFAULT_CATALOG_NAME);
+    try (AutoCloseable c = deadline()) {
+      objectStore.addPartition(part2);
+    }
+
+    List<Partition> partitions;
+    try (AutoCloseable c = deadline()) {
+      objectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, "country=US/state=CA");
+      partitions = objectStore.getPartitions(DEFAULT_CATALOG_NAME, DB1, TABLE1, limitGetPartitions(10));
+    }
+    Assert.assertEquals(1, partitions.size());
+    Assert.assertEquals(222, partitions.get(0).getCreateTime());
+    try (AutoCloseable c = deadline()) {
+      objectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, "country=US/state=MA");
+      partitions = objectStore.getPartitions(DEFAULT_CATALOG_NAME, DB1, TABLE1, limitGetPartitions(10));
+    }
+    Assert.assertEquals(0, partitions.size());
+
+    try (AutoCloseable c = deadline()) {
+      // Illegal partName will do nothing, it doesn't matter
+      // because the real HMSHandler will guarantee the partName is legal and exists.
+      objectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, "country=US/state=NON_EXIST");
+      objectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, "country=US/st=CA");
+    }
+
+    try (AutoCloseable c = deadline()) {
+      objectStore.dropTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+      objectStore.dropDatabase(db1.getCatalogName(), DB1);
+    }
   }
 
   /**
@@ -422,9 +759,12 @@ public class TestObjectStore {
     for (int i = 0; i < numThreads; i++) {
       executorService.execute(
         () -> {
+          ObjectStore threadObjectStore = new ObjectStore();
+          threadObjectStore.setConf(conf);
           for (List<String> p : partNames) {
             try {
-              objectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, p);
+              threadObjectStore.dropPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+                  Warehouse.makePartName(tbl1.getPartitionKeys(), p));
               System.out.println("Dropping partition: " + p.get(0));
             } catch (Exception e) {
               throw new RuntimeException(e);
@@ -445,79 +785,105 @@ public class TestObjectStore {
 
   /**
    * Checks if the JDO cache is able to handle directSQL partition drops in one session.
-   * @throws MetaException
-   * @throws InvalidObjectException
-   * @throws NoSuchObjectException
-   * @throws SQLException
    */
   @Test
   public void testDirectSQLDropPartitionsCacheInSession()
-      throws MetaException, InvalidObjectException, NoSuchObjectException, InvalidInputException {
-    createPartitionedTable(false, false);
+      throws Exception {
+    createPartitionedTable(false, false, new HashSet<>());
     // query the partitions with JDO
-    Deadline.startTimer("getPartition");
-    List<Partition> partitions = objectStore.getPartitionsInternal(DEFAULT_CATALOG_NAME, DB1, TABLE1,
-        10, false, true);
+    List<Partition> partitions;
+    TableStore tableStore = objectStore.unwrap(TableStore.class);
+    try(AutoCloseable c = deadline();
+        AutoCloseable d = new DirectSqlConfigurator(objectStore.getConf(), false)) {
+      partitions = tableStore.getPartitions(new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1),
+          new GetPartitionsArgs.GetPartitionsArgsBuilder().max(10).build());
+    }
     Assert.assertEquals(3, partitions.size());
 
     // drop partitions with directSql
-    objectStore.dropPartitionsInternal(DEFAULT_CATALOG_NAME, DB1, TABLE1,
-        Arrays.asList("test_part_col=a0", "test_part_col=a1"), true, false);
-
-    // query the partitions with JDO, checking the cache is not causing any problem
-    partitions = objectStore.getPartitionsInternal(DEFAULT_CATALOG_NAME, DB1, TABLE1,
-        10, false, true);
+    try(AutoCloseable c = deadline();
+        AutoCloseable d = new DirectSqlConfigurator(objectStore.getConf(), true)) {
+      tableStore.dropPartitions(new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1),
+          Arrays.asList("test_part_col=a0", "test_part_col=a1"));
+    }
+    try (AutoCloseable c = deadline();
+         AutoCloseable d = new DirectSqlConfigurator(objectStore.getConf(), false)) {
+      // query the partitions with JDO, checking the cache is not causing any problem
+      partitions = tableStore.getPartitions(new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1),
+          new GetPartitionsArgs.GetPartitionsArgsBuilder().max(10).build());
+    }
     Assert.assertEquals(1, partitions.size());
+  }
+
+  @Test
+  public void testDirectSQLDropPartitionsRejectsSqlInjectionInPartName()
+      throws Exception {
+    createPartitionedTable(false, false, new HashSet<>());
+
+    try (DirectSqlConfigurator configurator = new DirectSqlConfigurator(conf, true)) {
+      objectStore.unwrap(TableStore.class).dropPartitions(new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1),
+          Collections.singletonList(SQLI_PART_NAME));
+    }
+
+    List<Partition> partitions;
+    try (AutoCloseable c = deadline()) {
+      partitions = objectStore.getPartitionsByNames(DEFAULT_CATALOG_NAME, DB1, TABLE1, ALL_PART_NAMES);
+    }
+    Assert.assertEquals(3, partitions.size());
   }
 
   /**
    * Checks if the JDO cache is able to handle directSQL partition drops cross sessions.
-   * @throws MetaException
-   * @throws InvalidObjectException
-   * @throws NoSuchObjectException
-   * @throws SQLException
    */
   @Test
   public void testDirectSQLDropPartitionsCacheCrossSession()
-      throws MetaException, InvalidObjectException, NoSuchObjectException, InvalidInputException {
+      throws Exception {
     ObjectStore objectStore2 = new ObjectStore();
     objectStore2.setConf(conf);
 
-    createPartitionedTable(false, false);
+    createPartitionedTable(false, false, new HashSet<>());
+    GetPartitionsArgs args = new GetPartitionsArgs.GetPartitionsArgsBuilder().max(10).build();
     // query the partitions with JDO in the 1st session
-    Deadline.startTimer("getPartition");
-    List<Partition> partitions = objectStore.getPartitionsInternal(DEFAULT_CATALOG_NAME, DB1, TABLE1,
-        10, false, true);
+    List<Partition> partitions;
+    TableStore tableStore2 = objectStore2.unwrap(TableStore.class);
+    TableStore tableStore1 = objectStore.unwrap(TableStore.class);
+    TableName targetTable = new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+    try (AutoCloseable c = deadline();
+         AutoCloseable d = new DirectSqlConfigurator(conf, false)) {
+      partitions = tableStore1.getPartitions(targetTable, args);
+    }
     Assert.assertEquals(3, partitions.size());
 
     // query the partitions with JDO in the 2nd session
-    partitions = objectStore2.getPartitionsInternal(DEFAULT_CATALOG_NAME, DB1, TABLE1, 10,
-        false, true);
+    try (AutoCloseable c = deadline();
+         AutoCloseable d = new DirectSqlConfigurator(conf, false)) {
+      partitions = tableStore2.getPartitions(targetTable, args);
+    }
     Assert.assertEquals(3, partitions.size());
 
     // drop partitions with directSql in the 1st session
-    objectStore.dropPartitionsInternal(DEFAULT_CATALOG_NAME, DB1, TABLE1,
-        Arrays.asList("test_part_col=a0", "test_part_col=a1"), true, false);
+    try (AutoCloseable c = deadline();
+         AutoCloseable d = new DirectSqlConfigurator(conf, true)) {
+      tableStore1.dropPartitions(targetTable,
+          Arrays.asList("test_part_col=a0", "test_part_col=a1"));
+    }
 
     // query the partitions with JDO in the 2nd session, checking the cache is not causing any
     // problem
-    partitions = objectStore2.getPartitionsInternal(DEFAULT_CATALOG_NAME, DB1, TABLE1,
-        10, false, true);
+    try (AutoCloseable c = deadline();
+         AutoCloseable d = new DirectSqlConfigurator(conf, false)) {
+      partitions = tableStore2.getPartitions(targetTable, args);
+    }
     Assert.assertEquals(1, partitions.size());
   }
 
   /**
    * Checks if the directSQL partition drop removes every connected data from the RDBMS tables.
-   * @throws MetaException
-   * @throws InvalidObjectException
-   * @throws NoSuchObjectException
-   * @throws SQLException
    */
   @Test
-  public void testDirectSQLDropParitionsCleanup() throws MetaException, InvalidObjectException,
-      NoSuchObjectException, SQLException, InvalidInputException {
+  public void testDirectSQLDropPartitionsCleanup() throws Exception {
 
-    createPartitionedTable(true, true);
+    createPartitionedTable(true, true, new HashSet<>());
 
     // Check, that every table in the expected state before the drop
     checkBackendTableSize("PARTITIONS", 3);
@@ -535,9 +901,10 @@ public class TestObjectStore {
     checkBackendTableSize("SERDES", 4); // Table has a serde
 
     // drop the partitions
-    Deadline.startTimer("dropPartitions");
-    objectStore.dropPartitionsInternal(DEFAULT_CATALOG_NAME, DB1, TABLE1,
-        Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2"), true, false);
+    try (AutoCloseable c = deadline(); AutoCloseable d = new DirectSqlConfigurator(conf, true)) {
+      objectStore.unwrap(TableStore.class).dropPartitions(new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1),
+	        Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2"));
+    }
 
     // Check, if every data is dropped connected to the partitions
     checkBackendTableSize("PARTITIONS", 0);
@@ -555,34 +922,316 @@ public class TestObjectStore {
     checkBackendTableSize("SERDES", 1); // Table has a serde
   }
 
+  @Test
+  public void testDirectSQLCDsCleanup() throws Exception {
+    createPartitionedTable(true, true, new HashSet<>());
+    // Checks there is only one CD before altering partition
+    checkBackendTableSize("PARTITIONS", 3);
+    checkBackendTableSize("CDS", 1);
+    checkBackendTableSize("COLUMNS_V2", 5);
+    // Alters a partition to create a new column descriptor
+    List<String> partVals = Arrays.asList("a0");
+    try (AutoCloseable c = deadline()) {
+      Partition part = objectStore.getPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, partVals);
+      StorageDescriptor newSd = part.getSd().deepCopy();
+      newSd.addToCols(new FieldSchema("test_add_col", "int", null));
+      Partition newPart = part.deepCopy();
+      newPart.setSd(newSd);
+      objectStore.alterPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, partVals, newPart, null);
+    }
+    // Checks now there is one more column descriptor
+    checkBackendTableSize("PARTITIONS", 3);
+    checkBackendTableSize("CDS", 2);
+    checkBackendTableSize("COLUMNS_V2", 11);
+    // drop the partitions
+    try (AutoCloseable c = deadline(); AutoCloseable d = new DirectSqlConfigurator(conf, true)) {
+      objectStore.unwrap(TableStore.class).dropPartitions(new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1),
+          Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2"));
+    }
+    // Checks if the data connected to the partitions is dropped
+    checkBackendTableSize("PARTITIONS", 0);
+    checkBackendTableSize("CDS", 1); // Table has a CD
+    checkBackendTableSize("COLUMNS_V2", 5);
+  }
+
+  @Test
+  public void testTableStatisticsOps() throws Exception {
+    createPartitionedTable(true, true, new HashSet<>());
+
+    List<ColumnStatistics> tabColStats;
+    try (AutoCloseable c = deadline()) {
+      tabColStats = objectStore.getTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Arrays.asList("test_col1", "test_col' 2"));
+    }
+    Assert.assertEquals(0, tabColStats.size());
+
+    ColumnStatisticsDesc statsDesc = new ColumnStatisticsDesc(true, DB1, TABLE1);
+    ColumnStatisticsObj statsObj1 = new ColumnStatisticsObj("test_col1", "int",
+        new ColumnStatisticsData(ColumnStatisticsData._Fields.DECIMAL_STATS, new DecimalColumnStatsData(100, 1000)));
+    ColumnStatisticsObj statsObj2 = new ColumnStatisticsObj("test_col' 2", "int",
+        new ColumnStatisticsData(ColumnStatisticsData._Fields.DECIMAL_STATS, new DecimalColumnStatsData(200, 2000)));
+    ColumnStatistics colStats = new ColumnStatistics(statsDesc, Arrays.asList(statsObj1, statsObj2));
+    colStats.setEngine(ENGINE);
+    objectStore.updateTableColumnStatistics(colStats, null, 0);
+
+    try (AutoCloseable c = deadline()) {
+      tabColStats = objectStore.getTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Arrays.asList("test_col1", "test_col' 2"));
+    }
+    Assert.assertEquals(1, tabColStats.size());
+    Assert.assertEquals(2, tabColStats.get(0).getStatsObjSize());
+
+    objectStore.deleteTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1, Arrays.asList("test_col1"), ENGINE);
+    try (AutoCloseable c = deadline()) {
+      tabColStats = objectStore.getTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Arrays.asList("test_col1", "test_col' 2"));
+    }
+    Assert.assertEquals(1, tabColStats.size());
+    Assert.assertEquals(1, tabColStats.get(0).getStatsObjSize());
+
+    objectStore.deleteTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1, Arrays.asList("test_col' 2"), ENGINE);
+    try (AutoCloseable c = deadline()) {
+      tabColStats = objectStore.getTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Arrays.asList("test_col1", "test_col' 2"));
+    }
+    Assert.assertEquals(0, tabColStats.size());
+  }
+
+  @Test
+  public void testDeleteTableColumnStatisticsWhenEngineHasSpecialCharacter() throws Exception {
+    createPartitionedTable(true, true, new HashSet<>());
+    objectStore.deleteTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1, Arrays.asList("test_col1"), "special '");
+  }
+
+  @Test
+  public void testPartitionStatisticsOps() throws Exception {
+    createPartitionedTable(true, true, new HashSet<>());
+
+    List<List<ColumnStatistics>> stat;
+    try (AutoCloseable c = deadline()) {
+      stat = objectStore.getPartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2"),
+          Collections.singletonList("test_part_col"));
+    }
+
+    Assert.assertEquals(1, stat.size());
+    Assert.assertEquals(3, stat.get(0).size());
+    Assert.assertEquals(ENGINE, stat.get(0).get(0).getEngine());
+    Assert.assertEquals(1, stat.get(0).get(0).getStatsObj().size());
+
+    ColumnStatisticsData computedStats = stat.get(0).get(0).getStatsObj().get(0).getStatsData();
+    ColumnStatisticsData expectedStats = new ColStatsBuilder<>(long.class).numNulls(1).numDVs(2)
+        .low(3L).high(4L).hll(3, 4).kll(3, 4).build();
+    assertEqualStatistics(expectedStats, computedStats);
+
+    objectStore.deletePartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+        Arrays.asList("test_part_col=a0"), null, ENGINE);
+    try (AutoCloseable c = deadline()) {
+      stat = objectStore.getPartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2"),
+          Collections.singletonList("test_part_col"));
+    }
+    Assert.assertEquals(1, stat.size());
+    Assert.assertEquals(2, stat.get(0).size());
+
+    objectStore.deletePartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+        Arrays.asList("test_part_col=a1"), Arrays.asList("test_part_col"), null);
+    try (AutoCloseable c = deadline()) {
+      stat = objectStore.getPartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2"),
+          Collections.singletonList("test_part_col"));
+    }
+    Assert.assertEquals(1, stat.size());
+    Assert.assertEquals(1, stat.get(0).size());
+
+    objectStore.deletePartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+        Arrays.asList("test_part_col=a2"), null, null);
+    try (AutoCloseable c = deadline()) {
+      stat = objectStore.getPartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2"),
+          Collections.singletonList("test_part_col"));
+    }
+    Assert.assertEquals(0, stat.size());
+  }
+
+  @Test
+  public void testDeletePartitionColumnStatisticsWhenEngineHasSpecialCharacter() throws Exception {
+    createPartitionedTable(true, true, new HashSet<>());
+    objectStore.deletePartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+            List.of("test_part_col=a2"), null, "special '");
+  }
+
+  @Test
+  public void testGetPartitionsByNamesRejectsSqlInjectionInPartName() throws Exception {
+    createPartitionedTable(true, true, new HashSet<>());
+    List<Partition> partitions;
+    try (AutoCloseable c = deadline()) {
+      partitions = objectStore.getPartitionsByNames(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          Collections.singletonList(SQLI_PART_NAME));
+    }
+    Assert.assertEquals(0, partitions.size());
+    try (AutoCloseable c = deadline()) {
+      partitions = objectStore.getPartitionsByNames(DEFAULT_CATALOG_NAME, DB1, TABLE1, ALL_PART_NAMES);
+    }
+    Assert.assertEquals(3, partitions.size());
+  }
+
+  @Test
+  public void testUpdatePartitionColumnStatisticsInBatchRejectsSqlInjectionInPartName()
+      throws Exception {
+    createPartitionedTable(true, true, new HashSet<>());
+    Table tbl = objectStore.getTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+
+    List<List<ColumnStatistics>> baseline;
+    try (AutoCloseable c = deadline()) {
+      baseline = objectStore.getPartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          ALL_PART_NAMES, Collections.singletonList("test_part_col"));
+    }
+    Assert.assertEquals(1, baseline.size());
+    Assert.assertEquals(3, baseline.get(0).size());
+    long baselineNumNulls = baseline.get(0).get(0).getStatsObj().get(0).getStatsData()
+        .getLongStats().getNumNulls();
+
+    ColumnStatisticsDesc statsDesc = new ColumnStatisticsDesc(false, DB1, TABLE1);
+    statsDesc.setCatName(DEFAULT_CATALOG_NAME);
+    statsDesc.setPartName(SQLI_PART_NAME);
+    ColumnStatisticsData injectedData = new ColStatsBuilder<>(long.class).numNulls(999).numDVs(2)
+        .low(3L).high(4L).build();
+    ColumnStatisticsObj statsObj = new ColumnStatisticsObj("test_part_col", "int", injectedData);
+    ColumnStatistics maliciousStats = new ColumnStatistics(statsDesc,
+        Collections.singletonList(statsObj));
+    maliciousStats.setEngine(ENGINE);
+
+    Map<String, ColumnStatistics> statsMap = new HashMap<>();
+    statsMap.put(SQLI_PART_NAME, maliciousStats);
+    objectStore.updatePartitionColumnStatisticsInBatch(statsMap, tbl, null, null, -1);
+
+    List<List<ColumnStatistics>> after;
+    try (AutoCloseable c = deadline()) {
+      after = objectStore.getPartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          ALL_PART_NAMES, Collections.singletonList("test_part_col"));
+    }
+    Assert.assertEquals(3, after.get(0).size());
+    for (ColumnStatistics cs : after.get(0)) {
+      Assert.assertEquals(baselineNumNulls,
+          cs.getStatsObj().get(0).getStatsData().getLongStats().getNumNulls());
+    }
+  }
+
+  private void setAggrConf(boolean enableBitVector, boolean enableKll, int batchSize) {
+    Configuration conf2 = MetastoreConf.newMetastoreConf(conf);
+    MetastoreConf.setBoolVar(conf2, ConfVars.STATS_FETCH_BITVECTOR, enableBitVector);
+    MetastoreConf.setBoolVar(conf2, ConfVars.STATS_FETCH_KLL, enableKll);
+    MetastoreConf.setLongVar(conf2, ConfVars.DIRECT_SQL_PARTITION_BATCH_SIZE, batchSize);
+    objectStore.setConf(conf2);
+  }
+
+  private AggrStats runStatsAggregation() throws Exception {
+    try (AutoCloseable c = deadline()) {
+      return objectStore.get_aggr_stats_for(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+              Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2"),
+              Collections.singletonList("test_part_col"), ENGINE);
+    }
+  }
+
+  private void assertAggrStats(AggrStats aggrStats, ColumnStatisticsData computedStats) {
+    Assert.assertEquals(1, aggrStats.getColStats().size());
+    Assert.assertEquals(3, aggrStats.getPartsFound());
+    ColumnStatisticsData expectedStats = new ColStatsBuilder<>(long.class).numNulls(3).numDVs(2)
+            .low(3L).high(4L).build();
+    assertEqualStatistics(expectedStats, computedStats);
+  }
+
+  private void statsAggrResourceCleanup()
+          throws Exception {
+    try (AutoCloseable c = deadline(); AutoCloseable d = new DirectSqlConfigurator(conf, true)) {
+      objectStore.unwrap(TableStore.class).dropPartitions(new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1),
+              Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2"));
+      objectStore.unwrap(TableStore.class).dropTable(new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1));
+      objectStore.dropDatabase(DEFAULT_CATALOG_NAME, DB1);
+    }
+  }
+
+  @Test
+  public void testStatsAggrWithKll() throws Exception {
+    setAggrConf(false, true, 2);
+    createPartitionedTable(true, true, new HashSet<>());
+    AggrStats aggrStats = runStatsAggregation();
+    ColumnStatisticsData computedStats = aggrStats.getColStats().get(0).getStatsData();
+    computedStats = new ColStatsBuilder<>(long.class)
+            .numNulls(computedStats.getLongStats().getNumNulls()).numDVs(computedStats.getLongStats().getNumDVs())
+            .low(computedStats.getLongStats().getLowValue()).high(computedStats.getLongStats().getHighValue()).build();
+    assertAggrStats(aggrStats, computedStats);
+    statsAggrResourceCleanup();
+  }
+
+  @Test
+  public void testStatsAggrWithBitVector() throws Exception {
+    setAggrConf(true, false, 2);
+    createPartitionedTable(true, true, new HashSet<>());
+    AggrStats aggrStats = runStatsAggregation();
+    ColumnStatisticsData computedStats = aggrStats.getColStats().get(0).getStatsData();
+    computedStats = new ColStatsBuilder<>(long.class)
+            .numNulls(computedStats.getLongStats().getNumNulls()).numDVs(computedStats.getLongStats().getNumDVs())
+            .low(computedStats.getLongStats().getLowValue()).high(computedStats.getLongStats().getHighValue()).build();
+    assertAggrStats(aggrStats, computedStats);
+    statsAggrResourceCleanup();
+  }
+
+  @Test
+  public void testStatsAggrWithBackendDB() throws Exception {
+    setAggrConf(false, false, 2);
+    createPartitionedTable(true, true, new HashSet<>());
+    AggrStats aggrStats = runStatsAggregation();
+    ColumnStatisticsData computedStats = aggrStats.getColStats().get(0).getStatsData();
+    assertAggrStats(aggrStats, computedStats);
+    statsAggrResourceCleanup();
+  }
+
+  @Test
+  public void testMissingPartsStatsAggrWithBackendDB() throws Exception {
+    setAggrConf(false, false, 2);
+    createPartitionedTable(true, true, new HashSet<>(Collections.singletonList(1)));
+    AggrStats aggrStats = runStatsAggregation();
+    ColumnStatisticsData computedStats = aggrStats.getColStats().get(0).getStatsData();
+    Assert.assertEquals(1, aggrStats.getColStats().size());
+    Assert.assertEquals(2, aggrStats.getPartsFound());
+    ColumnStatisticsData expectedStats = new ColStatsBuilder<>(long.class).numNulls(3).numDVs(2)
+            .low(3L).high(4L).build();
+    assertEqualStatistics(expectedStats, computedStats);
+    statsAggrResourceCleanup();
+  }
+
   /**
    * Creates DB1 database, TABLE1 table with 3 partitions.
    * @param withPrivileges Should we create privileges as well
    * @param withStatistics Should we create statitics as well
-   * @throws MetaException
-   * @throws InvalidObjectException
    */
-  private void createPartitionedTable(boolean withPrivileges, boolean withStatistics)
-      throws MetaException, InvalidObjectException, NoSuchObjectException, InvalidInputException {
+  private void createPartitionedTable(boolean withPrivileges, boolean withStatistics, Set<Integer> statsMissingIndices)
+      throws Exception {
     Database db1 = new DatabaseBuilder()
                        .setName(DB1)
                        .setDescription("description")
                        .setLocation("locationurl")
                        .build(conf);
-    objectStore.createDatabase(db1);
+    try (AutoCloseable c = deadline()) {
+      objectStore.createDatabase(db1);
+    }
     Table tbl1 =
         new TableBuilder()
             .setDbName(DB1)
             .setTableName(TABLE1)
             .addCol("test_col1", "int")
-            .addCol("test_col2", "int")
+            .addCol("test_col' 2", "int")
             .addPartCol("test_part_col", "int")
             .addCol("test_bucket_col", "int", "test bucket col comment")
             .addCol("test_skewed_col", "int", "test skewed col comment")
             .addCol("test_sort_col", "int", "test sort col comment")
             .build(conf);
-    objectStore.createTable(tbl1);
-
+    try (AutoCloseable c = deadline()) {
+      objectStore.createTable(tbl1);
+    }
+    MTable mTable1 = objectStore.ensureGetMTable(tbl1.getCatName(), tbl1.getDbName(), tbl1.getTableName());
     PrivilegeBag privilegeBag = new PrivilegeBag();
     // Create partitions for the partitioned table
     for(int i=0; i < 3; i++) {
@@ -595,8 +1244,9 @@ public class TestObjectStore {
                            .addSkewedColName("test_skewed_col")
                            .addSortCol("test_sort_col", 1)
                            .build(conf);
-      objectStore.addPartition(part);
-
+      try (AutoCloseable c = deadline()) {
+        objectStore.addPartition(part);
+      }
       if (withPrivileges) {
         HiveObjectRef partitionReference = new HiveObjectRefBuilder().buildPartitionReference(part);
         HiveObjectRef partitionColumnReference = new HiveObjectRefBuilder()
@@ -621,6 +1271,9 @@ public class TestObjectStore {
       }
 
       if (withStatistics) {
+        if(statsMissingIndices.contains(i)){
+          continue;
+        }
         ColumnStatistics stats = new ColumnStatistics();
         ColumnStatisticsDesc desc = new ColumnStatisticsDesc();
         desc.setCatName(tbl1.getCatName());
@@ -631,22 +1284,23 @@ public class TestObjectStore {
 
         List<ColumnStatisticsObj> statsObjList = new ArrayList<>(1);
         stats.setStatsObj(statsObjList);
+        stats.setEngine(ENGINE);
 
-        ColumnStatisticsData data = new ColumnStatisticsData();
-        BooleanColumnStatsData boolStats = new BooleanColumnStatsData();
-        boolStats.setNumTrues(0);
-        boolStats.setNumFalses(0);
-        boolStats.setNumNulls(0);
-        data.setBooleanStats(boolStats);
+        ColumnStatisticsData data = new ColStatsBuilder<>(long.class).numNulls(1).numDVs(2)
+            .low(3L).high(4L).hll(3, 4).kll(3, 4).build();
 
         ColumnStatisticsObj partStats = new ColumnStatisticsObj("test_part_col", "int", data);
         statsObjList.add(partStats);
 
-        objectStore.updatePartitionColumnStatistics(stats, part.getValues(), null, -1);
+        try (AutoCloseable c = deadline()) {
+          objectStore.updatePartitionColumnStatistics(tbl1, mTable1, stats, part.getValues(), null, -1);
+        }
       }
     }
     if (withPrivileges) {
-      objectStore.grantPrivileges(privilegeBag);
+      try (AutoCloseable c = deadline()) {
+        objectStore.grantPrivileges(privilegeBag);
+      }
     }
   }
 
@@ -726,16 +1380,22 @@ public class TestObjectStore {
     // recall setup so that we get an object store with the metrics initalized
     setUp();
     Counter directSqlErrors =
-        Metrics.getRegistry().getCounters().get(MetricsConstants.DIRECTSQL_ERRORS);
+        GetHelper.setDirectSqlErrors(Metrics.getOrCreateCounter(MetricsConstants.DIRECTSQL_ERRORS));
 
-    objectStore.new GetDbHelper(DEFAULT_CATALOG_NAME, "foo", true, true) {
+     new GetHelper<DatabaseName, Database>(objectStore.createRawStoreBundle(),
+         new DatabaseName(DEFAULT_CATALOG_NAME, "foo")) {
       @Override
-      protected Database getSqlResult(ObjectStore.GetHelper<Database> ctx) throws MetaException {
+      protected Database getSqlResult() throws MetaException {
         return null;
       }
 
-      @Override
-      protected Database getJdoResult(ObjectStore.GetHelper<Database> ctx) throws MetaException,
+       @Override
+       protected String describeResult() {
+         return "";
+       }
+
+       @Override
+      protected Database getJdoResult() throws MetaException,
           NoSuchObjectException {
         return null;
       }
@@ -743,14 +1403,20 @@ public class TestObjectStore {
 
     Assert.assertEquals(0, directSqlErrors.getCount());
 
-    objectStore.new GetDbHelper(DEFAULT_CATALOG_NAME, "foo", true, true) {
+    new GetHelper<DatabaseName, Database>(objectStore.createRawStoreBundle(),
+        new DatabaseName(DEFAULT_CATALOG_NAME, "foo")) {
       @Override
-      protected Database getSqlResult(ObjectStore.GetHelper<Database> ctx) throws MetaException {
+      protected Database getSqlResult() throws MetaException {
         throw new RuntimeException();
       }
 
       @Override
-      protected Database getJdoResult(ObjectStore.GetHelper<Database> ctx) throws MetaException,
+      protected String describeResult() {
+        return "";
+      }
+
+      @Override
+      protected Database getJdoResult() throws MetaException,
           NoSuchObjectException {
         return null;
       }
@@ -759,53 +1425,10 @@ public class TestObjectStore {
     Assert.assertEquals(1, directSqlErrors.getCount());
   }
 
-  private static void dropAllStoreObjects(RawStore store)
-      throws MetaException, InvalidObjectException, InvalidInputException {
-    try {
-      Deadline.registerIfNot(100000);
-      List<Function> functions = store.getAllFunctions(DEFAULT_CATALOG_NAME);
-      for (Function func : functions) {
-        store.dropFunction(DEFAULT_CATALOG_NAME, func.getDbName(), func.getFunctionName());
-      }
-      for (String catName : store.getCatalogs()) {
-        List<String> dbs = store.getAllDatabases(catName);
-        for (String db : dbs) {
-          List<String> tbls = store.getAllTables(DEFAULT_CATALOG_NAME, db);
-          for (String tbl : tbls) {
-            Deadline.startTimer("getPartition");
-            List<Partition> parts = store.getPartitions(DEFAULT_CATALOG_NAME, db, tbl, 100);
-            for (Partition part : parts) {
-              store.dropPartition(DEFAULT_CATALOG_NAME, db, tbl, part.getValues());
-            }
-            // Find any constraints and drop them
-            Set<String> constraints = new HashSet<>();
-            List<SQLPrimaryKey> pk = store.getPrimaryKeys(DEFAULT_CATALOG_NAME, db, tbl);
-            if (pk != null) {
-              for (SQLPrimaryKey pkcol : pk) {
-                constraints.add(pkcol.getPk_name());
-              }
-            }
-            List<SQLForeignKey> fks = store.getForeignKeys(DEFAULT_CATALOG_NAME, null, null, db, tbl);
-            if (fks != null) {
-              for (SQLForeignKey fkcol : fks) {
-                constraints.add(fkcol.getFk_name());
-              }
-            }
-            for (String constraint : constraints) {
-              store.dropConstraint(DEFAULT_CATALOG_NAME, db, tbl, constraint);
-            }
-            store.dropTable(DEFAULT_CATALOG_NAME, db, tbl);
-          }
-          store.dropDatabase(catName, db);
-        }
-        store.dropCatalog(catName);
-      }
-      List<String> roles = store.listRoleNames();
-      for (String role : roles) {
-        store.removeRole(role);
-      }
-    } catch (NoSuchObjectException e) {
-    }
+  @Test(expected = MetaException.class)
+  public void testLockDbTableThrowsExceptionWhenTableIsNotAllowedToLock() throws Exception {
+    MetaStoreDirectSql metaStoreDirectSql = new MetaStoreDirectSql(objectStore.getPersistenceManager(), conf, null);
+    metaStoreDirectSql.lockDbTable("TBLS");
   }
 
   @Test
@@ -815,13 +1438,18 @@ public class TestObjectStore {
     spy.getAllFunctions(DEFAULT_CATALOG_NAME);
     spy.getAllTables(DEFAULT_CATALOG_NAME, DB1);
     spy.getPartitionCount();
-    Mockito.verify(spy, Mockito.times(3))
-        .rollbackAndCleanup(Mockito.anyBoolean(), Mockito.<Query>anyObject());
+    Mockito.verify(spy, Mockito.times(2))
+        .rollbackAndCleanup(Mockito.anyBoolean(), ArgumentMatchers.<Query>any());
   }
 
   @Test
   public void testRetryingExecutorSleep() throws Exception {
-    RetryingExecutor re = new ObjectStore.RetryingExecutor(MetastoreConf.newMetastoreConf(), null);
+    int maxRetries =
+        MetastoreConf.getIntVar(conf, ConfVars.NOTIFICATION_SEQUENCE_LOCK_MAX_RETRIES);
+    long sleepInterval = MetastoreConf.getTimeVar(conf,
+        ConfVars.NOTIFICATION_SEQUENCE_LOCK_RETRY_SLEEP_INTERVAL, TimeUnit.MILLISECONDS);
+    RetryingExecutor<Void> re = new RetryingExecutor<Void>(maxRetries, null)
+        .sleepInterval(sleepInterval);
     Assert.assertTrue("invalid sleep value", re.getSleepInterval() >= 0);
   }
 
@@ -888,8 +1516,7 @@ public class TestObjectStore {
     Assert.assertEquals(0, eventResponse.getEventsSize());
 
     // Verify that cleanNotificationEvents() cleans up all old notifications
-    Thread.sleep(1);
-    objectStore.cleanNotificationEvents(1);
+    objectStore.cleanNotificationEvents(0);
     eventResponse = objectStore.getNextNotification(new NotificationEventRequest());
     Assert.assertEquals(0, eventResponse.getEventsSize());
   }
@@ -932,10 +1559,10 @@ public class TestObjectStore {
      */
 
 //    conf.setVar(HiveConf.ConfVars.METASTORE_CONNECTION_DRIVER, "com.mysql.jdbc.Driver");
-//    conf.setVar(HiveConf.ConfVars.METASTORECONNECTURLKEY,
+//    conf.setVar(HiveConf.ConfVars.METASTORE_CONNECT_URL_KEY,
 //        "jdbc:mysql://localhost:3306/metastore_db");
 //    conf.setVar(HiveConf.ConfVars.METASTORE_CONNECTION_USER_NAME, "");
-//    conf.setVar(HiveConf.ConfVars.METASTOREPWD, "");
+//    conf.setVar(HiveConf.ConfVars.METASTORE_PWD, "");
 
     /*
      we have to  add this one manually as for tests the db is initialized via the metastoreDiretSQL
@@ -1012,6 +1639,9 @@ public class TestObjectStore {
     for (int i = 0; i < numThreads; i++) {
       final Random random = new Random();
       Configuration conf = MetastoreConf.newMetastoreConf();
+      // DN class initialization can reach a deadlock situation
+      // in case the one holding the write lock doesn't get a connection from the CP manager
+      conf.set(dataSourceProp, Integer.toString( 2 * numThreads ));
       MetaStoreTestUtils.setConfForStandloneMode(conf);
       results.add(executor.submit(new Callable<Void>() {
         @Override
@@ -1085,6 +1715,42 @@ public class TestObjectStore {
   }
 
   /**
+   * Tests getPrimaryKeys() when db_name isn't specified.
+   */
+  @Test
+  public void testGetPrimaryKeys() throws Exception {
+    Database db1 =
+        new DatabaseBuilder().setName(DB1).setDescription("description")
+            .setLocation("locationurl").build(conf);
+    objectStore.createDatabase(db1);
+    StorageDescriptor sd1 = new StorageDescriptor(
+        ImmutableList.of(new FieldSchema("pk_col", "double", null)), "location",
+        null, null, false, 0,
+        new SerDeInfo("SerDeName", "serializationLib", null), null, null, null);
+    HashMap<String, String> params = new HashMap<>();
+    params.put("EXTERNAL", "false");
+    Table tbl1 =
+        new Table(TABLE1, DB1, "owner", 1, 2, 3, sd1, null, params, null, null,
+            "MANAGED_TABLE");
+    objectStore.createTable(tbl1);
+
+    SQLPrimaryKey pk =
+        new SQLPrimaryKey(DB1, TABLE1, "pk_col", 1, "pk_const_1", false, false,
+            false);
+    pk.setCatName(DEFAULT_CATALOG_NAME);
+    objectStore.addPrimaryKeys(ImmutableList.of(pk));
+
+    // Primary key retrieval should be success, even if db_name isn't specified.
+    PrimaryKeysRequest request = new PrimaryKeysRequest(null, TABLE1);
+    request.setCatName(DEFAULT_CATALOG_NAME);
+    assertEquals("pk_col",
+        objectStore.getPrimaryKeys(request).get(0)
+            .getColumn_name());
+    objectStore.dropTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+    objectStore.dropDatabase(db1.getCatalogName(), DB1);
+  }
+
+  /**
    * Helper method for setting and checking the SSL configuration parameters.
    * @param useSSL whether or not SSL is enabled
    * @param trustStorePath truststore path, corresponding to the value for {@link MetastoreConf.ConfVars#DBACCESS_SSL_TRUSTSTORE_PATH}
@@ -1102,6 +1768,390 @@ public class TestObjectStore {
     checkSSLProperty(useSSL, ObjectStore.TRUSTSTORE_PATH_KEY, trustStorePath);
     checkSSLProperty(useSSL, ObjectStore.TRUSTSTORE_PASSWORD_KEY, trustStorePassword);
     checkSSLProperty(useSSL, ObjectStore.TRUSTSTORE_TYPE_KEY, trustStoreType);
+  }
+
+  @Test
+  public void testUpdateStoredProc() throws Exception {
+    objectStore.createDatabase(new DatabaseBuilder()
+            .setName(DB1)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf));
+
+    StoredProcedure input = new StoredProcedure();
+    input.setCatName("hive");
+    input.setSource("print 'Hello world'");
+    input.setOwnerName("user1");
+    input.setName("toBeUpdated");
+    input.setDbName(DB1);
+    objectStore.createOrUpdateStoredProcedure(input);
+    input.setSource("print 'Hello world2'");
+    objectStore.createOrUpdateStoredProcedure(input);
+
+    StoredProcedure retrieved = objectStore.getStoredProcedure("hive", DB1, "toBeUpdated");
+    Assert.assertEquals(input, retrieved);
+  }
+
+  @Test
+  public void testStoredProcSaveAndRetrieve() throws Exception {
+    objectStore.createDatabase(new DatabaseBuilder()
+            .setName(DB1)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf));
+
+    StoredProcedure input = new StoredProcedure();
+    input.setSource("print 'Hello world'");
+    input.setCatName("hive");
+    input.setOwnerName("user1");
+    input.setName("greetings");
+    input.setDbName(DB1);
+
+    objectStore.createOrUpdateStoredProcedure(input);
+    StoredProcedure retrieved = objectStore.getStoredProcedure("hive", DB1, "greetings");
+
+    Assert.assertEquals(input, retrieved);
+  }
+
+  @Test
+  public void testDropStoredProc() throws Exception {
+    objectStore.createDatabase(new DatabaseBuilder()
+            .setName(DB1)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf));
+
+    StoredProcedure toBeDeleted = new StoredProcedure();
+    toBeDeleted.setSource("print 'Hello world'");
+    toBeDeleted.setCatName("hive");
+    toBeDeleted.setOwnerName("user1");
+    toBeDeleted.setName("greetings");
+    toBeDeleted.setDbName(DB1);
+    objectStore.createOrUpdateStoredProcedure(toBeDeleted);
+    Assert.assertNotNull(objectStore.getStoredProcedure("hive", DB1, "greetings"));
+    objectStore.dropStoredProcedure("hive", DB1, "greetings");
+    Assert.assertNull(objectStore.getStoredProcedure("hive", DB1, "greetings"));
+  }
+
+  @Test
+  public void testListStoredProc() throws Exception {
+    objectStore.createDatabase(new DatabaseBuilder()
+            .setName(DB1)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf));
+    objectStore.createDatabase(new DatabaseBuilder()
+            .setName(DB2)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf));
+
+    StoredProcedure proc1 = new StoredProcedure();
+    proc1.setSource("print 'Hello world'");
+    proc1.setCatName("hive");
+    proc1.setOwnerName("user1");
+    proc1.setName("proc1");
+    proc1.setDbName(DB1);
+    objectStore.createOrUpdateStoredProcedure(proc1);
+
+    StoredProcedure proc2 = new StoredProcedure();
+    proc2.setSource("print 'Hello world'");
+    proc2.setCatName("hive");
+    proc2.setOwnerName("user2");
+    proc2.setName("proc2");
+    proc2.setDbName(DB2);
+    objectStore.createOrUpdateStoredProcedure(proc2);
+
+    List<String> result = objectStore.getAllStoredProcedures(new ListStoredProcedureRequest("hive"));
+    Assert.assertEquals(2, result.size());
+    assertThat(result, hasItems("proc1", "proc2"));
+
+    ListStoredProcedureRequest req = new ListStoredProcedureRequest("hive");
+    req.setDbName(DB1);
+    result = objectStore.getAllStoredProcedures(req);
+    Assert.assertEquals(1, result.size());
+    assertThat(result, hasItems("proc1"));
+  }
+
+  @Test
+  public void testUpdateCreationMetadataSetsMaterializationTime() throws Exception {
+    Database db1 = new DatabaseBuilder()
+            .setName(DB1)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf);
+    objectStore.createDatabase(db1);
+
+    StorageDescriptor sd1 =
+            new StorageDescriptor(ImmutableList.of(new FieldSchema("pk_col", "double", null)),
+                    "location", null, null, false, 0, new SerDeInfo("SerDeName", "serializationLib", null),
+                    null, null, null);
+    HashMap<String, String> params = new HashMap<>();
+    params.put("EXTERNAL", "false");
+    Table tbl1 = new Table(TABLE1, DB1, "owner", 1, 2, 3, sd1, null, params, null, null, "MANAGED_TABLE");
+    tbl1.setCatName(db1.getCatalogName());
+    objectStore.createTable(tbl1);
+
+    Table matView1 = new Table("mat1", DB1, "owner", 1, 2, 3, sd1, null, params, null, null, "MATERIALIZED_VIEW");
+    matView1.setCatName(db1.getCatalogName());
+
+    CreationMetadata creationMetadata = new CreationMetadata();
+    creationMetadata.setCatName(db1.getCatalogName());
+    creationMetadata.setDbName(matView1.getDbName());
+    creationMetadata.setTblName(matView1.getTableName());
+    creationMetadata.setTablesUsed(Collections.singleton(tbl1.getDbName() + "." + tbl1.getTableName()));
+    creationMetadata.setSourceTables(Collections.singletonList(createSourceTable(tbl1)));
+    matView1.setCreationMetadata(creationMetadata);
+    objectStore.createTable(matView1);
+
+    CreationMetadata newCreationMetadata = new CreationMetadata(matView1.getCatName(), matView1.getDbName(),
+            matView1.getTableName(), ImmutableSet.copyOf(creationMetadata.getTablesUsed()));
+    newCreationMetadata.setSourceTables(Collections.unmodifiableList(creationMetadata.getSourceTables()));
+    objectStore.updateCreationMetadata(matView1.getCatName(), matView1.getDbName(), matView1.getTableName(), newCreationMetadata);
+
+    assertThat(creationMetadata.getMaterializationTime(), is(not(0)));
+  }
+
+  @Test
+  public void testCreateAndFindPackage() throws Exception {
+    objectStore.createDatabase(new DatabaseBuilder()
+            .setName(DB1)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf));
+    AddPackageRequest pkg = new AddPackageRequest("hive", DB1, "pkg1", "user1", "src", "src");
+    objectStore.addPackage(pkg);
+    Package found = objectStore.findPackage(new GetPackageRequest("hive", DB1, "pkg1"));
+    Assert.assertEquals(pkg.getBody(), found.getBody());
+    Assert.assertEquals(pkg.getHeader(), found.getHeader());
+    Assert.assertEquals(pkg.getCatName(), found.getCatName());
+    Assert.assertEquals(pkg.getDbName(), found.getDbName());
+    Assert.assertEquals(pkg.getOwnerName(), found.getOwnerName());
+    Assert.assertEquals(pkg.getPackageName(), found.getPackageName());
+  }
+
+  @Test
+  public void testDropPackage() throws Exception {
+    objectStore.createDatabase(new DatabaseBuilder()
+            .setName(DB1)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf));
+    AddPackageRequest pkg = new AddPackageRequest("hive", DB1, "pkg1", "user1", "header", "body");
+    objectStore.addPackage(pkg);
+    Assert.assertNotNull(objectStore.findPackage(new GetPackageRequest("hive", DB1, "pkg1")));
+    objectStore.dropPackage(new DropPackageRequest("hive", DB1, "pkg1"));
+    Assert.assertNull(objectStore.findPackage(new GetPackageRequest("hive", DB1, "pkg1")));
+  }
+
+  @Test
+  public void testListPackage() throws Exception {
+    objectStore.createDatabase(new DatabaseBuilder()
+            .setName(DB1)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf));
+    objectStore.createDatabase(new DatabaseBuilder()
+            .setName(DB2)
+            .setDescription("description")
+            .setLocation("locationurl")
+            .build(conf));
+    AddPackageRequest pkg1 = new AddPackageRequest("hive", DB1, "pkg1", "user1", "header1", "body1");
+    AddPackageRequest pkg2 = new AddPackageRequest("hive", DB2, "pkg2", "user1", "header2", "body2");
+    objectStore.addPackage(pkg1);
+    objectStore.addPackage(pkg2);
+    List<String> result = objectStore.listPackages(new ListPackageRequest("hive"));
+    assertThat(result, hasItems("pkg1", "pkg2"));
+    Assert.assertEquals(2, result.size());
+    ListPackageRequest req = new ListPackageRequest("hive");
+    req.setDbName(DB1);
+    result = objectStore.listPackages(req);
+    assertThat(result, hasItems("pkg1"));
+    Assert.assertEquals(1, result.size());
+  }
+
+  @Test
+  public void testSavePoint() throws Exception {
+    List<String> partNames = Arrays.asList("test_part_col=a0", "test_part_col=a1", "test_part_col=a2");
+    createPartitionedTable(true, false, new HashSet<>());
+    Assert.assertEquals(3, objectStore.getPartitionCount());
+
+    objectStore.openTransaction();
+    new GetHelper<TableName, Object>(objectStore.createRawStoreBundle(),
+        new TableName(DEFAULT_CATALOG_NAME, DB1, TABLE1)) {
+      @Override
+      protected String describeResult() {
+        return "test savepoint";
+      }
+
+      @Override
+      protected Object getSqlResult() throws MetaException {
+        // drop the partitions with SQL alone
+        try (AutoCloseable c = deadline(); AutoCloseable d = new DirectSqlConfigurator(conf, true)) {
+          objectStore.unwrap(TableStore.class).dropPartitions(argument, partNames);
+          assertEquals(0, objectStore.getPartitionCount());
+        } catch (Exception e) {
+          throw new MetaException(e.getMessage());
+        }
+        throw new MetaException("Throwing exception in direct SQL to test Savepoint");
+      }
+
+      @Override
+      protected Object getJdoResult() throws MetaException {
+        // drop the partitions with JDO alone
+        try (AutoCloseable c = deadline(); AutoCloseable d = new DirectSqlConfigurator(conf, false)) {
+          assertEquals(3, objectStore.getPartitionCount());
+          objectStore.unwrap(TableStore.class).dropPartitions(argument, partNames);
+        } catch (Exception e) {
+          throw new MetaException(e.getMessage());
+        }
+        return null;
+      }
+    }.run(false);
+    objectStore.commitTransaction();
+    Assert.assertEquals(0, objectStore.getPartitionCount());
+  }
+
+  @Test
+  public void testNoJdoForUnrecoverableException() throws Exception {
+    Exception[] unrecoverableExceptions = new Exception[] {
+        new SQLIntegrityConstraintViolationException("Unrecoverable ex"),
+        new DeadlineException("unrecoverable ex")};
+    for (Exception unrecoverableException : unrecoverableExceptions) {
+      objectStore.openTransaction();
+      AtomicBoolean runDirectSql = new AtomicBoolean(false);
+      AtomicBoolean runJdo = new AtomicBoolean(false);
+      try {
+        new GetHelper<String, Object>(objectStore.createRawStoreBundle(), null) {
+          @Override
+          protected String describeResult() {
+            return "test not run jdo for unrecoverable exception";
+          }
+
+          @Override
+          protected Object getSqlResult() throws MetaException {
+            runDirectSql.set(true);
+            MetaException me = new MetaException("Throwing unrecoverable exception to test not run jdo.");
+            me.initCause(unrecoverableException);
+            throw me;
+          }
+
+          @Override
+          protected Object getJdoResult() throws MetaException, NoSuchObjectException {
+            runJdo.set(true);
+            SQLIntegrityConstraintViolationException ex = new SQLIntegrityConstraintViolationException("Unrecoverable ex");
+            MetaException me = new MetaException("Throwing unrecoverable exception to test not run jdo.");
+            me.initCause(ex);
+            throw me;
+          }
+        }.run(false);
+      } catch (MetaException ex) {
+        // expected
+      }
+      objectStore.commitTransaction();
+      Assert.assertEquals(true, runDirectSql.get());
+      Assert.assertEquals(false, runJdo.get());
+    }
+  }
+
+  @Test
+  public void testDeleteColumnStatsAccurate() throws Exception {
+    createPartitionedTable(false, true, new HashSet<>());
+    // add extra table column statistics
+    ColumnStatistics stats = new ColumnStatistics();
+    ColumnStatisticsDesc desc = new ColumnStatisticsDesc();
+    desc.setCatName(DEFAULT_CATALOG_NAME);
+    desc.setDbName(DB1);
+    desc.setTableName(TABLE1);
+    desc.setIsTblLevel(true);
+    stats.setStatsDesc(desc);
+    List<ColumnStatisticsObj> statsObjList = new ArrayList<>(1);
+    stats.setStatsObj(statsObjList);
+    stats.setEngine(ENGINE);
+    ColumnStatisticsData data = new ColStatsBuilder<>(long.class).numNulls(1).numDVs(2)
+        .low(3L).high(4L).hll(3, 4).kll(3, 4).build();
+    statsObjList.add(new ColumnStatisticsObj("test_col1", "int", data));
+    statsObjList.add(new ColumnStatisticsObj("test_col' 2", "int", data));
+    objectStore.updateTableColumnStatistics(stats, null, -1);
+
+    Table table = objectStore.getTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+    Set<String> statsAccurate = Set.of("test_col1", "test_col' 2");
+    List<String> columns = StatsSetupConst.getColumnsHavingStats(table.getParameters());
+    Assert.assertTrue(statsAccurate.containsAll(columns) && columns.size() == 2);
+
+    try (AutoCloseable c = directsql(true)) {
+      objectStore.deleteTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1, List.of("test_col1"), null);
+      table = objectStore.getTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+      columns = StatsSetupConst.getColumnsHavingStats(table.getParameters());
+      Assert.assertTrue(columns.size() == 1 && columns.getFirst().equals("test_col' 2"));
+    }
+     // reset again
+    objectStore.updateTableColumnStatistics(stats, null, -1);
+    table = objectStore.getTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+    columns = StatsSetupConst.getColumnsHavingStats(table.getParameters());
+    Assert.assertTrue(statsAccurate.containsAll(columns) && columns.size() == 2);
+
+    try (AutoCloseable c = directsql(false)) {
+      objectStore.deleteTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1, List.of("test_col1"), null);
+      table = objectStore.getTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+      columns = StatsSetupConst.getColumnsHavingStats(table.getParameters());
+      Assert.assertTrue(columns.size() == 1 && columns.getFirst().equals("test_col' 2"));
+    }
+
+    try (AutoCloseable c = directsql(false)) {
+      objectStore.deleteTableColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1, null, null);
+      table = objectStore.getTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+      columns = StatsSetupConst.getColumnsHavingStats(table.getParameters());
+      Assert.assertTrue(columns.isEmpty());
+    }
+
+    // test partition
+    desc.setIsTblLevel(false);
+    List<Partition> partitions;
+    try (AutoCloseable c = deadline()) {
+      partitions = objectStore.getPartitions(DEFAULT_CATALOG_NAME, DB1, TABLE1, GetPartitionsArgs.getAllPartitions());
+    }
+    MTable mTable = objectStore.ensureGetMTable(DEFAULT_CATALOG_NAME, DB1, TABLE1);
+    for (Partition partition : partitions) {
+      desc.setPartName(Warehouse.makePartName(table.getPartitionKeys(), partition.getValues()));
+      objectStore.updatePartitionColumnStatistics(table, mTable, stats, partition.getValues(), null, -1);
+      Partition newPart = objectStore.getPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, partition.getValues());
+      columns = StatsSetupConst.getColumnsHavingStats(newPart.getParameters());
+      Set<String> statsColumns = Set.of("test_col1", "test_col' 2", "test_part_col");
+      Assert.assertTrue(statsColumns.containsAll(columns) && columns.size() == 3);
+    }
+
+    try (AutoCloseable c = directsql(true)) {
+      objectStore.deletePartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          List.of("test_part_col=a0"), List.of("test_col1"), null);
+      Partition partition = objectStore.getPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, List.of("a0"));
+      columns = StatsSetupConst.getColumnsHavingStats(partition.getParameters());
+      Assert.assertTrue(columns.contains("test_part_col") && columns.contains("test_col' 2"));
+    }
+
+    try (AutoCloseable c = directsql(false)) {
+      objectStore.deletePartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          List.of("test_part_col=a1"), List.of("test_col1"), null);
+      Partition partition = objectStore.getPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, List.of("a1"));
+      columns = StatsSetupConst.getColumnsHavingStats(partition.getParameters());
+      Assert.assertTrue(columns.contains("test_part_col") && columns.contains("test_col' 2"));
+    }
+
+    try (AutoCloseable c = directsql(true)) {
+      objectStore.deletePartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          List.of("test_part_col=a1"), null, null);
+      Partition partition = objectStore.getPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, List.of("a1"));
+      columns = StatsSetupConst.getColumnsHavingStats(partition.getParameters());
+      Assert.assertTrue(columns.isEmpty());
+    }
+
+    try (AutoCloseable c = directsql(false)) {
+      objectStore.deletePartitionColumnStatistics(DEFAULT_CATALOG_NAME, DB1, TABLE1,
+          List.of("test_part_col=a2"), null, null);
+      Partition partition = objectStore.getPartition(DEFAULT_CATALOG_NAME, DB1, TABLE1, List.of("a2"));
+      columns = StatsSetupConst.getColumnsHavingStats(partition.getParameters());
+      Assert.assertTrue(columns.isEmpty());
+    }
   }
 
   /**
@@ -1124,6 +2174,26 @@ public class TestObjectStore {
         .setLocation("/tmp")
         .build();
     objectStore.createCatalog(cat);
+  }
+
+  AutoCloseable deadline() throws Exception {
+    Deadline.registerIfNot(100_000);
+    Deadline.startTimer("some method");
+    return new AutoCloseable() {
+
+      @Override
+      public void close() throws Exception {
+        Deadline.stopTimer();
+      }
+    };
+  }
+
+  AutoCloseable directsql(boolean tryDirectSql) {
+    boolean directsql = MetastoreConf.getBoolVar(objectStore.getConf(), ConfVars.TRY_DIRECT_SQL);
+    MetastoreConf.setBoolVar(objectStore.getConf(), ConfVars.TRY_DIRECT_SQL, tryDirectSql);
+    return () -> {
+      MetastoreConf.setBoolVar(objectStore.getConf(), ConfVars.TRY_DIRECT_SQL, directsql);
+    };
   }
 }
 

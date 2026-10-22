@@ -9,21 +9,27 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.datasource;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.sql.SQLException;
+import java.util.Map;
 import java.util.Properties;
+import java.util.function.Consumer;
 import javax.sql.DataSource;
 
 import com.google.common.collect.Iterables;
+
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.metastore.DatabaseProduct;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 
 public interface DataSourceProvider {
@@ -32,14 +38,24 @@ public interface DataSourceProvider {
    * @param hdpConfig
    * @return the new connection pool
    */
-  DataSource create(Configuration hdpConfig) throws SQLException;
+  default DataSource create(Configuration hdpConfig) throws SQLException {
+    int maxPoolSize = MetastoreConf.getIntVar(hdpConfig, MetastoreConf.ConfVars.CONNECTION_POOLING_MAX_CONNECTIONS);
+    return create(hdpConfig, maxPoolSize);
+  }
 
   /**
-   * BoneCp has a bug which causes closed connections to be returned to the pool
-   * under certain conditions. (HIVE-11915)
-   * @return true if the factory creates BoneCp pools which need "special attention"
+   * @param hdpConfig
+   * @param maxPoolSize the maximum size of the connection pool
+   * @return the new connection pool
    */
-  boolean mayReturnClosedConnection();
+  default DataSource create(Configuration hdpConfig, int maxPoolSize) throws SQLException {
+    return maybeWrapForProfiling(hdpConfig, createPool(hdpConfig, maxPoolSize));
+  }
+
+  /**
+   * Creates the underlying connection pool without JDBC profiling decoration.
+   */
+  DataSource createPool(Configuration hdpConfig, int maxPoolSize) throws SQLException;
 
   /**
    * Get the declared pooling type string. This is used to check against the constant in
@@ -72,8 +88,46 @@ public interface DataSourceProvider {
     }
   }
 
-  static String getMetastoreJdbcDriverUrl(Configuration conf) throws SQLException {
+  static String getMetastoreJdbcDriverUrl(Configuration conf) {
     return MetastoreConf.getVar(conf, MetastoreConf.ConfVars.CONNECT_URL_KEY);
   }
 
+  static DataSource maybeWrapForProfiling(Configuration conf, DataSource dataSource) {
+    if (MetastoreConf.getBoolVar(conf, MetastoreConf.ConfVars.METASTORE_PROFILE_JDBC_EXECUTION)) {
+      return new ProfilingDataSource(dataSource, conf);
+    }
+    return dataSource;
+  }
+
+  static String getDataSourceName(Configuration conf) {
+    return conf.get(DataSourceNameConfigurator.DATA_SOURCE_NAME);
+  }
+
+  static void preparePool(Configuration configuration, Consumer<String> initSql,
+      Consumer<Map.Entry<String, String>> dataSourceProps) {
+    String url = MetastoreConf.getVar(configuration, MetastoreConf.ConfVars.CONNECT_URL_KEY);
+    DatabaseProduct dbProduct = DatabaseProduct.determineDatabaseProduct(url, configuration);
+    String s = dbProduct.getPrepareTxnStmt();
+    if (s != null) {
+      initSql.accept(s);
+    }
+    Map<String, String> properties = dbProduct.getDataSourceProperties();
+    properties.entrySet().forEach(dataSourceProps);
+  }
+
+  class DataSourceNameConfigurator implements Closeable {
+    static final String DATA_SOURCE_NAME = "metastore.DataSourceProvider.pool.name";
+    private final Configuration configuration;
+    public DataSourceNameConfigurator(Configuration conf, String name) {
+      this.configuration = conf;
+      configuration.set(DATA_SOURCE_NAME, name);
+    }
+    public void resetName(String name) {
+      configuration.set(DATA_SOURCE_NAME, name);
+    }
+    @Override
+    public void close() {
+      configuration.unset(DATA_SOURCE_NAME);
+    }
+  }
 }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.common.util;
@@ -90,26 +91,26 @@ public class TestHiveStringUtils {
   public void testLinesEndingWithComments() {
     int[] escape = {-1};
     assertEquals("show tables;", removeComments("show tables;",escape));
-    assertEquals("show tables;", removeComments("show tables; --comments",escape));
-    assertEquals("show tables;", removeComments("show tables; -------comments",escape));
-    assertEquals("show tables;", removeComments("show tables; -------comments;one;two;three;;;;",escape));
+    assertEquals("show tables; ", removeComments("show tables; --comments",escape));
+    assertEquals("show tables; ", removeComments("show tables; -------comments",escape));
+    assertEquals("show tables; ", removeComments("show tables; -------comments;one;two;three;;;;",escape));
     assertEquals("show", removeComments("show-- tables; -------comments",escape));
-    assertEquals("show", removeComments("show --tables; -------comments",escape));
+    assertEquals("show ", removeComments("show --tables; -------comments",escape));
     assertEquals("s", removeComments("s--how --tables; -------comments",escape));
     assertEquals("", removeComments("-- show tables; -------comments",escape));
 
-    assertEquals("\"show tables\"", removeComments("\"show tables\" --comments",escape));
-    assertEquals("\"show --comments tables\"", removeComments("\"show --comments tables\" --comments",escape));
-    assertEquals("\"'show --comments' tables\"", removeComments("\"'show --comments' tables\" --comments",escape));
-    assertEquals("'show --comments tables'", removeComments("'show --comments tables' --comments",escape));
-    assertEquals("'\"show --comments tables\"'", removeComments("'\"show --comments tables\"' --comments",escape));
+    assertEquals("\"show tables\" ", removeComments("\"show tables\" --comments",escape));
+    assertEquals("\"show --comments tables\" ", removeComments("\"show --comments tables\" --comments",escape));
+    assertEquals("\"'show --comments' tables\" ", removeComments("\"'show --comments' tables\" --comments",escape));
+    assertEquals("'show --comments tables' ", removeComments("'show --comments tables' --comments",escape));
+    assertEquals("'\"show --comments tables\"' ", removeComments("'\"show --comments tables\"' --comments",escape));
   }
 
   /**
    * check that statement is unchanged after stripping
    */
   private void assertUnchanged(String statement) {
-    assertEquals("statement should not have been affected by stripping commnents", statement,
+    assertEquals("statement should not have been affected by stripping comments", statement,
         removeComments(statement));
   }
 }

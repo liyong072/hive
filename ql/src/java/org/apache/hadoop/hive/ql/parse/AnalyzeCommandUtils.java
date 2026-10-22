@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse;
 
@@ -21,11 +22,18 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.metadata.Table;
-import org.apache.hadoop.hive.ql.session.SessionState;
 
-public class AnalyzeCommandUtils {
+import static org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer.getQualifiedTableName;
+
+/**
+ * Utilities for semantic analyzers.
+ */
+public final class AnalyzeCommandUtils {
+  private AnalyzeCommandUtils() {
+    throw new UnsupportedOperationException("AnalyzeCommandUtils should not be instantiated");
+  }
+
   public static boolean isPartitionLevelStats(ASTNode tree) {
     boolean isPartitioned = false;
     ASTNode child = (ASTNode) tree.getChild(0);
@@ -39,10 +47,9 @@ public class AnalyzeCommandUtils {
   }
 
   public static Table getTable(ASTNode tree, BaseSemanticAnalyzer sa) throws SemanticException {
-    String tableName = ColumnStatsSemanticAnalyzer.getUnescapedName((ASTNode) tree.getChild(0).getChild(0));
-    String currentDb = SessionState.get().getCurrentDatabase();
-    String [] names = Utilities.getDbTableName(currentDb, tableName);
-    return sa.getTable(names[0], names[1], true);
+    return sa.getTable(
+        getQualifiedTableName((ASTNode) tree.getChild(0).getChild(0)),
+        true);
   }
 
   public static Map<String,String> getPartKeyValuePairsFromAST(Table tbl, ASTNode tree,
@@ -50,7 +57,7 @@ public class AnalyzeCommandUtils {
     ASTNode child = ((ASTNode) tree.getChild(0).getChild(1));
     Map<String,String> partSpec = new HashMap<String, String>();
     if (child != null) {
-      partSpec = DDLSemanticAnalyzer.getValidatedPartSpec(tbl, child, hiveConf, false);
+      partSpec = BaseSemanticAnalyzer.getValidatedPartSpec(tbl, child, hiveConf, false);
     } //otherwise, it is the case of analyze table T compute statistics for columns;
     return partSpec;
   }

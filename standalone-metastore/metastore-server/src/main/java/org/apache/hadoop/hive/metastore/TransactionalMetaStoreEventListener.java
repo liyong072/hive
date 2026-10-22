@@ -9,16 +9,24 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.metastore.api.HiveObjectType;
+import org.apache.hadoop.hive.metastore.api.MetaException;
+import org.apache.hadoop.hive.metastore.events.CreateDataConnectorEvent;
+import org.apache.hadoop.hive.metastore.events.DropDataConnectorEvent;
+import org.apache.hadoop.hive.metastore.events.DropDatabaseEvent;
+import org.apache.hadoop.hive.metastore.events.DropTableEvent;
+import org.apache.hadoop.hive.metastore.txn.TxnUtils;
 
 /**
  * Special type of MetaStoreEventListener which should only be called in a transactional context
@@ -36,4 +44,11 @@ public abstract class TransactionalMetaStoreEventListener extends MetaStoreEvent
     super(config);
   }
 
+  @Override
+  public void onDropDataConnector(DropDataConnectorEvent connectorEvent) throws MetaException {
+  }
+
+  @Override
+  public void onCreateDataConnector(CreateDataConnectorEvent connectorEvent)  throws MetaException {
+  }
 }

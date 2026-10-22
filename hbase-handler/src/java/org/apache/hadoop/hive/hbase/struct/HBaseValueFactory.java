@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.hbase.struct;
@@ -38,7 +39,7 @@ public interface HBaseValueFactory {
   /**
    * Initialize factory with properties
    * 
-   * @param hbaseParam the {@link HBaseParameters hbase parameters}
+   * @param hbaseParam the HBaseParameters hbase parameters
    * @param conf the hadoop {@link Configuration configuration}
    * @param properties the custom {@link Properties}
    * @throws SerDeException if there was an issue initializing the factory
@@ -67,7 +68,7 @@ public interface HBaseValueFactory {
    * @param object the object to be serialized
    * @param field the {@link StructField}
    * @return the serialized value
-   * @throws {@link IOException} if there was an issue serializing the value
+   * @throws IOException if there was an issue serializing the value
    */
   byte[] serializeValue(Object object, StructField field) throws IOException;
 }

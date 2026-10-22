@@ -9,16 +9,20 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.cache;
 
 import org.apache.hadoop.hive.llap.cache.LowLevelCache.Priority;
+
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Actor managing the eviction requests.
@@ -75,4 +79,11 @@ public interface LowLevelCachePolicy extends LlapIoDebugDump {
    * @return amount (bytes) of memory evicted.
    */
   long purge();
+
+  /**
+   * Returns the collection of buffers which are considered the most important ones according to the given policy.
+   */
+  default List<LlapCacheableBuffer> getHotBuffers() {
+    return Collections.EMPTY_LIST;
+  }
 }

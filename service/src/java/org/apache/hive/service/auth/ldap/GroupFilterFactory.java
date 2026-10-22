@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.service.auth.ldap;
 
@@ -35,7 +36,7 @@ import org.slf4j.LoggerFactory;
  * <br>
  * The produced filter object filters out all users that are not members of at least one of
  * the groups provided in Hive configuration.
- * @see HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_GROUPFILTER
+ * @see HiveConf.ConfVars#HIVE_SERVER2_PLAIN_LDAP_GROUPFILTER
  */
 public final class GroupFilterFactory implements FilterFactory {
 
@@ -143,10 +144,7 @@ public final class GroupFilterFactory implements FilterFactory {
           }
         } catch (NamingException e) {
           LOG.warn("Cannot match user and group", e);
-          if (LOG.isDebugEnabled()) {
-            String msg = String.format("Cannot match user '%s' and group '%s'", user, groupDn);
-            LOG.debug(msg, e);
-          }
+          LOG.debug("Cannot match user '{}' and group '{}'", user, groupDn, e);
         }
       }
       throw new AuthenticationException(String.format(

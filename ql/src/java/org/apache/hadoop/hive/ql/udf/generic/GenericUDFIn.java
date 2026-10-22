@@ -9,15 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
 
+import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -26,6 +28,7 @@ import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentLengthException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFUtils.ReturnObjectInspectorResolver;
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.objectinspector.ConstantObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ListObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.MapObjectInspector;
@@ -35,8 +38,6 @@ import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.io.BooleanWritable;
-
-import com.esotericsoftware.minlog.Log;
 
 /**
  * GenericUDFIn
@@ -88,7 +89,7 @@ public class GenericUDFIn extends GenericUDF {
     for (ObjectInspector oi : arguments) {
       if(!conversionHelper.updateForComparison(oi)) {
         StringBuilder sb = new StringBuilder();
-        sb.append("The arguments for IN should be the same type! Types are: {");
+        sb.append("Type mismatch: {");
         sb.append(arguments[0].getTypeName());
         sb.append(" IN (");
         for(int i=1; i<arguments.length; i++) {
@@ -123,9 +124,14 @@ public class GenericUDFIn extends GenericUDF {
     constantInSet = new HashSet<Object>();
     if (compareOI.getCategory().equals(ObjectInspector.Category.PRIMITIVE)) {
       for (int i = 1; i < arguments.length; ++i) {
-        constantInSet.add(((PrimitiveObjectInspector) compareOI)
+        Object constant = ((PrimitiveObjectInspector) compareOI)
             .getPrimitiveJavaObject(conversionHelper
-                .convertIfNecessary(arguments[i].get(), argumentOIs[i])));
+                .convertIfNecessary(arguments[i].get(), argumentOIs[i]));
+        if (compareOI.getTypeName().equals(serdeConstants.BINARY_TYPE_NAME)) {
+          constantInSet.add(ByteBuffer.wrap((byte[]) constant));
+        } else {
+          constantInSet.add(constant);
+        }
       }
     } else {
       for (int i = 1; i < arguments.length; ++i) {
@@ -148,9 +154,13 @@ public class GenericUDFIn extends GenericUDF {
       }
       switch (compareOI.getCategory()) {
       case PRIMITIVE: {
-        if (constantInSet.contains(((PrimitiveObjectInspector) compareOI)
-            .getPrimitiveJavaObject(conversionHelper.convertIfNecessary(arguments[0].get(),
-                argumentOIs[0])))) {
+        Object arg = ((PrimitiveObjectInspector) compareOI)
+                .getPrimitiveJavaObject(conversionHelper.convertIfNecessary(arguments[0].get(),
+                    argumentOIs[0]));
+        if (compareOI.getTypeName().equals(serdeConstants.BINARY_TYPE_NAME)) {
+          arg = ByteBuffer.wrap((byte[]) arg);
+        }
+        if (constantInSet.contains(arg)) {
           bw.set(true);
           return bw;
         }
@@ -173,8 +183,13 @@ public class GenericUDFIn extends GenericUDF {
         break;
       }
       case STRUCT: {
-        if (constantInSet.contains(((StructObjectInspector) compareOI).getStructFieldsDataAsList(conversionHelper
-           .convertIfNecessary(arguments[0].get(), argumentOIs[0])))) {
+        Object value;
+        if (argumentOIs[0] instanceof ConstantObjectInspector) {
+          value = ((ConstantObjectInspector) argumentOIs[0]).getWritableConstantValue();
+        } else {
+          value = conversionHelper.convertIfNecessary(arguments[0].get(), argumentOIs[0]);
+        }
+        if (constantInSet.contains(((StructObjectInspector) compareOI).getStructFieldsDataAsList(value))) {
           bw.set(true);
           return bw;
         }
@@ -226,5 +241,4 @@ public class GenericUDFIn extends GenericUDF {
     sb.append(")");
     return sb.toString();
   }
-
 }

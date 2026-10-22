@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.llap.cache;
 
@@ -22,41 +23,41 @@ import javax.management.MXBean;
 /**
  * MXbean to expose cache allocator related information through JMX.
  */
-@MXBean
-public interface BuddyAllocatorMXBean {
+@MXBean public interface BuddyAllocatorMXBean {
 
   /**
    * Gets if bytebuffers are allocated directly offheap.
    *
    * @return gets if direct bytebuffer allocation
    */
-  public boolean getIsDirect();
+  boolean getIsDirect();
 
   /**
    * Gets minimum allocation size of allocator.
    *
    * @return minimum allocation size
    */
-  public int getMinAllocation();
+  int getMinAllocation();
 
   /**
    * Gets maximum allocation size of allocator.
    *
    * @return maximum allocation size
    */
-  public int getMaxAllocation();
+  int getMaxAllocation();
 
   /**
    * Gets the arena size.
    *
    * @return arena size
    */
-  public int getArenaSize();
+  int getArenaSize();
 
   /**
    * Gets the maximum cache size.
    *
    * @return max cache size
    */
-  public long getMaxCacheSize();
+  long getMaxCacheSize();
+
 }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.lazy;
 
@@ -22,6 +23,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import com.google.common.primitives.Bytes;
+
+import org.apache.hadoop.hive.serde2.MultiDelimitSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -294,10 +297,10 @@ public class LazyStruct extends LazyNonPrimitive<LazySimpleStructObjectInspector
     }
     // the indexes of the delimiters
     int[] delimitIndexes = findIndexes(rawRow, fieldDelimit);
-    int diff = fieldDelimit.length - 1;
+    int diff = fieldDelimit.length - MultiDelimitSerDe.REPLACEMENT_DELIM_LENGTH;
     // first field always starts from 0, even when missing
     startPosition[0] = 0;
-    for (int i = 1; i < fields.length; i++) {
+    for (int i = 1; i <= fields.length; i++) {
       if (delimitIndexes[i - 1] != -1) {
         int start = delimitIndexes[i - 1] + fieldDelimit.length;
         startPosition[i] = start - i * diff;
@@ -305,17 +308,16 @@ public class LazyStruct extends LazyNonPrimitive<LazySimpleStructObjectInspector
         startPosition[i] = length + 1;
       }
     }
-    startPosition[fields.length] = length + 1;
     Arrays.fill(fieldInited, false);
     parsed = true;
   }
 
   // find all the indexes of the sub byte[]
   private int[] findIndexes(byte[] array, byte[] target) {
-    if (fields.length <= 1) {
+    if (fields.length < 1) {
       return new int[0];
     }
-    int[] indexes = new int[fields.length - 1];
+    int[] indexes = new int[fields.length];
     Arrays.fill(indexes, -1);
     indexes[0] = Bytes.indexOf(array, target);
     if (indexes[0] == -1) {

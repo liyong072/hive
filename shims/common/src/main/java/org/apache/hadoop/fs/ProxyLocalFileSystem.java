@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.fs;
@@ -48,17 +49,12 @@ public class ProxyLocalFileSystem extends FilterFileSystem {
     localFs = new LocalFileSystem();
   }
 
-  public ProxyLocalFileSystem(FileSystem fs) {
-    throw new RuntimeException("Unsupported Constructor");
-  }
-
   @Override
   public void initialize(URI name, Configuration conf) throws IOException {
     // create a proxy for the local filesystem
     // the scheme/authority serving as the proxy is derived
     // from the supplied URI
     this.scheme = name.getScheme();
-    String nameUriString = name.toString();
 
     String authority = name.getAuthority() != null ? name.getAuthority() : "";
     String proxyUriString = scheme + "://" + authority + "/";
@@ -121,7 +117,8 @@ public class ProxyLocalFileSystem extends FilterFileSystem {
     private String algorithmName;
 
     public PFileChecksum(MD5Hash md5, String algorithmName) {
-      this.md5 = md5;
+      this.md5 = new MD5Hash();
+      this.md5.set(md5);
       this.algorithmName = algorithmName;
     }
 

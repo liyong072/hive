@@ -1,7 +1,9 @@
 PREHOOK: query: drop table tstsrc
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: drop table tstsrc
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: create table tstsrc like src
 PREHOOK: type: CREATETABLE
 PREHOOK: Output: database:default
@@ -31,4 +33,4 @@ POSTHOOK: type: LOCKTABLE
 PREHOOK: query: LOCK TABLE tstsrc EXCLUSIVE
 PREHOOK: type: LOCKTABLE
 Unable to acquire EXPLICIT, EXCLUSIVE lock default@tstsrc after 1 attempts.
-FAILED: Execution Error, return code 1 from org.apache.hadoop.hive.ql.ddl.DDLTask2
+FAILED: Execution Error, return code 1 from org.apache.hadoop.hive.ql.ddl.DDLTask

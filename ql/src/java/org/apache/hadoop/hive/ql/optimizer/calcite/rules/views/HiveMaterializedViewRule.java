@@ -9,14 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules.views;
 
+import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableList;
 import org.apache.calcite.avatica.util.TimeUnitRange;
 import org.apache.calcite.plan.RelOptRule;
@@ -28,29 +30,34 @@ import org.apache.calcite.plan.volcano.RelSubset;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
+import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.TableScan;
-import org.apache.calcite.rel.rules.AbstractMaterializedViewRule.MaterializedViewProjectFilterRule;
-import org.apache.calcite.rel.rules.AbstractMaterializedViewRule.MaterializedViewOnlyFilterRule;
-import org.apache.calcite.rel.rules.AbstractMaterializedViewRule.MaterializedViewProjectJoinRule;
-import org.apache.calcite.rel.rules.AbstractMaterializedViewRule.MaterializedViewOnlyJoinRule;
-import org.apache.calcite.rel.rules.AbstractMaterializedViewRule.MaterializedViewProjectAggregateRule;
-import org.apache.calcite.rel.rules.AbstractMaterializedViewRule.MaterializedViewOnlyAggregateRule;
+import org.apache.calcite.rel.metadata.RelMetadataQuery;
+import org.apache.calcite.rel.rules.materialize.MaterializedViewProjectFilterRule;
+import org.apache.calcite.rel.rules.materialize.MaterializedViewOnlyFilterRule;
+import org.apache.calcite.rel.rules.materialize.MaterializedViewProjectJoinRule;
+import org.apache.calcite.rel.rules.materialize.MaterializedViewOnlyJoinRule;
+import org.apache.calcite.rel.rules.materialize.MaterializedViewProjectAggregateRule;
+import org.apache.calcite.rel.rules.materialize.MaterializedViewOnlyAggregateRule;
 import org.apache.calcite.rel.rules.ProjectRemoveRule;
+import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
-import org.apache.calcite.sql.SqlAggFunction;
+import org.apache.calcite.rex.RexSimplify;
+import org.apache.calcite.rex.RexTableInputRef;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.tools.RelBuilder;
-import org.apache.calcite.tools.RelBuilderFactory;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.Util;
+import org.apache.hadoop.hive.ql.optimizer.calcite.Bug;
+import org.apache.hadoop.hive.ql.optimizer.calcite.HiveCalciteUtil;
 import org.apache.hadoop.hive.ql.optimizer.calcite.HiveRelBuilder;
 import org.apache.hadoop.hive.ql.optimizer.calcite.HiveRelFactories;
 import org.apache.hadoop.hive.ql.optimizer.calcite.rules.HiveFilterProjectTransposeRule;
 import org.apache.hadoop.hive.ql.optimizer.calcite.rules.HiveJoinProjectTransposeRule;
 import org.apache.hadoop.hive.ql.optimizer.calcite.rules.HiveProjectMergeRule;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Enable join and aggregate materialized view rewriting
@@ -65,7 +72,7 @@ public class HiveMaterializedViewRule {
    * the root of the plan.
    */
   private static final HepProgram PROGRAM = new HepProgramBuilder()
-      .addRuleInstance(HiveExtractRelNodeRule.INSTANCE)
+      .addRuleInstance(HiveVolcanoExtractRelNodeRule.INSTANCE)
       .addRuleInstance(HiveTableScanProjectInsert.INSTANCE)
       .addRuleCollection(
           ImmutableList.of(
@@ -74,66 +81,202 @@ public class HiveMaterializedViewRule {
               HiveJoinProjectTransposeRule.LEFT_PROJECT,
               HiveJoinProjectTransposeRule.RIGHT_PROJECT,
               HiveProjectMergeRule.INSTANCE))
-      .addRuleInstance(ProjectRemoveRule.INSTANCE)
+      .addRuleInstance(ProjectRemoveRule.Config.DEFAULT.toRule())
       .addRuleInstance(HiveRootJoinProjectInsert.INSTANCE)
       .build();
 
   public static final MaterializedViewProjectFilterRule INSTANCE_PROJECT_FILTER =
-      new MaterializedViewProjectFilterRule(HiveRelFactories.HIVE_BUILDER,
-          true, PROGRAM, false);
+      new HiveMaterializedViewProjectFilterRule();
 
   public static final MaterializedViewOnlyFilterRule INSTANCE_FILTER =
-      new MaterializedViewOnlyFilterRule(HiveRelFactories.HIVE_BUILDER,
-          true, PROGRAM, false);
+      new HiveMaterializedViewOnlyFilterRule();
 
   public static final MaterializedViewProjectJoinRule INSTANCE_PROJECT_JOIN =
-      new MaterializedViewProjectJoinRule(HiveRelFactories.HIVE_BUILDER,
-          true, PROGRAM, false);
+      new HiveMaterializedViewProjectJoinRule();
 
   public static final MaterializedViewOnlyJoinRule INSTANCE_JOIN =
-      new MaterializedViewOnlyJoinRule(HiveRelFactories.HIVE_BUILDER,
-          true, PROGRAM, false);
+      new HiveMaterializedViewOnlyJoinRule();
 
   public static final HiveMaterializedViewProjectAggregateRule INSTANCE_PROJECT_AGGREGATE =
-      new HiveMaterializedViewProjectAggregateRule(HiveRelFactories.HIVE_BUILDER,
-          true, PROGRAM);
+      new HiveMaterializedViewProjectAggregateRule();
 
   public static final HiveMaterializedViewOnlyAggregateRule INSTANCE_AGGREGATE =
-      new HiveMaterializedViewOnlyAggregateRule(HiveRelFactories.HIVE_BUILDER,
-          true, PROGRAM);
+      new HiveMaterializedViewOnlyAggregateRule();
+
+  public static final RelOptRule[] MATERIALIZED_VIEW_REWRITING_RULES =
+      new RelOptRule[] {
+          HiveMaterializedViewRule.INSTANCE_PROJECT_FILTER,
+          HiveMaterializedViewRule.INSTANCE_FILTER,
+          HiveMaterializedViewRule.INSTANCE_PROJECT_JOIN,
+          HiveMaterializedViewRule.INSTANCE_JOIN,
+          HiveMaterializedViewRule.INSTANCE_PROJECT_AGGREGATE,
+          HiveMaterializedViewRule.INSTANCE_AGGREGATE };
 
 
   protected static class HiveMaterializedViewProjectAggregateRule extends MaterializedViewProjectAggregateRule {
-    public HiveMaterializedViewProjectAggregateRule(
-        RelBuilderFactory relBuilderFactory, boolean generateUnionRewriting, HepProgram unionRewritingPullProgram) {
-      super(relBuilderFactory, generateUnionRewriting, unionRewritingPullProgram);
+    public HiveMaterializedViewProjectAggregateRule() {
+      super(HiveRelFactories.HIVE_BUILDER, true, PROGRAM);
+    }
+
+    // Overridden to avoid CALCITE-7641
+    @Override protected @Nullable RelNode rewriteQuery(
+        RelBuilder relBuilder,
+        RexBuilder rexBuilder,
+        RexSimplify simplify,
+        RelMetadataQuery mq,
+        RexNode compensationColumnsEquiPred,
+        RexNode otherCompensationPred,
+        @Nullable Project topProject,
+        RelNode node,
+        BiMap<RexTableInputRef.RelTableRef, RexTableInputRef.RelTableRef> queryToViewTableMapping,
+        EquivalenceClasses viewEC, EquivalenceClasses queryEC) {
+      if (Bug.CALCITE_7641_FIXED) {
+        throw new AssertionError("Overriding should be removed");
+      }
+      RelNode unwrappedNode = HiveCalciteUtil.stripHepVertices(node);
+      return super.rewriteQuery(relBuilder, rexBuilder, simplify, mq, compensationColumnsEquiPred,
+          otherCompensationPred, topProject, unwrappedNode, queryToViewTableMapping, viewEC, queryEC);
     }
 
     @Override
     protected SqlFunction getFloorSqlFunction(TimeUnitRange flag) {
       return HiveRelBuilder.getFloorSqlFunction(flag);
-    }
-
-    @Override
-    public SqlAggFunction getRollup(SqlAggFunction aggregation) {
-      return HiveRelBuilder.getRollup(aggregation);
     }
   }
 
   protected static class HiveMaterializedViewOnlyAggregateRule extends MaterializedViewOnlyAggregateRule {
-    public HiveMaterializedViewOnlyAggregateRule(
-        RelBuilderFactory relBuilderFactory, boolean generateUnionRewriting, HepProgram unionRewritingPullProgram) {
-      super(relBuilderFactory, generateUnionRewriting, unionRewritingPullProgram);
+    public HiveMaterializedViewOnlyAggregateRule() {
+      super(HiveRelFactories.HIVE_BUILDER, true, PROGRAM);
+    }
+
+    // Overridden to avoid CALCITE-7641
+    @Override protected @Nullable RelNode rewriteQuery(
+        RelBuilder relBuilder,
+        RexBuilder rexBuilder,
+        RexSimplify simplify,
+        RelMetadataQuery mq,
+        RexNode compensationColumnsEquiPred,
+        RexNode otherCompensationPred,
+        @Nullable Project topProject,
+        RelNode node,
+        BiMap<RexTableInputRef.RelTableRef, RexTableInputRef.RelTableRef> queryToViewTableMapping,
+        EquivalenceClasses viewEC, EquivalenceClasses queryEC) {
+      if (Bug.CALCITE_7641_FIXED) {
+        throw new AssertionError("Overriding should be removed");
+      }
+      RelNode unwrappedNode = HiveCalciteUtil.stripHepVertices(node);
+      return super.rewriteQuery(relBuilder, rexBuilder, simplify, mq, compensationColumnsEquiPred,
+          otherCompensationPred, topProject, unwrappedNode, queryToViewTableMapping, viewEC, queryEC);
     }
 
     @Override
     protected SqlFunction getFloorSqlFunction(TimeUnitRange flag) {
       return HiveRelBuilder.getFloorSqlFunction(flag);
     }
+  }
 
-    @Override
-    public SqlAggFunction getRollup(SqlAggFunction aggregation) {
-      return HiveRelBuilder.getRollup(aggregation);
+  protected static class HiveMaterializedViewProjectFilterRule extends MaterializedViewProjectFilterRule {
+    public HiveMaterializedViewProjectFilterRule() {
+      super(HiveRelFactories.HIVE_BUILDER, true, PROGRAM, false);
+    }
+
+    // Overridden to avoid CALCITE-7641
+    @Override protected @Nullable RelNode rewriteQuery(
+        RelBuilder relBuilder,
+        RexBuilder rexBuilder,
+        RexSimplify simplify,
+        RelMetadataQuery mq,
+        RexNode compensationColumnsEquiPred,
+        RexNode otherCompensationPred,
+        @Nullable Project topProject,
+        RelNode node,
+        BiMap<RexTableInputRef.RelTableRef, RexTableInputRef.RelTableRef> viewToQueryTableMapping,
+        EquivalenceClasses viewEC, EquivalenceClasses queryEC) {
+      if (Bug.CALCITE_7641_FIXED) {
+        throw new AssertionError("Overriding should be removed");
+      }
+      RelNode unwrappedNode = HiveCalciteUtil.stripHepVertices(node);
+      return super.rewriteQuery(relBuilder, rexBuilder, simplify, mq, compensationColumnsEquiPred,
+          otherCompensationPred, topProject, unwrappedNode, viewToQueryTableMapping, viewEC, queryEC);
+    }
+  }
+
+  protected static class HiveMaterializedViewOnlyFilterRule extends MaterializedViewOnlyFilterRule {
+    public HiveMaterializedViewOnlyFilterRule() {
+      super(HiveRelFactories.HIVE_BUILDER, true, PROGRAM, false);
+    }
+
+    // Overridden to avoid CALCITE-7641
+    @Override protected @Nullable RelNode rewriteQuery(
+        RelBuilder relBuilder,
+        RexBuilder rexBuilder,
+        RexSimplify simplify,
+        RelMetadataQuery mq,
+        RexNode compensationColumnsEquiPred,
+        RexNode otherCompensationPred,
+        @Nullable Project topProject,
+        RelNode node,
+        BiMap<RexTableInputRef.RelTableRef, RexTableInputRef.RelTableRef> viewToQueryTableMapping,
+        EquivalenceClasses viewEC, EquivalenceClasses queryEC) {
+      if (Bug.CALCITE_7641_FIXED) {
+        throw new AssertionError("Overriding should be removed");
+      }
+      RelNode unwrappedNode = HiveCalciteUtil.stripHepVertices(node);
+      return super.rewriteQuery(relBuilder, rexBuilder, simplify, mq, compensationColumnsEquiPred,
+          otherCompensationPred, topProject, unwrappedNode, viewToQueryTableMapping, viewEC, queryEC);
+    }
+  }
+
+  protected static class HiveMaterializedViewProjectJoinRule extends MaterializedViewProjectJoinRule {
+    public HiveMaterializedViewProjectJoinRule() {
+      super(HiveRelFactories.HIVE_BUILDER, true, PROGRAM, false);
+    }
+
+    // Overridden to avoid CALCITE-7641
+    @Override protected @Nullable RelNode rewriteQuery(
+        RelBuilder relBuilder,
+        RexBuilder rexBuilder,
+        RexSimplify simplify,
+        RelMetadataQuery mq,
+        RexNode compensationColumnsEquiPred,
+        RexNode otherCompensationPred,
+        @Nullable Project topProject,
+        RelNode node,
+        BiMap<RexTableInputRef.RelTableRef, RexTableInputRef.RelTableRef> viewToQueryTableMapping,
+        EquivalenceClasses viewEC, EquivalenceClasses queryEC) {
+      if (Bug.CALCITE_7641_FIXED) {
+        throw new AssertionError("Overriding should be removed");
+      }
+      RelNode unwrappedNode = HiveCalciteUtil.stripHepVertices(node);
+      return super.rewriteQuery(relBuilder, rexBuilder, simplify, mq, compensationColumnsEquiPred,
+          otherCompensationPred, topProject, unwrappedNode, viewToQueryTableMapping, viewEC, queryEC);
+    }
+  }
+
+  protected static class HiveMaterializedViewOnlyJoinRule extends MaterializedViewOnlyJoinRule {
+    public HiveMaterializedViewOnlyJoinRule() {
+      super(HiveRelFactories.HIVE_BUILDER, true, PROGRAM, false);
+    }
+
+    // Overridden to avoid CALCITE-7641
+    @Override protected @Nullable RelNode rewriteQuery(
+        RelBuilder relBuilder,
+        RexBuilder rexBuilder,
+        RexSimplify simplify,
+        RelMetadataQuery mq,
+        RexNode compensationColumnsEquiPred,
+        RexNode otherCompensationPred,
+        @Nullable Project topProject,
+        RelNode node,
+        BiMap<RexTableInputRef.RelTableRef, RexTableInputRef.RelTableRef> viewToQueryTableMapping,
+        EquivalenceClasses viewEC,
+        EquivalenceClasses queryEC) {
+      if (Bug.CALCITE_7641_FIXED) {
+        throw new AssertionError("Overriding should be removed");
+      }
+      RelNode unwrappedNode = HiveCalciteUtil.stripHepVertices(node);
+      return super.rewriteQuery(relBuilder, rexBuilder, simplify, mq, compensationColumnsEquiPred,
+          otherCompensationPred, topProject, unwrappedNode, viewToQueryTableMapping, viewEC, queryEC);
     }
   }
 
@@ -143,12 +286,12 @@ public class HiveMaterializedViewRule {
    * RelSubset node so the rest of the rules in the PROGRAM can be
    * applied correctly.
    */
-  private static class HiveExtractRelNodeRule extends RelOptRule {
+  private static class HiveVolcanoExtractRelNodeRule extends RelOptRule {
 
-    private static final HiveExtractRelNodeRule INSTANCE =
-        new HiveExtractRelNodeRule();
+    private static final HiveVolcanoExtractRelNodeRule INSTANCE =
+        new HiveVolcanoExtractRelNodeRule();
 
-    private HiveExtractRelNodeRule() {
+    private HiveVolcanoExtractRelNodeRule() {
       super(operand(RelSubset.class, any()));
     }
 
@@ -186,7 +329,7 @@ public class HiveMaterializedViewRule {
       List<RexNode> identityFields = relBuilder.fields(
           ImmutableBitSet.range(0, rel.getRowType().getFieldCount()).asList());
       RelNode newRel = relBuilder
-          .project(identityFields, ImmutableList.<String>of(), true)
+          .project(identityFields, ImmutableList.of(), true)
           .build();
       call.transformTo(fil.copy(fil.getTraitSet(), ImmutableList.of(newRel)));
     }
@@ -222,7 +365,7 @@ public class HiveMaterializedViewRule {
       relBuilder.push(join);
       List<RexNode> identityFields = relBuilder.fields(
           ImmutableBitSet.range(0, join.getRowType().getFieldCount()).asList());
-      relBuilder.project(identityFields, ImmutableList.<String>of(), true);
+      relBuilder.project(identityFields, ImmutableList.of(), true);
       call.transformTo(relBuilder.build());
     }
 

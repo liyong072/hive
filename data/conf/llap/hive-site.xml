@@ -19,6 +19,12 @@
 
 <configuration>
 
+  <property>
+    <name>hive.metastore.client.cache.enabled</name>
+    <value>true</value>
+    <description>This property enables a Caffeiene Cache for Metastore client</description>
+  </property>
+
 <property>
   <name>hive.in.test</name>
   <value>true</value>
@@ -38,10 +44,12 @@
   <description>A base for other temporary directories.</description>
 </property>
 
+<!-- in LLAP mode hive.tez.container.size isn't used to actually determine container size, however while -->
+<!-- calculating available slots (in split generation) in it's used through -->
+<!-- the Vertex resource, so this has to be defined in order to get consistent test results -->
 <property>
   <name>hive.tez.container.size</name>
-  <value>128</value>
-  <description></description>
+  <value>256</value>
 </property>
 
 <property>
@@ -80,18 +88,23 @@
 </property>
 
 <property>
+  <name>datanucleus.connectionPool.maxPoolSize</name>
+  <value>4</value>
+</property>
+
+<property>
   <name>hive.metastore.schema.verification</name>
   <value>false</value>
 </property>
 
 <property>
   <name>javax.jdo.option.ConnectionURL</name>
-  <value>jdbc:derby:;databaseName=${test.tmp.dir}/junit_metastore_db;create=true</value>
+  <value>jdbc:derby:memory:${test.tmp.dir}/junit_metastore_db;create=true</value>
 </property>
 
 <property>
   <name>javax.jdo.option.ConnectionDriverName</name>
-  <value>org.apache.derby.jdbc.EmbeddedDriver</value>
+  <value>org.apache.derby.iapi.jdbc.AutoloadedDriver</value>
 </property>
 
 <property>
@@ -109,14 +122,6 @@
   <name>hive.metastore.warehouse.dir</name>
   <value>${test.warehouse.dir}</value>
   <description></description>
-</property>
-
-<property>
-  <name>hive.metastore.metadb.dir</name>
-  <value>file://${test.tmp.dir}/metadb/</value>
-  <description>
-  Required by metastore server or if the uris argument below is not supplied
-  </description>
 </property>
 
 <property>
@@ -156,6 +161,12 @@
 </property>
 
 <property>
+  <name>hive.lineage.statement.filter</name>
+  <value>ALL</value>
+  <description>Specify the types of statements for which column lineage information is generated</description>
+</property>
+
+<property>
   <name>hive.exec.pre.hooks</name>
   <value>org.apache.hadoop.hive.ql.hooks.PreExecutePrinter, org.apache.hadoop.hive.ql.hooks.EnforceReadOnlyTables</value>
   <description>Pre Execute Hook for Tests</description>
@@ -163,7 +174,7 @@
 
 <property>
   <name>hive.exec.post.hooks</name>
-  <value>org.apache.hadoop.hive.ql.hooks.PostExecutePrinter, org.apache.hadoop.hive.ql.hooks.RuntimeStatsPersistenceCheckerHook, org.apache.hadoop.hive.ql.hooks.NoOperatorReuseCheckerHook</value>
+  <value>org.apache.hadoop.hive.ql.hooks.PostExecutePrinter, org.apache.hadoop.hive.ql.hooks.RuntimeStatsPersistenceCheckerHook, org.apache.hadoop.hive.ql.hooks.OperatorHealthCheckerHook</value>
   <description>Post Execute Hook for Tests</description>
 </property>
 
@@ -224,12 +235,6 @@
 </property>
 
 <property>
-  <name>hive.execution.engine</name>
-  <value>tez</value>
-  <description>Whether to use MR or Tez</description>
-</property>
-
-<property>
   <name>tez.am.node-blacklisting.enabled</name>
   <value>false</value>
 </property>
@@ -271,6 +276,11 @@
 </property>
 
 <property>
+  <name>hive.tez.exec.print.summary</name>
+  <value>true</value>
+</property>
+
+<property>
   <name>hive.llap.cache.allow.synthetic.fileid</name>
   <value>true</value>
 </property>
@@ -284,7 +294,10 @@
   <name>hive.explain.user</name>
   <value>false</value>
 </property>
-
+<property>
+  <name>hive.explain.formatted.indent</name>
+  <value>true</value>
+</property>
 <property>
   <name>hive.join.inner.residual</name>
   <value>true</value>
@@ -358,4 +371,39 @@
   <value>1024</value>
 </property>
 
+<property>
+  <name>hive.query.reexecution.stats.persist.scope</name>
+  <value>query</value>
+</property>
+
+<property>
+  <name>hive.semantic.analyzer.hook</name>
+  <value>org.apache.hadoop.hive.ql.hooks.ScheduledQueryCreationRegistryHook</value>
+</property>
+
+<property>
+  <name>hive.users.in.admin.role</name>
+  <value>hive_admin_user</value>
+</property>
+
+<property>
+  <name>hive.conf.restricted.list</name>
+  <value>hive.query.max.length</value>
+  <description>Using property defined in HiveConf.ConfVars to test System property overriding</description>
+</property>
+
+<property>
+  <name>hive.strict.timestamp.conversion</name>
+  <value>false</value>
+</property>
+
+<property>
+  <name>hive.txn.xlock.ctas</name>
+  <value>false</value>
+</property>
+
+<property>
+  <name>hive.lock.sleep.between.retries</name>
+  <value>2</value>
+</property>
 </configuration>

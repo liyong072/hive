@@ -9,51 +9,65 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
 
 import static org.apache.hadoop.hive.serde.serdeConstants.STRING_TYPE_NAME;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 
+import com.google.common.base.Joiner;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.jsonexplain.JsonParser;
-import org.apache.hadoop.hive.common.jsonexplain.JsonParserFactory;
+import org.apache.hadoop.hive.common.jsonexplain.tez.TezJsonParser;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.LockComponent;
-import org.apache.hadoop.hive.ql.Driver;
-import org.apache.hadoop.hive.ql.DriverContext;
+import org.apache.hadoop.hive.metastore.api.MetaException;
+import org.apache.hadoop.hive.ql.log.PerfLogger;
+import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.metadata.Partition;
+import org.apache.hadoop.hive.ql.Context;
+import org.apache.hadoop.hive.ql.Context.Operation;
+import org.apache.hadoop.hive.ql.QueryPlan;
+import org.apache.hadoop.hive.ql.QueryState;
 import org.apache.hadoop.hive.ql.hooks.ReadEntity;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.optimizer.physical.StageIDsRearranger;
+import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
 import org.apache.hadoop.hive.ql.parse.ExplainConfiguration.VectorizationDetailLevel;
+import org.apache.hadoop.hive.ql.parse.ParseContext;
 import org.apache.hadoop.hive.ql.plan.Explain;
 import org.apache.hadoop.hive.ql.plan.Explain.Level;
 import org.apache.hadoop.hive.ql.plan.Explain.Vectorization;
@@ -62,10 +76,10 @@ import org.apache.hadoop.hive.ql.plan.ExplainWork;
 import org.apache.hadoop.hive.ql.plan.HiveOperation;
 import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 import org.apache.hadoop.hive.ql.plan.ReduceSinkDesc;
-import org.apache.hadoop.hive.ql.plan.SparkWork;
 import org.apache.hadoop.hive.ql.plan.TezWork;
 import org.apache.hadoop.hive.ql.plan.api.StageType;
 import org.apache.hadoop.hive.ql.security.authorization.AuthorizationFactory;
+import org.apache.hadoop.hive.ql.security.authorization.command.CommandAuthorizer;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hive.common.util.AnnotationUtils;
@@ -76,23 +90,26 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.annotations.VisibleForTesting;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.TreeSet;
 
 /**
  * ExplainTask implementation.
  *
  **/
 public class ExplainTask extends Task<ExplainWork> implements Serializable {
+  private static final Logger LOG = LoggerFactory.getLogger(ExplainTask.class.getName());
+
   public static final String STAGE_DEPENDENCIES = "STAGE DEPENDENCIES";
+  private static final String EXCLUDED_RULES_PREFIX = "Excluded rules: ";
   private static final long serialVersionUID = 1L;
   public static final String EXPL_COLUMN_NAME = "Explain";
-  private final Set<Operator<?>> visitedOps = new HashSet<Operator<?>>();
+  private static final String CBO_INFO_JSON_LABEL = "cboInfo";
+  private static final String CBO_PLAN_JSON_LABEL = "CBOPlan";
+  private static final String CBO_PLAN_TEXT_LABEL = "CBO PLAN:";
+  private final Map<Operator<?>, Integer> operatorVisits = new HashMap<>();
   private boolean isLogical = false;
-  protected final Logger LOG;
-
-  public ExplainTask() {
-    super();
-    LOG = LoggerFactory.getLogger(this.getClass().getName());
-  }
 
   /*
    * Below method returns the dependencies for the passed in query to EXPLAIN.
@@ -140,15 +157,22 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
     return outJSONObject;
   }
 
-  public JSONObject getJSONCBOPlan(PrintStream out, ExplainWork work) throws Exception {
+  public JSONObject getJSONCBOPlan(PrintStream out, ExplainWork work) {
     JSONObject outJSONObject = new JSONObject(new LinkedHashMap<>());
     boolean jsonOutput = work.isFormatted();
     String cboPlan = work.getCboPlan();
     if (cboPlan != null) {
+      String ruleExclusionRegex = getRuleExcludedRegex();
       if (jsonOutput) {
-        outJSONObject.put("CBOPlan", cboPlan);
+        outJSONObject.put(CBO_PLAN_JSON_LABEL, new JSONObject(cboPlan));
+        if (!ruleExclusionRegex.isEmpty()) {
+          outJSONObject.put(CBO_INFO_JSON_LABEL, EXCLUDED_RULES_PREFIX + ruleExclusionRegex);
+        }
       } else {
-        out.println("CBO PLAN:");
+        if (!ruleExclusionRegex.isEmpty()) {
+          out.println(EXCLUDED_RULES_PREFIX + ruleExclusionRegex + "\n");
+        }
+        out.println(CBO_PLAN_TEXT_LABEL);
         out.println(cboPlan);
       }
     }
@@ -237,12 +261,30 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
       throws Exception {
     return getJSONPlan(out, work.getRootTasks(), work.getFetchTask(),
         work.isFormatted(), work.getExtended(), work.isAppendTaskType(), work.getCboInfo(),
-        work.getOptimizedSQL());
+        work.getCboPlan(), work.getOptimizedSQL());
+  }
+
+  public JSONObject getJSONPlan(PrintStream out, ExplainWork work, String stageIdRearrange)
+          throws Exception {
+    return getJSONPlan(out, work.getRootTasks(), work.getFetchTask(),
+            work.isFormatted(), work.getExtended(), work.isAppendTaskType(), work.getCboInfo(),
+            work.getCboPlan(), work.getOptimizedSQL(), stageIdRearrange);
+  }
+
+  public JSONObject getJSONPlan(PrintStream out, List<Task<?>> tasks, Task<?> fetchTask,
+                                boolean jsonOutput, boolean isExtended, boolean appendTaskType, String cboInfo,
+                                String cboPlan, String optimizedSQL) throws Exception {
+    return getJSONPlan(
+            out, tasks, fetchTask, jsonOutput, isExtended,
+            appendTaskType, cboInfo, cboPlan, optimizedSQL,
+            conf.getVar(ConfVars.HIVE_STAGE_ID_REARRANGE));
   }
 
   public JSONObject getJSONPlan(PrintStream out, List<Task<?>> tasks, Task<?> fetchTask,
       boolean jsonOutput, boolean isExtended, boolean appendTaskType, String cboInfo,
-      String optimizedSQL) throws Exception {
+      String cboPlan, String optimizedSQL, String stageIdRearrange) throws Exception {
+
+    String ruleExclusionRegex = getRuleExcludedRegex();
 
     // If the user asked for a formatted output, dump the json output
     // in the output stream
@@ -250,6 +292,21 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
 
     if (jsonOutput) {
       out = null;
+    }
+
+    if (cboPlan != null) {
+      if (jsonOutput) {
+        outJSONObject.put(CBO_PLAN_JSON_LABEL, new JSONObject(cboPlan));
+        if (!ruleExclusionRegex.isEmpty()) {
+          outJSONObject.put(CBO_INFO_JSON_LABEL, EXCLUDED_RULES_PREFIX + ruleExclusionRegex);
+        }
+      } else {
+        if (!ruleExclusionRegex.isEmpty()) {
+          out.println(EXCLUDED_RULES_PREFIX + ruleExclusionRegex);
+        }
+        out.print(CBO_PLAN_TEXT_LABEL);
+        out.println(cboPlan);
+      }
     }
 
     if (optimizedSQL != null) {
@@ -261,7 +318,7 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
       }
     }
 
-    List<Task> ordered = StageIDsRearranger.getExplainOrder(conf, tasks);
+    List<Task> ordered = StageIDsRearranger.getExplainOrder(tasks, stageIdRearrange);
 
     if (fetchTask != null) {
       fetchTask.setParentTasks((List)StageIDsRearranger.getFetchSources(tasks));
@@ -272,7 +329,7 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
     }
 
     boolean suppressOthersForVectorization = false;
-    if (this.work != null && this.work.isVectorization()) {
+    if (this.work != null && (this.work.isVectorization() || this.work.isDDL())) {
       ImmutablePair<Boolean, JSONObject> planVecPair = outputPlanVectorization(out, jsonOutput);
 
       if (this.work.isVectorizationOnly()) {
@@ -290,6 +347,10 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
     }
 
     if (!suppressOthersForVectorization) {
+      if (!jsonOutput && !ruleExclusionRegex.isEmpty()) {
+        out.println(EXCLUDED_RULES_PREFIX + ruleExclusionRegex + "\n");
+      }
+
       JSONObject jsonDependencies = outputDependencies(out, jsonOutput, appendTaskType, ordered);
 
       if (out != null) {
@@ -298,7 +359,7 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
 
       if (jsonOutput) {
         if (cboInfo != null) {
-          outJSONObject.put("cboInfo", cboInfo);
+          outJSONObject.put(CBO_INFO_JSON_LABEL, cboInfo);
         }
         outJSONObject.put(STAGE_DEPENDENCIES, jsonDependencies);
       }
@@ -362,7 +423,12 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
     if (jsonOutput) {
       out = null;
     }
-    List<LockComponent> lockComponents = AcidUtils.makeLockComponents(work.getOutputs(), work.getInputs(), conf);
+    Operation operation = Optional.of(work).map(ExplainWork::getParseContext)
+        .map(ParseContext::getContext).map(Context::getOperation)
+        .orElse(Operation.OTHER);
+
+    List<LockComponent> lockComponents = AcidUtils.makeLockComponents(work.getOutputs(), work.getInputs(),
+        operation, conf);
     if (null != out) {
       out.print("LOCK INFORMATION:\n");
     }
@@ -388,37 +454,128 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
     return jsonObject;
   }
 
+  public void addCreateTableStatement(Table table, List<String> tableCreateStmt , DDLPlanUtils ddlPlanUtils) {
+    tableCreateStmt.add(ddlPlanUtils.getCreateTableCommand(table, false) + ";");
+  }
+
+  public void addPKandBasicStats(Table tbl, List<String> basicDef, DDLPlanUtils ddlPlanUtils){
+    String primaryKeyStmt = ddlPlanUtils.getAlterTableStmtPrimaryKeyConstraint(tbl.getPrimaryKeyInfo());
+    if (primaryKeyStmt != null) {
+      basicDef.add(primaryKeyStmt);
+    }
+    basicDef.add(ddlPlanUtils.getAlterTableStmtTableStatsBasic(tbl));
+  }
+
+  public void addConstraints(Table tbl, List<String> constraints, DDLPlanUtils ddlPlanUtils){
+    constraints.addAll(ddlPlanUtils.populateConstraints(tbl));
+  }
+
+  public void addStats(Table table,List<String> alterTableStmt ,Map<String, List<Partition>> tablePartitionsMap,
+      DDLPlanUtils ddlPlanUtils)
+      throws HiveException, MetaException{
+    PerfLogger perfLogger = PerfLogger.getPerfLogger(conf, false);
+    perfLogger.perfLogBegin(ExplainTask.class.getName(), PerfLogger.HIVE_GET_TABLE_COLUMN_STATS);
+    if (table.isPartitioned()) {
+      alterTableStmt.addAll(ddlPlanUtils.getDDLPlanForPartitionWithStats(conf, table, tablePartitionsMap));
+    } else {
+      alterTableStmt.addAll(ddlPlanUtils.getAlterTableStmtTableStatsColsAll(conf, table));
+    }
+    perfLogger.perfLogEnd(ExplainTask.class.getName(), PerfLogger.HIVE_GET_TABLE_COLUMN_STATS);
+  }
+
+  public void addExplain(String sql , List<String> explainStmt, DDLPlanUtils ddlPlanUtils){
+    explainStmt.addAll(ddlPlanUtils.addExplainPlans(sql));
+    return;
+  }
+
+  public void getDDLPlan(PrintStream out) throws Exception {
+    DDLPlanUtils ddlPlanUtils = new DDLPlanUtils();
+    Set<String> createDatabase = new TreeSet<>();
+    List<String> tableCreateStmt = new LinkedList<>();
+    List<String> tableBasicDef = new LinkedList<>();
+    List<String> createViewList = new LinkedList<>();
+    List<String> alterTableStmt = new LinkedList<>();
+    List<String> explainStmt = new LinkedList<>();
+    Map<String, Table> tableMap = new HashMap<>();
+    Map<String, List<Partition>> tablePartitionsMap = new HashMap<>();
+    for (ReadEntity ent : work.getInputs()) {
+      switch (ent.getType()) {
+      // Views are also covered in table
+      case TABLE:
+        Table tbl = ent.getTable();
+        createDatabase.add(tbl.getDbName());
+        tableMap.put(tbl.getTableName(), tbl);
+        tablePartitionsMap.putIfAbsent(tbl.getTableName(), new ArrayList<Partition>());
+        break;
+      case PARTITION:
+        tablePartitionsMap.get(ent.getTable().getTableName()).add(ent.getPartition());
+        break;
+      default:
+        break;
+      }
+    }
+    //process the databases
+    List<String> createDatabaseStmt = ddlPlanUtils.getCreateDatabaseStmt(createDatabase);
+    //process the tables
+    for (String tableName : tableMap.keySet().stream().sorted().collect(Collectors.toList())) {
+      Table table = tableMap.get(tableName);
+      if (table.isView()) {
+        createViewList.add(ddlPlanUtils.getCreateViewStmt(table));
+      } else {
+        addCreateTableStatement(table, tableCreateStmt, ddlPlanUtils);
+        addPKandBasicStats(table, tableBasicDef, ddlPlanUtils);
+        addConstraints(table, alterTableStmt, ddlPlanUtils);
+        addStats(table, alterTableStmt, tablePartitionsMap, ddlPlanUtils);
+      }
+    }
+    addExplain(conf.getQueryString(), explainStmt, ddlPlanUtils);
+    Joiner jn = Joiner.on("\n");
+    out.println(jn.join(createDatabaseStmt));
+    out.println(jn.join(tableCreateStmt));
+    out.println(jn.join(tableBasicDef));
+    out.println(jn.join(alterTableStmt));
+    out.println(jn.join(createViewList));
+    out.println(jn.join(explainStmt));
+    // Get the explain plan outputs and print them in the console.
+    getJSONPlan(out, work.getRootTasks(), work.getFetchTask(),
+        false, false, work.isAppendTaskType(), work.getCboInfo(),
+        work.getCboPlan(), work.getOptimizedSQL());
+  }
+
   @Override
-  public int execute(DriverContext driverContext) {
+  public int execute() {
 
     PrintStream out = null;
     try {
       Path resFile = work.getResFile();
       OutputStream outS = resFile.getFileSystem(conf).create(resFile);
-      out = new PrintStream(outS);
+      out = new PrintStream(outS, false, StandardCharsets.UTF_8.name());
+      JsonParser jsonParser = createParser();
 
-      if (work.isCbo()) {
+      if(work.isDDL()){
+        getDDLPlan(out);
+      } else if (work.isCbo()) {
         JSONObject jsonCBOPlan = getJSONCBOPlan(out, work);
         if (work.isFormatted()) {
-          out.print(jsonCBOPlan);
+          jsonParser.print(jsonCBOPlan, out);
         }
       } else if (work.isLogical()) {
         JSONObject jsonLogicalPlan = getJSONLogicalPlan(out, work);
         if (work.isFormatted()) {
-          out.print(jsonLogicalPlan);
+          jsonParser.print(jsonLogicalPlan, out);
         }
       } else if (work.isAuthorize()) {
         JSONObject jsonAuth = collectAuthRelatedEntities(out, work);
         if (work.isFormatted()) {
-          out.print(jsonAuth);
+          jsonParser.print(jsonAuth, out);
         }
       } else if (work.getDependency()) {
         JSONObject jsonDependencies = getJSONDependencies(work);
-        out.print(jsonDependencies);
+        jsonParser.print(jsonDependencies, out);
       } else if (work.isLocks()) {
         JSONObject jsonLocks = getLocks(out, work);
         if(work.isFormatted()) {
-          out.print(jsonLocks);
+          jsonParser.print(jsonLocks, out);
         }
       } else if (work.isAst()) {
         // Print out the parse AST
@@ -427,9 +584,6 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
         }
       } else {
         if (work.isUserLevelExplain()) {
-          // Because of the implementation of the JsonParserFactory, we are sure
-          // that we can get a TezJsonParser.
-          JsonParser jsonParser = JsonParserFactory.getParser(conf);
           work.getConfig().setFormatted(true);
           JSONObject jsonPlan = getJSONPlan(out, work);
           if (work.getCboInfo() != null) {
@@ -448,13 +602,8 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
         } else {
           JSONObject jsonPlan = getJSONPlan(out, work);
           if (work.isFormatted()) {
-            // use the parser to get the output operators of RS
-            JsonParser jsonParser = JsonParserFactory.getParser(conf);
-            if (jsonParser != null) {
-              jsonParser.print(jsonPlan, null);
-              LOG.info("JsonPlan is augmented to {}", jsonPlan);
-            }
-            out.print(jsonPlan);
+            augmentJSONWithRSOutputs(jsonPlan);
+            jsonParser.print(jsonPlan, out);
           }
         }
       }
@@ -464,13 +613,49 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
       return (0);
     }
     catch (Exception e) {
-      LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+      LOG.error("Failed to execute", e);
       setException(e);
       return (1);
     }
     finally {
       IOUtils.closeStream(out);
     }
+  }
+
+  /**
+   * Augments the JSON plan with the outputs names of ReduceSink operators.
+   * @param jsonPlan the JSON plan object that is augmented
+   */
+  private void augmentJSONWithRSOutputs(JSONObject jsonPlan) throws Exception {
+    if ("tez".equals(HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE))) {
+      // The JSON object is augmented via side effect of TezJsonParser.print()
+      new TezJsonParser().print(jsonPlan, null);
+    }
+  }
+
+  /**
+   * Creates the appropriate JsonParser based on the ExplainWork configuration.
+   * @return a JsonParser
+   */
+  private JsonParser createParser() {
+    final JsonParser parser;
+    if (HiveConf.getBoolVar(conf, ConfVars.HIVE_EXPLAIN_FORMATTED_INDENT)) {
+      parser = (json, out) -> out.print(json.toString(2));
+    } else {
+      parser = (json, out) -> out.print(json.toString());
+    }
+    if (work.isCbo() || work.isLogical() || work.isAuthorize() || work.getDependency() || work.isLocks()) {
+      return parser;
+    } else if (work.isUserLevelExplain()) {
+      if ("tez".equals(HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE))) {
+        return new TezJsonParser();
+      } else {
+        LOG.error("Running explain user level is only supported for Tez engine.");
+        return (obj, out) -> {
+        };
+      }
+    }
+    return parser;
   }
 
   @VisibleForTesting
@@ -481,7 +666,7 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
     HiveOperation operation = queryState.getHiveOperation();
 
     JSONObject object = new JSONObject(new LinkedHashMap<>());
-    Object jsonInput = toJson("INPUTS", toString(analyzer.getInputs()), out, work);
+    Object jsonInput = toJson("INPUTS", toString(analyzer.getAllInputs()), out, work);
     if (work.isFormatted()) {
       object.put("INPUTS", jsonInput);
     }
@@ -516,7 +701,7 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
 
       SessionState.get().setActiveAuthorizer(authorizer);
       try {
-        Driver.doAuthorization(queryState.getHiveOperation(), analyzer, "");
+        CommandAuthorizer.doAuthorization(queryState.getHiveOperation(), analyzer, "");
       } finally {
         SessionState.get().setActiveAuthorizer(delegate);
       }
@@ -594,36 +779,6 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
               json.accumulate(ent.getKey().toString(), jsonDep);
             }
           }
-        } else if (ent.getValue() != null && !((List<?>) ent.getValue()).isEmpty()
-            && ((List<?>) ent.getValue()).get(0) != null &&
-            ((List<?>) ent.getValue()).get(0) instanceof SparkWork.Dependency) {
-          if (out != null) {
-            boolean isFirst = true;
-            for (SparkWork.Dependency dep: (List<SparkWork.Dependency>) ent.getValue()) {
-              if (!isFirst) {
-                out.print(", ");
-              } else {
-                out.print("<- ");
-                isFirst = false;
-              }
-              out.print(dep.getName());
-              out.print(" (");
-              out.print(dep.getShuffleType());
-              out.print(", ");
-              out.print(dep.getNumPartitions());
-              out.print(")");
-            }
-            out.println();
-          }
-          if (jsonOutput) {
-            for (SparkWork.Dependency dep: (List<SparkWork.Dependency>) ent.getValue()) {
-              JSONObject jsonDep = new JSONObject(new LinkedHashMap<>());
-              jsonDep.put("parent", dep.getName());
-              jsonDep.put("type", dep.getShuffleType());
-              jsonDep.put("partitions", dep.getNumPartitions());
-              json.accumulate(ent.getKey().toString(), jsonDep);
-            }
-          }
         } else {
           if (out != null) {
             out.print(ent.getValue().toString());
@@ -667,7 +822,7 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
   /**
    * Retruns a map which have either primitive or string keys.
    *
-   * This is neccessary to discard object level comparators which may sort the objects based on some non-trivial logic.
+   * This is necessary to discard object level comparators which may sort the objects based on some non-trivial logic.
    *
    * @param mp
    * @return
@@ -817,11 +972,15 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
     return invokeFlag;
   }
 
+  private String getRuleExcludedRegex() {
+    return conf == null ? "" : conf.get(ConfVars.HIVE_CBO_RULE_EXCLUSION_REGEX.varname, "");
+  }
+
   @VisibleForTesting
   JSONObject outputPlan(Object work, PrintStream out,
       boolean extended, boolean jsonOutput, int indent, String appendToHeader) throws Exception {
     return outputPlan(work, out, extended, jsonOutput, indent, appendToHeader,
-            queryState.getConf().getBoolVar(ConfVars.HIVE_IN_TEST));
+              queryState != null && queryState.getConf().getBoolVar(ConfVars.HIVE_IN_TEST));
   }
 
   public JSONObject outputPlan(Object work, PrintStream out,
@@ -873,6 +1032,12 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
     if (work instanceof Operator) {
       Operator<? extends OperatorDesc> operator =
         (Operator<? extends OperatorDesc>) work;
+      final int visitCnt = operatorVisits.merge(operator, 1, Integer::sum);
+      final int limit = conf.getIntVar(ConfVars.HIVE_EXPLAIN_NODE_VISIT_LIMIT);
+      if (visitCnt == limit) {
+        throw new IllegalStateException(
+            operator + " reached " + ConfVars.HIVE_EXPLAIN_NODE_VISIT_LIMIT.varname + "(" + limit + ")");
+      }
       if (operator.getConf() != null) {
         String appender = isLogical ? " (" + operator.getOperatorId() + ")" : "";
         JSONObject jsonOut = outputPlan(operator.getConf(), out, extended,
@@ -893,15 +1058,12 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
         }
       }
 
-      if (!visitedOps.contains(operator) || !isLogical) {
-        visitedOps.add(operator);
-        if (operator.getChildOperators() != null) {
-          int cindent = jsonOutput ? 0 : indent + 2;
-          for (Operator<? extends OperatorDesc> op : operator.getChildOperators()) {
-            JSONObject jsonOut = outputPlan(op, out, extended, jsonOutput, cindent, "", inTest);
-            if (jsonOutput) {
-              ((JSONObject)json.get(JSONObject.getNames(json)[0])).accumulate("children", jsonOut);
-            }
+      if ((visitCnt == 1 || !isLogical) && operator.getChildOperators() != null) {
+        int cindent = jsonOutput ? 0 : indent + 2;
+        for (Operator<? extends OperatorDesc> op : operator.getChildOperators()) {
+          JSONObject jsonOut = outputPlan(op, out, extended, jsonOutput, cindent, "", inTest);
+          if (jsonOutput) {
+            ((JSONObject) json.get(JSONObject.getNames(json)[0])).accumulate("children", jsonOut);
           }
         }
       }
@@ -948,14 +1110,8 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
 
           Object val = null;
           try {
-            if(postProcess(xpl_note)) {
-              val = m.invoke(work, inTest);
-            }
-            else{
-              val = m.invoke(work);
-            }
-          }
-          catch (InvocationTargetException ex) {
+            val = m.invoke(work);
+          } catch (InvocationTargetException ex) {
             // Ignore the exception, this may be caused by external jars
             val = null;
           }
@@ -1072,15 +1228,6 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
       return json;
     }
     return null;
-  }
-
-  /**
-   * use case: this is only use for testing purposes. For instance, we might
-   * want to sort the expressions in a filter so we get deterministic comparable
-   * golden files
-   */
-  private boolean postProcess(Explain exp) {
-    return exp.postProcess();
   }
 
   /**
@@ -1298,5 +1445,46 @@ public class ExplainTask extends Task<ExplainWork> implements Serializable {
   @Override
   public boolean canExecuteInParallel() {
     return false;
+  }
+
+
+  /**
+   * Returns EXPLAIN EXTENDED output for a semantically analyzed query.
+   *
+   * @param sem semantic analyzer for analyzed query
+   * @param plan query plan
+   * @param astTree AST tree dump
+   */
+  public static String getExplainOutput(BaseSemanticAnalyzer sem, QueryPlan plan, ASTNode astTree,
+      QueryState queryState, Context context, HiveConf conf) throws IOException {
+    String ret = null;
+    ExplainTask task = new ExplainTask();
+    task.initialize(queryState, plan, null, context);
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    PrintStream ps = new PrintStream(baos);
+    try {
+      List<Task<?>> rootTasks = sem.getAllRootTasks();
+      boolean isExtended = conf.getBoolVar(ConfVars.HIVE_LOG_EXPLAIN_OUTPUT_INCLUDE_EXTENDED);
+      if (conf.getBoolVar(ConfVars.HIVE_SERVER2_WEBUI_SHOW_GRAPH)) {
+        JSONObject jsonPlan = task.getJSONPlan(
+            null, rootTasks, sem.getFetchTask(), true, isExtended, true, sem.getCboInfo(),
+            plan.getOptimizedCBOPlan(), plan.getOptimizedQueryString());
+        if (jsonPlan.getJSONObject(ExplainTask.STAGE_DEPENDENCIES) != null &&
+            jsonPlan.getJSONObject(ExplainTask.STAGE_DEPENDENCIES).length() <=
+                conf.getIntVar(ConfVars.HIVE_SERVER2_WEBUI_MAX_GRAPH_SIZE)) {
+          ret = jsonPlan.toString();
+        } else {
+          ret = null;
+        }
+      } else {
+        task.getJSONPlan(ps, rootTasks, sem.getFetchTask(), false, isExtended, true, sem.getCboInfo(),
+            plan.getOptimizedCBOPlan(), plan.getOptimizedQueryString());
+        ret = baos.toString();
+      }
+    } catch (Exception e) {
+      LOG.warn("Exception generating explain output: " + e, e);
+    }
+
+    return ret;
   }
 }

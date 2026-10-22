@@ -9,16 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
+import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentLengthException;
+import org.apache.hadoop.hive.ql.exec.UDFArgumentTypeException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
@@ -29,6 +32,11 @@ import org.apache.hadoop.io.LongWritable;
 /**
  * GenericUDFEpochMilli.
  */
+@Description(name = "to_epoch_milli",
+        value = "_FUNC_(timestamp) - Converts the specified timestamp to number of milliseconds since 1970-01-01",
+        extended = "Example:\n"
+                + "  > SELECT _FUNC_(cast('2012-02-11 04:30:00' as timestamp));" +
+                "1328934600000")
 public class GenericUDFEpochMilli extends GenericUDF {
 
   private transient final LongWritable result = new LongWritable();
@@ -43,8 +51,11 @@ public class GenericUDFEpochMilli extends GenericUDF {
     }
     if (arguments[0] instanceof TimestampObjectInspector) {
       tsOi = (TimestampObjectInspector) arguments[0];
-    } else {
+    } else if (arguments[0] instanceof TimestampLocalTZObjectInspector) {
       tsWithLocalTzOi = (TimestampLocalTZObjectInspector) arguments[0];
+    } else {
+      throw new UDFArgumentTypeException(0,
+          String.format("%s only takes TIMESTAMP, got %s", getFuncName(), arguments[0].getTypeName()));
     }
     return PrimitiveObjectInspectorFactory.writableLongObjectInspector;
   }

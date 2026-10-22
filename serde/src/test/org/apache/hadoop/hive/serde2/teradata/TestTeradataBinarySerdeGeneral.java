@@ -9,17 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.teradata;
 
 import com.google.common.io.BaseEncoding;
-import junit.framework.TestCase;
+
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.io.ByteWritable;
 import org.apache.hadoop.hive.serde2.io.DateWritableV2;
@@ -37,25 +38,29 @@ import org.junit.Assert;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
+import org.junit.Before;
+import org.junit.Test;
 
 /**
  * Test all the data types supported for Teradata Binary Format.
  */
-public class TestTeradataBinarySerdeGeneral extends TestCase {
+public class TestTeradataBinarySerdeGeneral {
 
   private final TeradataBinarySerde serde = new TeradataBinarySerde();
   private final Properties props = new Properties();
 
-  protected void setUp() throws Exception {
+  @Before
+  public void setUp() throws Exception {
     props.setProperty(serdeConstants.LIST_COLUMNS,
         "TD_CHAR, TD_VARCHAR, TD_BIGINT, TD_INT, TD_SMALLINT, TD_BYTEINT, "
             + "TD_FLOAT,TD_DECIMAL,TD_DATE, TD_TIMESTAMP, TD_VARBYTE");
     props.setProperty(serdeConstants.LIST_COLUMN_TYPES,
         "char(3),varchar(100),bigint,int,smallint,tinyint,double,decimal(31,30),date,timestamp,binary");
 
-    serde.initialize(null, props);
+    serde.initialize(null, props, null);
   }
 
+  @Test
   public void testDeserializeAndSerialize() throws Exception {
     BytesWritable in = new BytesWritable(BaseEncoding.base16().lowerCase().decode(
         "00004e6f762020202020201b006120646179203d2031312f31312f31312020202020202020203435ec10000000000000c5feffff"
@@ -81,6 +86,7 @@ public class TestTeradataBinarySerdeGeneral extends TestCase {
     Assert.assertTrue(Arrays.equals(in.copyBytes(), res.copyBytes()));
   }
 
+  @Test
   public void testDeserializeAndSerializeWithNull() throws Exception {
     //null bitmap: 0160 -> 00000001 01100000, 7th, 9th, 10th is null
     BytesWritable in = new BytesWritable(BaseEncoding.base16().lowerCase().decode(
@@ -98,6 +104,7 @@ public class TestTeradataBinarySerdeGeneral extends TestCase {
     Assert.assertTrue(Arrays.equals(in.copyBytes(), res.copyBytes()));
   }
 
+  @Test
   public void testDeserializeAndSerializeAllNull() throws Exception {
     BytesWritable in = new BytesWritable(BaseEncoding.base16().lowerCase().decode(
         "ffe0202020202020202020000000000000000000000000000000000000000000000000000000000000000000000000000000000"
@@ -119,6 +126,7 @@ public class TestTeradataBinarySerdeGeneral extends TestCase {
     Assert.assertTrue(Arrays.equals(in.copyBytes(), res.copyBytes()));
   }
 
+  @Test
   public void testDeserializeCorruptedRecord() throws Exception {
     BytesWritable in = new BytesWritable(BaseEncoding.base16().lowerCase().decode(
         "00004e6f762020202020201b006120646179203d2031312f31312f31312020202020202020203435ec10000000000000c5feff"

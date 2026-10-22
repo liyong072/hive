@@ -1,7 +1,9 @@
 PREHOOK: query: drop table if exists acid_ivot_stage
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: drop table if exists acid_ivot_stage
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: create table acid_ivot_stage(
     ctinyint TINYINT,
     csmallint SMALLINT,
@@ -106,7 +108,7 @@ Table Parameters:
 	numFiles            	0                   
 	numRows             	0                   
 	rawDataSize         	0                   
-	totalSize           	0                   
+	totalSize           	#Masked#
 	transactional       	true                
 	transactional_properties	default             
 #### A masked pattern was here ####
@@ -119,8 +121,6 @@ Compressed:         	No
 Num Buckets:        	1                   	 
 Bucket Columns:     	[cint]              	 
 Sort Columns:       	[]                  	 
-Storage Desc Params:	 	 
-	serialization.format	1                   
 PREHOOK: query: insert into acid_ivot select * from acid_ivot_stage
 PREHOOK: type: QUERY
 PREHOOK: Input: default@acid_ivot_stage
@@ -173,7 +173,7 @@ Table Parameters:
 	numFiles            	1                   
 	numRows             	12288               
 	rawDataSize         	0                   
-	totalSize           	295638              
+	totalSize           	#Masked#
 	transactional       	true                
 	transactional_properties	default             
 #### A masked pattern was here ####
@@ -186,8 +186,6 @@ Compressed:         	No
 Num Buckets:        	1                   	 
 Bucket Columns:     	[cint]              	 
 Sort Columns:       	[]                  	 
-Storage Desc Params:	 	 
-	serialization.format	1                   
 PREHOOK: query: explain select count(*) from acid_ivot
 PREHOOK: type: QUERY
 PREHOOK: Input: default@acid_ivot
@@ -251,10 +249,12 @@ POSTHOOK: Input: default@acid_ivot
 PREHOOK: query: drop table acid_ivot
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@acid_ivot
+PREHOOK: Output: database:default
 PREHOOK: Output: default@acid_ivot
 POSTHOOK: query: drop table acid_ivot
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@acid_ivot
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@acid_ivot
 PREHOOK: query: create table acid_ivot(
     ctinyint TINYINT,
@@ -344,7 +344,7 @@ Table Parameters:
 	numFiles            	1                   
 	numRows             	2                   
 	rawDataSize         	0                   
-	totalSize           	1652                
+	totalSize           	#Masked#
 	transactional       	true                
 	transactional_properties	default             
 #### A masked pattern was here ####
@@ -357,8 +357,6 @@ Compressed:         	No
 Num Buckets:        	1                   	 
 Bucket Columns:     	[cint]              	 
 Sort Columns:       	[]                  	 
-Storage Desc Params:	 	 
-	serialization.format	1                   
 PREHOOK: query: explain select count(*) from acid_ivot
 PREHOOK: type: QUERY
 PREHOOK: Input: default@acid_ivot
@@ -442,7 +440,7 @@ Table Parameters:
 	numFiles            	2                   
 	numRows             	4                   
 	rawDataSize         	0                   
-	totalSize           	3304                
+	totalSize           	#Masked#
 	transactional       	true                
 	transactional_properties	default             
 #### A masked pattern was here ####
@@ -455,8 +453,6 @@ Compressed:         	No
 Num Buckets:        	1                   	 
 Bucket Columns:     	[cint]              	 
 Sort Columns:       	[]                  	 
-Storage Desc Params:	 	 
-	serialization.format	1                   
 PREHOOK: query: explain select count(*) from acid_ivot
 PREHOOK: type: QUERY
 PREHOOK: Input: default@acid_ivot
@@ -536,7 +532,7 @@ Table Parameters:
 	numFiles            	3                   
 	numRows             	12292               
 	rawDataSize         	0                   
-	totalSize           	298943              
+	totalSize           	#Masked#
 	transactional       	true                
 	transactional_properties	default             
 #### A masked pattern was here ####
@@ -549,8 +545,6 @@ Compressed:         	No
 Num Buckets:        	1                   	 
 Bucket Columns:     	[cint]              	 
 Sort Columns:       	[]                  	 
-Storage Desc Params:	 	 
-	serialization.format	1                   
 PREHOOK: query: explain select count(*) from acid_ivot
 PREHOOK: type: QUERY
 PREHOOK: Input: default@acid_ivot
@@ -572,10 +566,12 @@ STAGE PLANS:
 PREHOOK: query: drop table acid_ivot
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@acid_ivot
+PREHOOK: Output: database:default
 PREHOOK: Output: default@acid_ivot
 POSTHOOK: query: drop table acid_ivot
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@acid_ivot
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@acid_ivot
 PREHOOK: query: create table acid_ivot like src
 PREHOOK: type: CREATETABLE
@@ -603,10 +599,11 @@ Retention:          	0
 Table Type:         	MANAGED_TABLE       	 
 Table Parameters:	 	 
 	COLUMN_STATS_ACCURATE	{\"BASIC_STATS\":\"true\",\"COLUMN_STATS\":{\"key\":\"true\",\"value\":\"true\"}}
+	bucketing_version   	2                   
 	numFiles            	0                   
 	numRows             	0                   
 	rawDataSize         	0                   
-	totalSize           	0                   
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 
@@ -647,10 +644,11 @@ Retention:          	0
 Table Type:         	MANAGED_TABLE       	 
 Table Parameters:	 	 
 	COLUMN_STATS_ACCURATE	{\"BASIC_STATS\":\"true\",\"COLUMN_STATS\":{\"key\":\"true\",\"value\":\"true\"}}
+	bucketing_version   	2                   
 	numFiles            	1                   
 	numRows             	500                 
 	rawDataSize         	5312                
-	totalSize           	5812                
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 
@@ -737,7 +735,7 @@ Partition Parameters:
 	numFiles            	1                   
 	numRows             	0                   
 	rawDataSize         	0                   
-	totalSize           	5812                
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 
@@ -777,9 +775,9 @@ STAGE PLANS:
                 TableScan
                   alias: sp
                   filterExpr: ((ds = '2008-04-08') and (hr = '11')) (type: boolean)
-                  Statistics: Num rows: 99 Data size: 58912 Basic stats: PARTIAL Column stats: COMPLETE
+                  Statistics: Num rows: 98 Data size: 58904 Basic stats: PARTIAL Column stats: COMPLETE
                   Select Operator
-                    Statistics: Num rows: 99 Data size: 58912 Basic stats: PARTIAL Column stats: COMPLETE
+                    Statistics: Num rows: 98 Data size: 58904 Basic stats: PARTIAL Column stats: COMPLETE
                     Group By Operator
                       aggregations: count()
                       minReductionHashAggr: 0.99
@@ -787,11 +785,12 @@ STAGE PLANS:
                       outputColumnNames: _col0
                       Statistics: Num rows: 1 Data size: 8 Basic stats: PARTIAL Column stats: COMPLETE
                       Reduce Output Operator
+                        null sort order: 
                         sort order: 
                         Statistics: Num rows: 1 Data size: 8 Basic stats: PARTIAL Column stats: COMPLETE
                         value expressions: _col0 (type: bigint)
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -861,7 +860,7 @@ Partition Parameters:
 	numFiles            	2                   
 	numRows             	0                   
 	rawDataSize         	0                   
-	totalSize           	5820                
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 
@@ -911,7 +910,7 @@ Partition Parameters:
 	numFiles            	2                   
 	numRows             	502                 
 	rawDataSize         	5318                
-	totalSize           	5820                
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 

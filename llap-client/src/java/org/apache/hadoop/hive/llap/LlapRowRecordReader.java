@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap;
@@ -126,9 +127,7 @@ public class LlapRowRecordReader implements RecordReader<NullWritable, Row> {
         rowObj = serde.deserialize(data);
         setRowFromStruct(value, rowObj, rowOI);
       } catch (SerDeException err) {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Error deserializing row from data: " + data);
-        }
+        LOG.debug("Error deserializing row from data: {}", data);
         throw new IOException("Error deserializing row data", err);
       }
     }
@@ -254,7 +253,7 @@ public class LlapRowRecordReader implements RecordReader<NullWritable, Row> {
     props.put(serdeConstants.LIST_COLUMN_TYPES, types);
     props.put(serdeConstants.ESCAPE_CHAR, "\\");
     AbstractSerDe createdSerDe = createSerDe();
-    createdSerDe.initialize(conf, props);
+    createdSerDe.initialize(conf, props, null);
 
     return createdSerDe;
   }

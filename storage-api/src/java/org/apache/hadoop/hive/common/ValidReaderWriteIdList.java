@@ -9,14 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common;
+
+import org.apache.hive.common.util.SuppressFBWarnings;
 
 import java.util.Arrays;
 import java.util.BitSet;
@@ -51,6 +54,8 @@ public class ValidReaderWriteIdList implements ValidWriteIdList {
   public ValidReaderWriteIdList(String tableName, long[] exceptions, BitSet abortedBits, long highWatermark) {
     this(tableName, exceptions, abortedBits, highWatermark, Long.MAX_VALUE);
   }
+
+  @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "Ref external obj for efficiency")
   public ValidReaderWriteIdList(String tableName,
                                 long[] exceptions, BitSet abortedBits, long highWatermark, long minOpenWriteId) {
     this.tableName = tableName;
@@ -62,8 +67,10 @@ public class ValidReaderWriteIdList implements ValidWriteIdList {
     this.highWatermark = highWatermark;
   }
 
-  public ValidReaderWriteIdList(String value) {
-    readFromString(value);
+  public static ValidReaderWriteIdList fromValue(String value) {
+    ValidReaderWriteIdList rdWrtList = new ValidReaderWriteIdList();
+    rdWrtList.readFromString(value);
+    return rdWrtList;
   }
 
   @Override
@@ -82,6 +89,7 @@ public class ValidReaderWriteIdList implements ValidWriteIdList {
   public boolean isValidBase(long writeId) {
     return (writeId < minOpenWriteId) && (writeId <= highWatermark);
   }
+
   @Override
   public RangeResponse isWriteIdRangeValid(long minWriteId, long maxWriteId) {
     // check the easy cases first
@@ -213,6 +221,7 @@ public class ValidReaderWriteIdList implements ValidWriteIdList {
   }
 
   @Override
+  @SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "Expose internal rep for efficiency")
   public long[] getInvalidWriteIds() {
     return exceptions;
   }
@@ -257,8 +266,9 @@ public class ValidReaderWriteIdList implements ValidWriteIdList {
     }
   }
 
-  public ValidReaderWriteIdList updateHighWatermark(long value) {
-    return new ValidReaderWriteIdList(tableName, exceptions, abortedBits, value, minOpenWriteId);
+  public void setHighWatermark(long value) {
+    this.highWatermark = value;
+    this.minOpenWriteId = Math.min(minOpenWriteId, value + 1);
   }
 }
 

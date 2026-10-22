@@ -9,14 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl;
 
+import org.apache.hadoop.hive.ql.parse.repl.load.message.AddCheckConstraintHandler;
+import org.apache.hadoop.hive.ql.parse.repl.load.message.AddDefaultConstraintHandler;
 import org.apache.hadoop.hive.ql.parse.repl.load.message.AddNotNullConstraintHandler;
 import org.apache.hadoop.hive.ql.parse.repl.load.message.AddForeignKeyHandler;
 import org.apache.hadoop.hive.ql.parse.repl.load.message.AddPrimaryKeyHandler;
@@ -96,6 +99,12 @@ public enum DumpType {
       return new RenameTableHandler();
     }
   },
+  EVENT_RENAME_DROP_TABLE("EVENT_RENAME_DROP_TABLE") {
+    @Override
+    public MessageHandler handler() {
+      return new DropTableHandler();
+    }
+  },
   EVENT_TRUNCATE_TABLE("EVENT_TRUNCATE_TABLE") {
     @Override
     public MessageHandler handler() {
@@ -150,6 +159,18 @@ public enum DumpType {
       return new AddNotNullConstraintHandler();
     }
   },
+  EVENT_ADD_DEFAULTCONSTRAINT("EVENT_ADD_DEFAULTCONSTRAINT") {
+    @Override
+    public MessageHandler handler() {
+      return new AddDefaultConstraintHandler();
+    }
+  },
+  EVENT_ADD_CHECKCONSTRAINT("EVENT_ADD_CHECKCONSTRAINT") {
+    @Override
+    public MessageHandler handler() {
+      return new AddCheckConstraintHandler();
+    }
+  },
   EVENT_DROP_CONSTRAINT("EVENT_DROP_CONSTRAINT") {
     @Override
     public MessageHandler handler() {
@@ -175,6 +196,18 @@ public enum DumpType {
     }
   },
   INCREMENTAL("INCREMENTAL") {
+    @Override
+    public MessageHandler handler() {
+      return new DefaultHandler();
+    }
+  },
+  PRE_OPTIMIZED_BOOTSTRAP("PRE_OPTIMIZED_BOOTSTRAP") {
+    @Override
+    public MessageHandler handler() {
+      return new DefaultHandler();
+    }
+  },
+  OPTIMIZED_BOOTSTRAP("OPTIMIZED_BOOTSTRAP") {
     @Override
     public MessageHandler handler() {
       return new DefaultHandler();

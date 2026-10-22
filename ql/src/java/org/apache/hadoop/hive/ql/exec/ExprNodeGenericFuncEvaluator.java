@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -21,12 +22,13 @@ package org.apache.hadoop.hive.ql.exec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
+import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBaseCompare;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFCase;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFWhen;
 import org.apache.hadoop.hive.serde2.objectinspector.ConstantObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -114,11 +116,32 @@ public class ExprNodeGenericFuncEvaluator extends ExprNodeEvaluator<ExprNodeGene
       }
     }
     genericUDF = expr.getGenericUDF();
-    if (isEager &&
-        (genericUDF instanceof GenericUDFCase || genericUDF instanceof GenericUDFWhen)) {
+    if (isEager && genericUDF instanceof GenericUDFWhen) {
       throw new HiveException("Stateful expressions cannot be used inside of CASE");
     }
   }
+
+  // This method attempts to figure out the best Configuration object to use for creating
+  // a dummy MapredContext. It is unfortunate that the paths that initialize this object
+  // do not consistently provide a Configuration object.
+  private Configuration getBestAvailableConf() {
+    // First attempt to get the configuration if any that ExprNodeGenericFuncEvaluator
+    // was initialized with
+    if (getConf() != null) {
+      return getConf();
+    }
+
+    // Second attempt, try to get the sesssion's configuration
+    SessionState ss = SessionState.get();
+    if (ss != null && ss.getConf() != null) {
+      return ss.getConf();
+    }
+
+    // Last resort is to create a new HiveConf object. It does not have any "runtime"
+    // changes to the configuration but that is the best we can do if we get this far.
+    return new HiveConf();
+  }
+
 
   @Override
   public ObjectInspector initialize(ObjectInspector rowInspector) throws HiveException {
@@ -140,8 +163,20 @@ public class ExprNodeGenericFuncEvaluator extends ExprNodeEvaluator<ExprNodeGene
       childrenOIs[i] = children[i].initialize(rowInspector);
     }
     MapredContext context = MapredContext.get();
+    // It is possible that there is no context at this point. For example a context is not created
+    // when "hive.fetch.task.conversion" occurs.
     if (context != null) {
       context.setup(genericUDF);
+    } else if (MapredContext.needConfigure(genericUDF)) {
+      // It is a bit unfortunate that currently the UDF configuration signature expects a
+      // MapredContext (even if execution is tez or another engine) - this causes an
+      // impedence mismatch. For example: MapredContext has Reporter objects that may or
+      // may not make sense for the current engine.
+      //
+      // We attempt to create a dummyContext that has at least access to a Configuration
+      // object.
+      MapredContext dummyContext = MapredContext.createDummy(getBestAvailableConf());
+      dummyContext.setup(genericUDF);
     }
     outputOI = genericUDF.initializeAndFoldConstants(childrenOIs);
     isConstant = ObjectInspectorUtils.isConstantObjectInspector(outputOI)

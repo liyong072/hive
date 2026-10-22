@@ -1,18 +1,20 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.accumulo.mr;
 
@@ -26,6 +28,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -49,7 +52,6 @@ import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
 import org.apache.accumulo.core.util.Pair;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.accumulo.AccumuloConnectionParameters;
 import org.apache.hadoop.hive.accumulo.AccumuloHiveConstants;
@@ -252,8 +254,7 @@ public class TestHiveAccumuloTableInputFormat {
 
     is.addOption(PrimitiveComparisonFilter.P_COMPARE_CLASS, DoubleCompare.class.getName());
     is.addOption(PrimitiveComparisonFilter.COMPARE_OPT_CLASS, GreaterThanOrEqual.class.getName());
-    is.addOption(PrimitiveComparisonFilter.CONST_VAL,
-        new String(Base64.encodeBase64(parseDoubleBytes("55.6"))));
+    is.addOption(PrimitiveComparisonFilter.CONST_VAL, Base64.getEncoder().encodeToString(parseDoubleBytes("55.6")));
     is.addOption(PrimitiveComparisonFilter.COLUMN, "cf:dgrs");
     scan.addScanIterator(is);
 
@@ -262,8 +263,7 @@ public class TestHiveAccumuloTableInputFormat {
 
     is2.addOption(PrimitiveComparisonFilter.P_COMPARE_CLASS, LongCompare.class.getName());
     is2.addOption(PrimitiveComparisonFilter.COMPARE_OPT_CLASS, LessThan.class.getName());
-    is2.addOption(PrimitiveComparisonFilter.CONST_VAL,
-        new String(Base64.encodeBase64(parseLongBytes("778"))));
+    is2.addOption(PrimitiveComparisonFilter.CONST_VAL, Base64.getEncoder().encodeToString(parseLongBytes("778")));
     is2.addOption(PrimitiveComparisonFilter.COLUMN, "cf:mills");
 
     scan.addScanIterator(is2);
@@ -310,8 +310,7 @@ public class TestHiveAccumuloTableInputFormat {
 
     is.addOption(PrimitiveComparisonFilter.P_COMPARE_CLASS, IntCompare.class.getName());
     is.addOption(PrimitiveComparisonFilter.COMPARE_OPT_CLASS, GreaterThan.class.getName());
-    is.addOption(PrimitiveComparisonFilter.CONST_VAL,
-        new String(Base64.encodeBase64(parseIntBytes("1"))));
+    is.addOption(PrimitiveComparisonFilter.CONST_VAL, Base64.getEncoder().encodeToString(parseIntBytes("1")));
     is.addOption(PrimitiveComparisonFilter.COLUMN, "cf:sid");
     scan.addScanIterator(is);
     boolean foundMark = false;
@@ -355,8 +354,7 @@ public class TestHiveAccumuloTableInputFormat {
 
     is.addOption(PrimitiveComparisonFilter.P_COMPARE_CLASS, StringCompare.class.getName());
     is.addOption(PrimitiveComparisonFilter.COMPARE_OPT_CLASS, Equal.class.getName());
-    is.addOption(PrimitiveComparisonFilter.CONST_VAL,
-        new String(Base64.encodeBase64("brian".getBytes())));
+    is.addOption(PrimitiveComparisonFilter.CONST_VAL, Base64.getEncoder().encodeToString("brian".getBytes()));
     is.addOption(PrimitiveComparisonFilter.COLUMN, "cf:name");
     scan.addScanIterator(is);
     boolean foundName = false;
@@ -411,8 +409,7 @@ public class TestHiveAccumuloTableInputFormat {
 
     is.addOption(PrimitiveComparisonFilter.P_COMPARE_CLASS, StringCompare.class.getName());
     is.addOption(PrimitiveComparisonFilter.COMPARE_OPT_CLASS, Equal.class.getName());
-    is.addOption(PrimitiveComparisonFilter.CONST_VAL,
-        new String(Base64.encodeBase64(new byte[] {'0'})));
+    is.addOption(PrimitiveComparisonFilter.CONST_VAL, Base64.getEncoder().encodeToString(new byte[] {'0'}));
     is.addOption(PrimitiveComparisonFilter.COLUMN, "cf:cq");
 
     // Mock out the predicate handler because it's just easier

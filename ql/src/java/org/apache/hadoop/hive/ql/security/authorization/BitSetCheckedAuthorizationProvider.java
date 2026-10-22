@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.security.authorization;
@@ -28,6 +29,8 @@ import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.HiveObjectType;
 import org.apache.hadoop.hive.metastore.api.PrincipalPrivilegeSet;
 import org.apache.hadoop.hive.metastore.api.PrivilegeGrantInfo;
+import org.apache.hadoop.hive.ql.hooks.ReadEntity;
+import org.apache.hadoop.hive.ql.hooks.WriteEntity;
 import org.apache.hadoop.hive.ql.metadata.AuthorizationException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
@@ -63,8 +66,8 @@ public abstract class BitSetCheckedAuthorizationProvider extends
   }
 
   @Override
-  public void authorize(Privilege[] inputRequiredPriv,
-      Privilege[] outputRequiredPriv) throws HiveException, AuthorizationException {
+  public void authorizeDbLevelOperations(Privilege[] inputRequiredPriv, Privilege[] outputRequiredPriv,
+      Collection<ReadEntity> inputs, Collection<WriteEntity> outputs) throws HiveException, AuthorizationException {
 
     BitSetChecker checker = BitSetChecker.getBitSetChecker(inputRequiredPriv,
         outputRequiredPriv);

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.orc;
@@ -47,8 +48,8 @@ import org.apache.orc.impl.OrcTail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Output;
+import com.esotericsoftware.kryo.kryo5.Kryo;
+import com.esotericsoftware.kryo.kryo5.io.Output;
 import com.google.common.collect.Lists;
 
 /** Metastore-based footer cache storing serialized footers. Also has a local cache. */
@@ -97,7 +98,7 @@ public class ExternalCache implements FooterCache {
   public void configure(HiveConf queryConfig) {
     this.conf = queryConfig;
     this.sarg = ConvertAstToSearchArg.createFromConf(conf);
-    this.isPpdEnabled = HiveConf.getBoolVar(conf, ConfVars.HIVEOPTINDEXFILTER)
+    this.isPpdEnabled = HiveConf.getBoolVar(conf, ConfVars.HIVE_OPT_INDEX_FILTER)
         && HiveConf.getBoolVar(conf, ConfVars.HIVE_ORC_MS_FOOTER_CACHE_PPD);
     this.isInTest = HiveConf.getBoolVar(conf, ConfVars.HIVE_IN_TEST);
     this.sargIsOriginal = this.sargNotIsOriginal = null;
@@ -296,9 +297,7 @@ public class ExternalCache implements FooterCache {
       String newColName = RecordReaderImpl.encodeTranslatedSargColumn(rootColumn, colId);
       SearchArgumentFactory.setPredicateLeafColumn(pl, newColName);
     }
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("SARG translated into " + sarg);
-    }
+    LOG.debug("SARG translated into {}", sarg);
   }
 
   private static OrcTail createOrcTailFromMs(
@@ -309,9 +308,7 @@ public class ExternalCache implements FooterCache {
     FileStatus fs = file.getFileStatus();
     ByteBuffer copy = bb.duplicate();
     try {
-      OrcTail orcTail = ReaderImpl.extractFileTail(copy, fs.getLen(), fs.getModificationTime());
-      // trigger lazy read of metadata to make sure serialized data is not corrupted and readable
-      orcTail.getStripeStatistics();
+      OrcTail orcTail = ReaderImpl.extractFileTail(copy, copy.limit(), fs.getModificationTime());
       return orcTail;
     } catch (Exception ex) {
       byte[] data = new byte[bb.remaining()];

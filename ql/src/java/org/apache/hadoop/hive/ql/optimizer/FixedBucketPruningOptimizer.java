@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer;
 
@@ -35,18 +36,17 @@ import org.apache.hadoop.hive.ql.io.sarg.ExpressionTree.Operator;
 import org.apache.hadoop.hive.ql.io.sarg.PredicateLeaf;
 import org.apache.hadoop.hive.ql.io.sarg.SearchArgument;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.optimizer.PrunerOperatorFactory.FilterPruner;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveExcept;
 import org.apache.hadoop.hive.ql.optimizer.ppr.PartitionPruner;
 import org.apache.hadoop.hive.ql.parse.ParseContext;
 import org.apache.hadoop.hive.ql.parse.PrunedPartitionList;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
+import org.apache.hadoop.hive.serde2.io.DateWritable;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorConverters;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorConverters.Converter;
@@ -69,7 +69,7 @@ public class FixedBucketPruningOptimizer extends Transform {
     this.compat = compat;
   }
 
-  public class NoopWalker implements NodeProcessor {
+  public class NoopWalker implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
         Object... nodeOutputs) throws SemanticException {
@@ -82,7 +82,7 @@ public class FixedBucketPruningOptimizer extends Transform {
 
     @Override
     protected void generatePredicate(NodeProcessorCtx procCtx,
-        FilterOperator fop, TableScanOperator top) throws SemanticException{
+                                     FilterOperator fop, TableScanOperator top) throws SemanticException{
       FixedBucketPruningOptimizerCtxt ctxt = ((FixedBucketPruningOptimizerCtxt) procCtx);
       Table tbl = top.getConf().getTableMetadata();
       int numBuckets = tbl.getNumBuckets();
@@ -120,6 +120,7 @@ public class FixedBucketPruningOptimizer extends Transform {
       for (StructField fs : tbl.getFields()) {
         if(fs.getFieldName().equals(bucketCol)) {
           bucketField = fs;
+          break;
         }
       }
       Preconditions.checkArgument(bucketField != null);
@@ -165,16 +166,15 @@ public class FixedBucketPruningOptimizer extends Transform {
       } else if (expr.getOperator() == Operator.AND) {
         boolean found = false;
         for (ExpressionTree subExpr : expr.getChildren()) {
-          if (subExpr.getOperator() != Operator.LEAF) {
-            return;
-          }
-          // one of the branches is definitely a bucket-leaf
-          PredicateLeaf l = leaves.get(subExpr.getLeaf());
-          if (bucketLeaves.contains(l)) {
-            if (!addLiteral(literals, l)) {
-              return;
+          if (subExpr.getOperator() == Operator.LEAF) {
+            // one of the branches is definitely a bucket-leaf
+            PredicateLeaf l = leaves.get(subExpr.getLeaf());
+            if (bucketLeaves.contains(l)) {
+              if (!addLiteral(literals, l)) {
+                return;
+              }
+              found = true;
             }
-            found = true;
           }
         }
         if (!found) {
@@ -195,12 +195,15 @@ public class FixedBucketPruningOptimizer extends Transform {
             return;
           }
         }
+      } else if (expr.getOperator() == Operator.NOT) {
+        // TODO: think we can handle NOT IS_NULL?
+        return;
       }
       // invariant: bucket-col IN literals of type bucketField
       BitSet bs = new BitSet(numBuckets);
       bs.clear();
       PrimitiveObjectInspector bucketOI = (PrimitiveObjectInspector)bucketField.getFieldObjectInspector();
-      PrimitiveObjectInspector constOI = PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(bucketOI.getPrimitiveCategory());
+      PrimitiveObjectInspector constOI = PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(bucketOI.getTypeInfo());
       // Fetch the bucketing version from table scan operator
       int bucketingVersion = top.getConf().getTableMetadata().getBucketingVersion();
 
@@ -249,9 +252,12 @@ public class FixedBucketPruningOptimizer extends Transform {
       // This is a bit hackish to fix mismatch between SARG and Hive types
       // for Timestamp and Date. TODO: Move those types to storage-api.
       if (o instanceof java.sql.Date) {
-        return Date.valueOf(o.toString());
+        java.sql.Date sqlDate = (java.sql.Date)o;
+        return Date.ofEpochDay(
+            DateWritable.millisToDays(sqlDate.getTime()));
       } else if (o instanceof java.sql.Timestamp) {
-        return Timestamp.valueOf(o.toString());
+        java.sql.Timestamp sqlTimestamp = (java.sql.Timestamp)o;
+        return Timestamp.ofEpochMilli(sqlTimestamp.getTime(), sqlTimestamp.getNanos());
       }
       return o;
     }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.thrift_test;
@@ -34,12 +35,14 @@ import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.util.ExitUtil;
 import org.apache.thrift.TBase;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.protocol.TProtocolFactory;
 import org.apache.thrift.transport.TIOStreamTransport;
+import org.apache.thrift.transport.TTransportException;
 
 /**
  * CreateSequenceFile.
@@ -53,7 +56,7 @@ public final class CreateSequenceFile {
 
   public static void usage() {
     System.out.println("Usage: CreateSequenceFile <output_sequencefile>");
-    System.exit(1);
+    ExitUtil.terminate(1);
   }
 
   /**
@@ -67,7 +70,12 @@ public final class CreateSequenceFile {
 
     public ThriftSerializer() {
       bos = new ByteStream.Output();
-      TIOStreamTransport outTransport = new TIOStreamTransport(bos);
+      TIOStreamTransport outTransport = null;
+      try {
+        outTransport = new TIOStreamTransport(bos);
+      } catch (TTransportException e) {
+        e.printStackTrace();
+      }
       TProtocolFactory outFactory = new TBinaryProtocol.Factory();
       outProtocol = outFactory.getProtocol(outTransport);
     }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore;
 
@@ -32,9 +33,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * This is a lock handler implementation for the materializations rebuild.
  * It is lightweight: it does not persist any information to metastore db.
  * Its states are as follows:
- * 1) request lock -> 2) ACQUIRED -> 4) COMMIT_READY -> 6) release lock
- *                                -> 5) EXPIRED      ->
- *                 -> 3) NOT_ACQUIRED
+ * 1) request lock -&gt; 2) ACQUIRED -&gt; 4) COMMIT_READY -&gt; 6) release lock
+ *                                -&gt; 5) EXPIRED      -&gt;
+ *                 -&gt; 3) NOT_ACQUIRED
  * First, the rebuild operation will ACQUIRE the lock. If other rebuild
  * operation for the same operation is already running, we lock status
  * will be NOT_ACQUIRED.
@@ -107,7 +108,6 @@ public class MaterializationsRebuildLockHandler {
    * @param dbName the db name of the materialization
    * @param tableName the table name of the materialization
    * @param txnId the transaction id for the rebuild
-   * @throws MetaException
    */
   public boolean refreshLockResource(String dbName, String tableName, long txnId) {
     final ResourceLock prevResourceLock = locks.get(Warehouse.getQualifiedName(dbName, tableName));
@@ -127,7 +127,6 @@ public class MaterializationsRebuildLockHandler {
    * @param tableName the table name of the materialization
    * @param txnId the transaction id for the rebuild
    * @return true if the lock could be released properly, false otherwise
-   * @throws MetaException
    */
   public boolean unlockResource(String dbName, String tableName, long txnId) {
     final String fullyQualifiedName = Warehouse.getQualifiedName(dbName, tableName);
@@ -141,7 +140,6 @@ public class MaterializationsRebuildLockHandler {
   /**
    * Method that removes from the handler those locks that have expired.
    * @param timeout time after which we consider the locks to have expired
-   * @throws MetaException
    */
   public long cleanupResourceLocks(long timeout) {
     long removed = 0L;

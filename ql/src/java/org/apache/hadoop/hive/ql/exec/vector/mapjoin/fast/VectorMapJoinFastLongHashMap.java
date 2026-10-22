@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
@@ -21,9 +22,7 @@ package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
 import java.io.IOException;
 
 import org.apache.hadoop.hive.common.MemoryEstimate;
-import org.apache.hadoop.hive.ql.util.JavaDataModel;
-// import org.slf4j.Logger;
-// import org.slf4j.LoggerFactory;
+import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.exec.JoinUtil;
 import org.apache.hadoop.hive.ql.exec.persistence.MatchTracker;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinHashMapResult;
@@ -53,7 +52,7 @@ public class VectorMapJoinFastLongHashMap
 
   private long fullOuterNullKeyValueRef;
 
-  private static class NonMatchedLongHashMapIterator extends VectorMapJoinFastNonMatchedIterator {
+  public static class NonMatchedLongHashMapIterator extends VectorMapJoinFastNonMatchedIterator {
 
     private VectorMapJoinFastLongHashMap hashMap;
 
@@ -66,7 +65,7 @@ public class VectorMapJoinFastLongHashMap
 
     private VectorMapJoinFastValueStore.HashMapResult nonMatchedHashMapResult;
 
-    NonMatchedLongHashMapIterator(MatchTracker matchTracker,
+    public NonMatchedLongHashMapIterator(MatchTracker matchTracker,
         VectorMapJoinFastLongHashMap hashMap) {
       super(matchTracker);
       this.hashMap = hashMap;
@@ -141,10 +140,10 @@ public class VectorMapJoinFastLongHashMap
   }
 
   @Override
-  public void putRow(BytesWritable currentKey, BytesWritable currentValue)
+  public void putRow(long hashCode, BytesWritable currentKey, BytesWritable currentValue)
       throws HiveException, IOException {
 
-    if (!adaptPutRow(currentKey, currentValue)) {
+    if (!adaptPutRow(hashCode, currentKey, currentValue)) {
 
       // Ignore NULL keys, except for FULL OUTER.
       if (isFullOuter) {
@@ -152,6 +151,11 @@ public class VectorMapJoinFastLongHashMap
       }
 
     }
+  }
+
+  @Override
+  public boolean containsLongKey(long currentKey) {
+    return containsKey(currentKey);
   }
 
   /*
@@ -164,7 +168,8 @@ public class VectorMapJoinFastLongHashMap
       testValueBytesWritable = new BytesWritable();
     }
     testValueBytesWritable.set(currentValue, 0, currentValue.length);
-    add(currentKey, testValueBytesWritable);
+    long hashCode = HashCodeUtil.calculateLongHashCode(currentKey);
+    add(hashCode, currentKey, testValueBytesWritable);
   }
 
   @Override
@@ -255,10 +260,10 @@ public class VectorMapJoinFastLongHashMap
       boolean isFullOuter,
       boolean minMaxEnabled,
       HashTableKeyType hashTableKeyType,
-      int initialCapacity, float loadFactor, int writeBuffersSize, long estimatedKeyCount) {
+      int initialCapacity, float loadFactor, int writeBuffersSize, long estimatedKeyCount, TableDesc tableDesc) {
     super(
         isFullOuter, minMaxEnabled, hashTableKeyType,
-        initialCapacity, loadFactor, writeBuffersSize, estimatedKeyCount);
+        initialCapacity, loadFactor, writeBuffersSize, estimatedKeyCount, tableDesc);
     valueStore = new VectorMapJoinFastValueStore(writeBuffersSize);
     fullOuterNullKeyValueRef = 0;
   }

@@ -21,60 +21,82 @@ package org.apache.hadoop.hive.metastore.columnstats.merge;
 
 import static org.apache.hadoop.hive.metastore.columnstats.ColumnsStatsUtils.dateInspectorFromStats;
 
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.hadoop.hive.common.histogram.KllHistogramEstimator;
 import org.apache.hadoop.hive.common.ndv.NumDistinctValueEstimator;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
 import org.apache.hadoop.hive.metastore.api.Date;
 import org.apache.hadoop.hive.metastore.columnstats.cache.DateColumnStatsDataInspector;
 
-public class DateColumnStatsMerger extends ColumnStatsMerger {
+import com.google.common.base.MoreObjects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
+import java.util.List;
+
+public class DateColumnStatsMerger extends ColumnStatsMerger<Date> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(DateColumnStatsMerger.class);
+
   @Override
   public void merge(ColumnStatisticsObj aggregateColStats, ColumnStatisticsObj newColStats) {
+    LOG.debug("Merging statistics: [aggregateColStats:{}, newColStats: {}]", aggregateColStats, newColStats);
+
     DateColumnStatsDataInspector aggregateData = dateInspectorFromStats(aggregateColStats);
     DateColumnStatsDataInspector newData = dateInspectorFromStats(newColStats);
 
-    Date lowValue = min(aggregateData.getLowValue(), newData.getLowValue());
-    aggregateData.setLowValue(lowValue);
-    Date highValue = max(aggregateData.getHighValue(), newData.getHighValue());
-    aggregateData.setHighValue(highValue);
-    aggregateData.setNumNulls(aggregateData.getNumNulls() + newData.getNumNulls());
-    if (aggregateData.getNdvEstimator() == null || newData.getNdvEstimator() == null) {
-      aggregateData.setNumDVs(Math.max(aggregateData.getNumDVs(), newData.getNumDVs()));
-    } else {
-      NumDistinctValueEstimator oldEst = aggregateData.getNdvEstimator();
-      NumDistinctValueEstimator newEst = newData.getNdvEstimator();
-      long ndv = -1;
-      if (oldEst.canMerge(newEst)) {
-        oldEst.mergeEstimators(newEst);
-        ndv = oldEst.estimateNumDistinctValues();
-        aggregateData.setNdvEstimator(oldEst);
-      } else {
-        ndv = Math.max(aggregateData.getNumDVs(), newData.getNumDVs());
-      }
-      LOG.debug("Use bitvector to merge column " + aggregateColStats.getColName() + "'s ndvs of "
-          + aggregateData.getNumDVs() + " and " + newData.getNumDVs() + " to be " + ndv);
-      aggregateData.setNumDVs(ndv);
+    Date lowValue = mergeLowValue(getLowValue(aggregateData), getLowValue(newData));
+    if (lowValue != null) {
+      aggregateData.setLowValue(lowValue);
     }
+    Date highValue = mergeHighValue(getHighValue(aggregateData), getHighValue(newData));
+    if (highValue != null) {
+      aggregateData.setHighValue(highValue);
+    }
+    aggregateData.setNumNulls(mergeNumNulls(aggregateData.getNumNulls(), newData.getNumNulls()));
+
+    NumDistinctValueEstimator oldNDVEst = aggregateData.getNdvEstimator();
+    NumDistinctValueEstimator newNDVEst = newData.getNdvEstimator();
+    List<NumDistinctValueEstimator> ndvEstimatorsList = Arrays.asList(oldNDVEst, newNDVEst);
+    aggregateData.setNumDVs(mergeNumDistinctValueEstimator(aggregateColStats.getColName(),
+        ndvEstimatorsList, aggregateData.getNumDVs(), newData.getNumDVs()));
+    aggregateData.setNdvEstimator(ndvEstimatorsList.get(0));
+
+    KllHistogramEstimator oldKllEst = aggregateData.getHistogramEstimator();
+    KllHistogramEstimator newKllEst = newData.getHistogramEstimator();
+    aggregateData.setHistogramEstimator(mergeHistogramEstimator(aggregateColStats.getColName(), oldKllEst, newKllEst));
+
+    aggregateColStats.getStatsData().setDateStats(aggregateData);
   }
 
-  private Date min(Date v1, Date v2) {
-    if (v1 == null || v2 == null) {
-      if (v1 != null) {
-        return v1;
-      } else {
-        return v2;
-      }
-    }
-    return v1.compareTo(v2) < 0 ? v1 : v2;
+  public Date getLowValue(DateColumnStatsDataInspector data) {
+    return data.isSetLowValue() ? data.getLowValue() : null;
   }
 
-  private Date max(Date v1, Date v2) {
-    if (v1 == null || v2 == null) {
-      if (v1 != null) {
-        return v1;
-      } else {
-        return v2;
-      }
+  public Date getHighValue(DateColumnStatsDataInspector data) {
+    return data.isSetHighValue() ? data.getHighValue() : null;
+  }
+
+  @Override
+  public Date mergeLowValue(Date oldValue, Date newValue) {
+    if (oldValue != null && newValue != null) {
+      return ObjectUtils.min(oldValue, newValue);
     }
-    return v1.compareTo(v2) > 0 ? v1 : v2;
+    if (oldValue != null || newValue != null) {
+      return MoreObjects.firstNonNull(oldValue, newValue);
+    }
+    return null;
+  }
+
+  @Override
+  public Date mergeHighValue(Date oldValue, Date newValue) {
+    if (oldValue != null && newValue != null) {
+      return ObjectUtils.max(oldValue, newValue);
+    }
+    if (oldValue != null || newValue != null) {
+      return MoreObjects.firstNonNull(oldValue, newValue);
+    }
+    return null;
   }
 }

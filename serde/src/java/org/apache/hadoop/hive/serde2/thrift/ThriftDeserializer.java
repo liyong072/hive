@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.thrift;
@@ -21,7 +22,7 @@ package org.apache.hadoop.hive.serde2.thrift;
 import java.util.Properties;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hive.serde2.AbstractDeserializer;
+import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeStats;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -32,7 +33,7 @@ import org.apache.thrift.protocol.TProtocolFactory;
  * ThriftDeserializer.
  *
  */
-public class ThriftDeserializer extends AbstractDeserializer {
+public class ThriftDeserializer extends AbstractSerDe {
 
   private ThriftByteStreamTypedSerDe tsd;
 
@@ -40,18 +41,19 @@ public class ThriftDeserializer extends AbstractDeserializer {
   }
 
   @Override
-  public void initialize(Configuration job, Properties tbl)
+  public void initialize(Configuration configuration, Properties tableProperties, Properties partitionProperties)
       throws SerDeException {
+    super.initialize(configuration, tableProperties, partitionProperties);
     try {
       // both the classname and the protocol name are Table properties
       // the only hardwired assumption is that records are fixed on a
       // per Table basis
 
-      String className = tbl
+      String className = properties
           .getProperty(org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_CLASS);
-      Class<?> recordClass = job.getClassByName(className);
+      Class<?> recordClass = configuration.getClassByName(className);
 
-      String protoName = tbl
+      String protoName = properties
           .getProperty(org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_FORMAT);
       if (protoName == null) {
         protoName = "TBinaryProtocol";
@@ -83,5 +85,15 @@ public class ThriftDeserializer extends AbstractDeserializer {
   public SerDeStats getSerDeStats() {
     // no support for statistics
     return null;
+  }
+
+  @Override
+  public Class<? extends Writable> getSerializedClass() {
+    return null;
+  }
+
+  @Override
+  public Writable serialize(Object obj, ObjectInspector objInspector) throws SerDeException {
+    throw new UnsupportedOperationException();
   }
 }

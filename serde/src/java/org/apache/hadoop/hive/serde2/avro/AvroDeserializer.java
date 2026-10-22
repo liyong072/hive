@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.avro;
 
@@ -22,12 +23,17 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.rmi.server.UID;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.TimeZone;
 
+import org.apache.avro.LogicalType;
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Type;
 import org.apache.avro.generic.GenericData;
@@ -39,9 +45,12 @@ import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.BinaryEncoder;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.EncoderFactory;
-import org.apache.avro.UnresolvedUnionException;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.common.type.Date;
 import org.apache.hadoop.hive.common.type.Timestamp;
+import org.apache.hadoop.hive.common.type.TimestampTZUtil;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.common.type.CalendarUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.common.type.HiveChar;
@@ -76,6 +85,28 @@ class AvroDeserializer {
    * record encoding.
    */
   private boolean warnedOnce = false;
+
+  /**
+   * Time zone in which file was written, which may be stored in metadata.
+   */
+  private ZoneId writerTimezone = null;
+
+  /**
+   * Whether the file was written using proleptic Gregorian or hybrid calendar.
+   */
+  private Boolean writerProleptic = null;
+
+  private Boolean writerZoneConversionLegacy = null;
+
+  private Configuration configuration = null;
+  private LogicalType logicalType = null;
+
+  AvroDeserializer() {}
+
+  AvroDeserializer(Configuration configuration) {
+    this.configuration = configuration;
+  }
+
   /**
    * When encountering a record with an older schema than the one we're trying
    * to read, it is necessary to re-encode with a reader against the newer schema.
@@ -131,7 +162,7 @@ class AvroDeserializer {
    * @param writable Instance of GenericAvroWritable to deserialize
    * @param readerSchema Schema of the writable to deserialize
    * @return A list of objects suitable for Hive to work with further
-   * @throws AvroSerdeException For any exception during deseriliazation
+   * @throws AvroSerdeException For any exception during deserialization
    */
   public Object deserialize(List<String> columnNames, List<TypeInfo> columnTypes,
                             Writable writable, Schema readerSchema) throws AvroSerdeException {
@@ -148,9 +179,12 @@ class AvroDeserializer {
     AvroGenericRecordWritable recordWritable = (AvroGenericRecordWritable) writable;
     GenericRecord r = recordWritable.getRecord();
     Schema fileSchema = recordWritable.getFileSchema();
+    writerTimezone = recordWritable.getWriterTimezone();
+    writerProleptic = recordWritable.getWriterProleptic();
+    writerZoneConversionLegacy = recordWritable.getWriterZoneConversionLegacy(); 
 
-   UID recordReaderId = recordWritable.getRecordReaderID();
-   //If the record reader (from which the record is originated) is already seen and valid,
+    UID recordReaderId = recordWritable.getRecordReaderID();
+    //If the record reader (from which the record is originated) is already seen and valid,
     //no need to re-encode the record.
     if(!noEncodingNeeded.contains(recordReaderId)) {
       SchemaReEncoder reEncoder = null;
@@ -190,10 +224,58 @@ class AvroDeserializer {
       Object datum = record.get(columnName);
       Schema datumSchema = record.getSchema().getField(columnName).schema();
       Schema.Field field = AvroSerdeUtils.isNullableType(fileSchema)?AvroSerdeUtils.getOtherTypeFromNullableType(fileSchema).getField(columnName):fileSchema.getField(columnName);
+      if (field != null) {
+        // This single call handles all cases: direct, union, map, and array.
+        logicalType = findNestedLogicalType(field, field.schema());
+      }
       objectRow.add(worker(datum, field == null ? null : field.schema(), datumSchema, columnType));
     }
 
     return objectRow;
+  }
+
+  /**
+   * Recursively traverses a schema to find the first LogicalType.
+   * This handles direct logical types, and logical types nested within
+   * UNIONS, MAPS, or ARRAYS.
+   *
+   * @param field
+   * @param schema The schema to inspect.
+   * @return The found LogicalType, or null if none is found.
+   */
+  private LogicalType findNestedLogicalType(Schema.Field field, Schema schema) {
+    // Base Case 1: The schema is null, so we can't proceed.
+    if (schema == null) {
+      return null;
+    }
+
+    // Base Case 2: The schema itself has the logical type. We found it.
+    if (schema.getLogicalType() != null) {
+      return schema.getLogicalType();
+    }
+
+    // Recursive Step: The logical type is deeper. Check the container type.
+    switch (schema.getType()) {
+      case UNION:
+        // Find the first non-null branch and search within it.
+        return schema.getTypes().stream()
+                .filter(s -> s.getType() != Schema.Type.NULL)
+                .map(s -> findNestedLogicalType(field, s)) // Recurse on the branch
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+      case MAP:
+        // Search within the map's value schema.
+        return findNestedLogicalType(field, schema.getValueType());
+      case ARRAY:
+        // Search within the array's element schema.
+        return findNestedLogicalType(field, schema.getElementType());
+      default:
+        // This type (e.g., STRING, INT) doesn't contain a nested schema.
+        return field.getProp("logicalType") != null
+                  ? new LogicalType(field.getProp("logicalType"))
+                  : null;
+    }
   }
 
   private Object worker(Object datum, Schema fileSchema, Schema recordSchema, TypeInfo columnType)
@@ -251,7 +333,7 @@ class AvroDeserializer {
 
       int scale = 0;
       try {
-        scale = fileSchema.getJsonProp(AvroSerDe.AVRO_PROP_SCALE).asInt();
+        scale = AvroSerdeUtils.getIntFromSchema(fileSchema, AvroSerDe.AVRO_PROP_SCALE);
       } catch(Exception ex) {
         throw new AvroSerdeException("Failed to obtain scale value from file schema: " + fileSchema, ex);
       }
@@ -267,7 +349,7 @@ class AvroDeserializer {
 
       int maxLength = 0;
       try {
-        maxLength = fileSchema.getJsonProp(AvroSerDe.AVRO_PROP_MAX_LENGTH).getValueAsInt();
+        maxLength = AvroSerdeUtils.getIntFromSchema(fileSchema, AvroSerDe.AVRO_PROP_MAX_LENGTH);
       } catch (Exception ex) {
         throw new AvroSerdeException("Failed to obtain maxLength value for char field from file schema: " + fileSchema, ex);
       }
@@ -282,7 +364,7 @@ class AvroDeserializer {
 
       maxLength = 0;
       try {
-        maxLength = fileSchema.getJsonProp(AvroSerDe.AVRO_PROP_MAX_LENGTH).getValueAsInt();
+        maxLength = AvroSerdeUtils.getIntFromSchema(fileSchema, AvroSerDe.AVRO_PROP_MAX_LENGTH);
       } catch (Exception ex) {
         throw new AvroSerdeException("Failed to obtain maxLength value for varchar field from file schema: " + fileSchema, ex);
       }
@@ -290,18 +372,93 @@ class AvroDeserializer {
       str = datum.toString();
       HiveVarchar hvc = new HiveVarchar(str, maxLength);
       return hvc;
-    case DATE:
+    case DATE: {
       if (recordSchema.getType() != Type.INT) {
         throw new AvroSerdeException("Unexpected Avro schema for Date TypeInfo: " + recordSchema.getType());
       }
 
-      return Date.ofEpochMilli(DateWritableV2.daysToMillis((Integer)datum));
-    case TIMESTAMP:
+      final boolean skipProlepticConversion;
+      if (writerProleptic != null) {
+        skipProlepticConversion = writerProleptic;
+      } else {
+        if (configuration != null) {
+          skipProlepticConversion = HiveConf.getBoolVar(
+              configuration, HiveConf.ConfVars.HIVE_AVRO_PROLEPTIC_GREGORIAN_DEFAULT);
+        } else {
+          skipProlepticConversion = HiveConf.ConfVars.HIVE_AVRO_PROLEPTIC_GREGORIAN_DEFAULT.defaultBoolVal;
+        }
+      }
+
+      return Date.ofEpochMilli(DateWritableV2.daysToMillis(
+          skipProlepticConversion ? (Integer) datum : CalendarUtils.convertDateToProleptic((Integer) datum)));
+    }
+    case TIMESTAMP: {
       if (recordSchema.getType() != Type.LONG) {
         throw new AvroSerdeException(
-          "Unexpected Avro schema for Date TypeInfo: " + recordSchema.getType());
+            "Unexpected Avro schema for Date TypeInfo: " + recordSchema.getType());
       }
-      return Timestamp.ofEpochMilli((Long)datum);
+      // If a time zone is found in file metadata (property name: writer.time.zone), convert the
+      // timestamp to that (writer) time zone in order to emulate time zone agnostic behavior.
+      // If not, then the file was written by an older version of hive, so we convert the timestamp
+      // to the server's (reader) time zone for backwards compatibility reasons - unless the
+      // session level configuration hive.avro.timestamp.skip.conversion is set to true, in which
+      // case we assume it was written by a time zone agnostic writer, so we don't convert it.
+      final boolean skipUTCConversion;
+      if (configuration != null) {
+        skipUTCConversion = HiveConf.getBoolVar(
+            configuration, HiveConf.ConfVars.HIVE_AVRO_TIMESTAMP_SKIP_CONVERSION);
+      } else {
+        skipUTCConversion = HiveConf.ConfVars.HIVE_AVRO_TIMESTAMP_SKIP_CONVERSION.defaultBoolVal;
+      }
+      final boolean legacyConversion;
+      if (writerZoneConversionLegacy != null) {
+        legacyConversion = writerZoneConversionLegacy;
+      } else if (writerTimezone != null) {
+        legacyConversion = false;
+      } else if (configuration != null) {
+        legacyConversion =
+            HiveConf.getBoolVar(configuration, HiveConf.ConfVars.HIVE_AVRO_TIMESTAMP_LEGACY_CONVERSION_ENABLED);
+      } else {
+        legacyConversion = HiveConf.ConfVars.HIVE_AVRO_TIMESTAMP_LEGACY_CONVERSION_ENABLED.defaultBoolVal;
+      }
+      ZoneId convertToTimeZone;
+      if (writerTimezone != null) {
+        convertToTimeZone = writerTimezone;
+      } else if (skipUTCConversion) {
+        convertToTimeZone = ZoneOffset.UTC;
+      } else {
+        convertToTimeZone = TimeZone.getDefault().toZoneId();
+      }
+      final boolean skipProlepticConversion;
+      if (writerProleptic != null) {
+        skipProlepticConversion = writerProleptic;
+      } else {
+        if (configuration != null) {
+          skipProlepticConversion = HiveConf.getBoolVar(
+              configuration, HiveConf.ConfVars.HIVE_AVRO_PROLEPTIC_GREGORIAN_DEFAULT);
+        } else {
+          skipProlepticConversion = HiveConf.ConfVars.HIVE_AVRO_PROLEPTIC_GREGORIAN_DEFAULT.defaultBoolVal;
+        }
+      }
+      Timestamp timestamp;
+      if (logicalType != null && logicalType.getName().equalsIgnoreCase(AvroSerDe.TIMESTAMP_TYPE_NAME_MICROS)) {
+        timestamp = Timestamp.ofEpochMicro((Long) datum);
+      } else {
+        timestamp = Timestamp.ofEpochMilli((Long) datum);
+      }
+      timestamp = TimestampTZUtil.convertTimestampToZone(
+              timestamp, ZoneOffset.UTC, convertToTimeZone, legacyConversion);
+      if (!skipProlepticConversion) {
+        if (logicalType != null && logicalType.getName().equalsIgnoreCase(AvroSerDe.TIMESTAMP_TYPE_NAME_MICROS)) {
+          timestamp = Timestamp.ofEpochMicro(
+                  CalendarUtils.convertTimeToProlepticMicros(timestamp.toEpochMicro()));
+        } else {
+          timestamp = Timestamp.ofEpochMilli(
+                  CalendarUtils.convertTimeToProleptic(timestamp.toEpochMilli()));
+        }
+      }
+      return timestamp;
+    }
     default:
       return datum;
     }
@@ -311,8 +468,8 @@ class AvroDeserializer {
   private Object deserializeStruct(GenericData.Record datum, Schema fileSchema, StructTypeInfo columnType)
           throws AvroSerdeException {
     // No equivalent Java type for the backing structure, need to recurse and build a list
-    ArrayList<TypeInfo> innerFieldTypes = columnType.getAllStructFieldTypeInfos();
-    ArrayList<String> innerFieldNames = columnType.getAllStructFieldNames();
+    List<TypeInfo> innerFieldTypes = columnType.getAllStructFieldTypeInfos();
+    List<String> innerFieldNames = columnType.getAllStructFieldNames();
     List<Object> innerObjectRow = new ArrayList<Object>(innerFieldTypes.size());
 
     return workerBase(innerObjectRow, fileSchema, innerFieldNames, innerFieldTypes, datum);
@@ -324,16 +481,16 @@ class AvroDeserializer {
     // and we would end up doing calculations twice to get the same tag
     int fsTag = GenericData.get().resolveUnion(fileSchema, datum); // Determine index of value from fileSchema
     int rsTag = GenericData.get().resolveUnion(recordSchema, datum); // Determine index of value from recordSchema
-    Object desered = worker(datum, fileSchema == null ? null : fileSchema.getTypes().get(fsTag),
+    Object desired = worker(datum, fileSchema == null ? null : fileSchema.getTypes().get(fsTag),
         recordSchema.getTypes().get(rsTag), columnType.getAllUnionObjectTypeInfos().get(rsTag));
-    return new StandardUnionObjectInspector.StandardUnion((byte)rsTag, desered);
+    return new StandardUnionObjectInspector.StandardUnion((byte)rsTag, desired);
   }
 
   private Object deserializeList(Object datum, Schema fileSchema, Schema recordSchema,
                                  ListTypeInfo columnType) throws AvroSerdeException {
     // Need to check the original schema to see if this is actually a Fixed.
     if(recordSchema.getType().equals(Schema.Type.FIXED)) {
-    // We're faking out Hive to work through a type system impedence mismatch.
+    // We're faking out Hive to work through a type system impedance mismatch.
     // Pull out the backing array and convert to a list.
       GenericData.Fixed fixed = (GenericData.Fixed) datum;
       List<Byte> asList = new ArrayList<Byte>(fixed.bytes().length);

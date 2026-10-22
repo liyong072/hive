@@ -20,7 +20,6 @@ export SERVICE_LIST="${SERVICE_LIST}${THISSERVICE} "
 beeline () {
   CLASS=org.apache.hive.beeline.BeeLine;
 
-  # include only the beeline client jar and its dependencies
   beelineJarPath=`ls ${HIVE_LIB}/hive-beeline-*.jar`
   superCsvJarPath=`ls ${HIVE_LIB}/super-csv-*.jar`
   jlineJarPath=`ls ${HIVE_LIB}/jline-*.jar`
@@ -30,12 +29,52 @@ beeline () {
     hadoopClasspath="${HADOOP_CLASSPATH}:"
   fi
   export HADOOP_CLASSPATH="${hadoopClasspath}${HIVE_CONF_DIR}:${beelineJarPath}:${superCsvJarPath}:${jlineJarPath}"
-  export HADOOP_CLIENT_OPTS="$HADOOP_CLIENT_OPTS -Dlog4j.configurationFile=beeline-log4j2.properties "
+  export HADOOP_CLIENT_OPTS="$HADOOP_CLIENT_OPTS -Dlog4j.configurationFile=beeline-log4j2.properties --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED  --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.util.regex=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED "
 
-  if [ -z $CLIUSER ] ; then
-    exec $HADOOP jar ${beelineJarPath} $CLASS $HIVE_OPTS "$@"
+  if [ "$EXECUTE_WITH_JAVA" != "true" ] ; then
+    if [ "$BEELINE_USE_HADOOP_JAR" == "true" ] ; then
+      if [ -z $CLIUSER ] ; then
+        exec $HADOOP jar ${beelineJarPath} $CLASS $HIVE_OPTS "$@"
+      else
+        exec $HADOOP jar ${beelineJarPath} $CLASS $HIVE_OPTS "$@" -n "${CLIUSER}" -p "${CLIUSER}"
+      fi
+    fi
+    beelineClasspath="${HADOOP_CLASSPATH}"
+    for x in $(${HADOOP} classpath --glob 2>/dev/null | tr ':' '\n') ; do
+      case "$x" in
+        *slf4j-reload4j*|*slf4j-log4j12*|*log4j-1.2*|*reload4j*) continue ;;
+      esac
+      # `hadoop classpath --glob` already covers everything HADOOP_CLASSPATH adds, so
+      # skip entries we have seen — otherwise the same jar lands on the classpath twice.
+      if [[ ":${beelineClasspath}:" == *":${x}:"* ]]
+      then
+        continue
+      fi
+      beelineClasspath="${beelineClasspath}:${x}"
+    done
+    # JAVAEXE is only set by bin/hive on the no-Hadoop fallback path, so resolve
+    # the java binary here for the common case where HADOOP_HOME is present.
+    beelineJava="${JAVAEXE}"
+    if [ -z "$beelineJava" ] ; then
+      if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ] ; then
+        beelineJava="$JAVA_HOME/bin/java"
+      else
+        beelineJava="java"
+      fi
+    fi
+    # if CLIUSER is not empty, then pass it as user id / password during beeline redirect
+    if [ -z $CLIUSER ] ; then
+      exec "$beelineJava" $HADOOP_CLIENT_OPTS -cp "${beelineClasspath}" $CLASS $HIVE_OPTS "$@"
+    else
+      exec "$beelineJava" $HADOOP_CLIENT_OPTS -cp "${beelineClasspath}" $CLASS $HIVE_OPTS "$@" -n "${CLIUSER}" -p "${CLIUSER}"
+    fi
   else
-    exec $HADOOP jar ${beelineJarPath} $CLASS $HIVE_OPTS "$@" -n "${CLIUSER}" -p "${CLIUSER}"
+    # if CLIUSER is not empty, then pass it as user id / password during beeline redirect
+    if [ -z $CLIUSER ] ; then
+      $JAVAEXE -cp ${HADOOP_CLASSPATH} $CLASS $HIVE_OPTS "$@"
+    else
+      $JAVAEXE -cp ${HADOOP_CLASSPATH} $CLASS $HIVE_OPTS "$@" -n "${CLIUSER}" -p "${CLIUSER}"
+    fi
   fi
 }
 

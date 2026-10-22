@@ -6,25 +6,33 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.utils;
 
-import java.beans.PropertyDescriptor;
 import java.io.File;
+import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -33,47 +41,100 @@ import java.util.TimeZone;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
 
 import static java.util.regex.Pattern.compile;
 
 import javax.annotation.Nullable;
 
-import org.apache.commons.lang.StringUtils;
+import com.google.common.collect.Lists;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.common.StatsSetupConst;
+import org.apache.hadoop.hive.common.TableName;
+import org.apache.hadoop.hive.common.repl.ReplConst;
 import org.apache.hadoop.hive.metastore.ColumnType;
+import org.apache.hadoop.hive.metastore.HiveMetaHook;
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.GetPartitionsByNamesRequest;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Partition;
+import org.apache.hadoop.hive.metastore.api.PartitionSpec;
+import org.apache.hadoop.hive.metastore.api.PartitionsSpecByExprResult;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
+import org.apache.hadoop.hive.metastore.api.Database;
+import org.apache.hadoop.hive.metastore.api.DatabaseType;
 import org.apache.hadoop.hive.metastore.api.WMPoolSchedulingPolicy;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
-import org.apache.hadoop.hive.metastore.security.HadoopThriftAuthBridge;
-import org.apache.hadoop.security.SaslRpcServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Joiner;
 
 public class MetaStoreUtils {
-  /** A fixed date format to be used for hive partition column values. */
-  public static final ThreadLocal<DateFormat> PARTITION_DATE_FORMAT =
-       new ThreadLocal<DateFormat>() {
-    @Override
-    protected DateFormat initialValue() {
-      DateFormat val = new SimpleDateFormat("yyyy-MM-dd");
-      val.setLenient(false); // Without this, 2020-20-20 becomes 2021-08-20.
-      val.setTimeZone(TimeZone.getTimeZone("UTC"));
-      return val;
-    }
-  };
+
+  private static final DateTimeFormatter DATE_FORMATTER = createDateTimeFormatter("uuuu-MM-dd");
+
+  private static final DateTimeFormatter TIMESTAMP_FORMATTER = createDateTimeFormatter("uuuu-MM-dd HH:mm:ss");
+
+  private static DateTimeFormatter createDateTimeFormatter(String format) {
+    return DateTimeFormatter.ofPattern(format).withZone(TimeZone.getTimeZone("UTC").toZoneId())
+        .withResolverStyle(ResolverStyle.STRICT);
+  }
+
+  /**
+   * Converts java.sql.Date to String format date.
+   * @param date - java.sql.Date object.
+   * @return Date in string format.
+   */
+  public static String convertDateToString(Date date) {
+    return DATE_FORMATTER.format(date.toLocalDate());
+  }
+
+  /**
+   * Converts string format date to java.sql.Date.
+   * @param date Date in string format.
+   * @return java.sql.Date object.
+   */
+  public static Date convertStringToDate(String date) {
+    LocalDate val = LocalDate.parse(date, DATE_FORMATTER);
+    return java.sql.Date.valueOf(val);
+  }
+
+  /**
+   * Converts the string format date without a time-zone to
+   * a time-zone based string format date
+   * @param date the date without a time-zone
+   * @return time-zone based string format date
+   */
+  public static String normalizeDate(String date) {
+    return convertDateToString(convertStringToDate(date));
+  }
+
+  /**
+   * Converts java.sql.Timestamp to string format timestamp.
+   * @param timestamp java.sql.Timestamp object.
+   * @return Timestamp in string format.
+   */
+  public static String convertTimestampToString(Timestamp timestamp) {
+    return TIMESTAMP_FORMATTER.format(timestamp.toInstant());
+  }
+
+  /**
+   * Converts timestamp string format to java.sql.Timestamp.
+   * @param timestamp Timestamp in string format.
+   * @return java.sql.Timestamp object.
+   */
+  public static Timestamp convertStringToTimestamp(String timestamp) {
+    Instant instant = Instant.from(TIMESTAMP_FORMATTER.parse(timestamp));
+    return Timestamp.from(instant);
+  }
+
   // Indicates a type was derived from the deserializer rather than Hive's metadata.
   public static final String TYPE_FROM_DESERIALIZER = "<derived from deserializer>";
 
@@ -89,7 +150,7 @@ public class MetaStoreUtils {
   public static final char CATALOG_DB_THRIFT_NAME_MARKER = '@';
 
   /**
-   * This String is used to seaprate the catalog name from the database name.  This should only
+   * This String is used to separate the catalog name from the database name.  This should only
    * be used in Strings that are prepended with {@link #CATALOG_DB_THRIFT_NAME_MARKER}.  # is
    * chosen because it is not used in regular expressions.  this is only intended for use when
    * making old Thrift calls that do not support catalog names.
@@ -108,21 +169,27 @@ public class MetaStoreUtils {
   // NOTE:
   // If the following array is updated, please also be sure to update the
   // configuration parameter documentation
-  // HIVE_SUPPORT_SPECICAL_CHARACTERS_IN_TABLE_NAMES in HiveConf as well.
-  private static final char[] specialCharactersInTableNames = new char[] { '/' };
+  // HIVE_SUPPORT_SPECICAL_CHARACTERS_IN_TABLE_NAMES in MetastoreConf as well.
+  private static final char[] SPECIAL_CHARACTERS_IN_TABLE_NAMES = new char[] {
+      // standard
+      ' ', '"', '%', '&', '\'', '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<', '=', '>', '?', '[', ']',
+      '_', '|', '{', '}', '$', '^',
+      // non-standard
+      '!', '~', '#', '@', '`'
+  };
+
+  public static final String NO_VAL = " --- ";
+
+  public static final String USER_NAME_HTTP_HEADER = "x-actor-username";
 
   /**
-   * Catches exceptions that can't be handled and bundles them to MetaException
+   * Catches exceptions that cannot be handled and wraps them in MetaException.
    *
    * @param e exception to wrap.
    * @throws MetaException wrapper for the exception
    */
-  public static void logAndThrowMetaException(Exception e) throws MetaException {
-    String exInfo = "Got exception: " + e.getClass().getName() + " "
-        + e.getMessage();
-    LOG.error(exInfo, e);
-    LOG.error("Converting exception to MetaException");
-    throw new MetaException(exInfo);
+  public static void throwMetaException(Exception e) throws MetaException {
+    throw new MetaException("Got exception: " + e.getClass().getName() + " " + e.getMessage());
   }
 
   public static String encodeTableName(String name) {
@@ -174,6 +241,14 @@ public class MetaStoreUtils {
     return colNames;
   }
 
+  /*
+   * Check the table storage location must not be root path.
+   */
+  public static boolean validateTblStorage(StorageDescriptor sd) {
+    return !(StringUtils.isNotBlank(sd.getLocation())
+            && new Path(sd.getLocation()).getParent() == null);
+  }
+
   /**
    * validateName
    *
@@ -189,15 +264,15 @@ public class MetaStoreUtils {
    */
   public static boolean validateName(String name, Configuration conf) {
     Pattern tpat;
-    String allowedCharacters = "\\w_";
+    StringBuilder allowedSpecialCharacters = new StringBuilder();
     if (conf != null
         && MetastoreConf.getBoolVar(conf,
         MetastoreConf.ConfVars.SUPPORT_SPECICAL_CHARACTERS_IN_TABLE_NAMES)) {
-      for (Character c : specialCharactersInTableNames) {
-        allowedCharacters += c;
+      for (Character c : SPECIAL_CHARACTERS_IN_TABLE_NAMES) {
+        allowedSpecialCharacters.append(c);
       }
     }
-    tpat = Pattern.compile("[" + allowedCharacters + "]+");
+    tpat = Pattern.compile("[\\w" + Pattern.quote(allowedSpecialCharacters.toString()) + "]+");
     Matcher m = tpat.matcher(name);
     return m.matches();
   }
@@ -219,6 +294,94 @@ public class MetaStoreUtils {
     }
 
     return isExternal(params);
+  }
+
+  public static boolean isIcebergTable(Map<String, String> params) {
+    return HiveMetaHook.ICEBERG.equalsIgnoreCase(params.get(HiveMetaHook.TABLE_TYPE));
+  }
+
+  public static boolean isIcebergTable(Properties params) {
+    return HiveMetaHook.ICEBERG.equalsIgnoreCase((String) params.get(HiveMetaHook.TABLE_TYPE));
+  }
+
+  public static boolean isTranslatedToExternalTable(Table table) {
+    Map<String, String> params = table.getParameters();
+    return params != null && MetaStoreUtils.isPropertyTrue(params, HiveMetaHook.EXTERNAL)
+        && MetaStoreUtils.isPropertyTrue(params, HiveMetaHook.TRANSLATED_TO_EXTERNAL) && table.getSd() != null
+        && table.getSd().isSetLocation();
+  }
+
+  public static String getDbNameFromReplPolicy(String replPolicy) {
+    assert replPolicy != null;
+    return replPolicy.split(Pattern.quote("."))[0];
+  }
+
+  public static boolean isDbReplIncompatible(Database db) {
+    if (db == null) {
+      return false;
+    }
+    Map<String, String> dbParameters = db.getParameters();
+    return dbParameters != null && ReplConst.TRUE.equalsIgnoreCase(dbParameters.get(ReplConst.REPL_INCOMPATIBLE));
+  }
+
+  public static boolean isDbBeingPlannedFailedOver(Database db) {
+    assert (db != null);
+    Map<String, String> dbParameters = db.getParameters();
+    if (dbParameters == null) {
+      return false;
+    }
+    String dbFailoverEndPoint = dbParameters.get(ReplConst.REPL_FAILOVER_ENDPOINT);
+    return FailoverEndpoint.SOURCE.toString().equalsIgnoreCase(dbFailoverEndPoint)
+            || FailoverEndpoint.TARGET.toString().equalsIgnoreCase(dbFailoverEndPoint);
+  }
+
+  public static boolean isDbBeingPlannedFailedOverAtEndpoint(Database db, FailoverEndpoint endPoint) {
+    if (db == null) {
+      return false;
+    }
+    Map<String, String> dbParameters = db.getParameters();
+    return dbParameters != null
+            && endPoint.toString().equalsIgnoreCase(dbParameters.get(ReplConst.REPL_FAILOVER_ENDPOINT));
+  }
+
+  public static boolean isTargetOfReplication(Database db) {
+    assert (db != null);
+    Map<String, String> dbParameters = db.getParameters();
+    return dbParameters != null && !StringUtils.isEmpty(dbParameters.get(ReplConst.TARGET_OF_REPLICATION));
+  }
+
+  public static boolean isBackgroundThreadsEnabledForRepl(Database db) {
+    assert (db != null);
+    Map<String, String> dbParameters = db.getParameters();
+    return dbParameters != null && !StringUtils.isEmpty(dbParameters.get(ReplConst.REPL_ENABLE_BACKGROUND_THREAD));
+  }
+
+  public static boolean checkIfDbNeedsToBeSkipped(Database db) {
+    assert (db != null);
+    if (isBackgroundThreadsEnabledForRepl(db)) {
+      return false;
+    } else if (isDbBeingPlannedFailedOver(db)) {
+      LOG.info("Skipping all the tables which belong to database: {} as it is being failed over", db.getName());
+      return true;
+    } else if (isTargetOfReplication(db)) {
+      LOG.info("Skipping all the tables which belong to replicated database: {}", db.getName());
+      return true;
+    }
+    return false;
+  }
+
+  public static List<String> getReplicationDbProps() {
+    return Arrays.stream(ReplConst.class.getDeclaredFields())
+            .filter(field -> Modifier.isStatic(field.getModifiers()))
+            .map(field -> {
+              try {
+                String prop = (String) field.get(String.class);
+                return prop.replace("\"", "");
+              } catch (IllegalAccessException e) {
+                LOG.error("Failed to collect replication specific properties. Reason: ", e);
+                throw new RuntimeException(e);
+              }
+            }).collect(Collectors.toList());
   }
 
   /**
@@ -248,6 +411,20 @@ public class MetaStoreUtils {
     return "TRUE".equalsIgnoreCase(tableParams.get(prop));
   }
 
+  /**
+   * Determines whether an table needs to be deleted completely or moved to trash directory.
+   *
+   * @param tableParams parameters of the table
+   *
+   * @return true if the table needs to be deleted rather than moved to trash directory
+   */
+  public static boolean isSkipTrash(Map<String, String> tableParams) {
+    if (tableParams == null) {
+      return false;
+    }
+    return isPropertyTrue(tableParams, "skip.trash")
+        || isPropertyTrue(tableParams, "auto.purge");
+  }
 
   /** Duplicates AcidUtils; used in a couple places in metastore. */
   public static boolean isInsertOnlyTableParam(Map<String, String> params) {
@@ -259,7 +436,13 @@ public class MetaStoreUtils {
     if (table == null || table.getParameters() == null) {
       return false;
     }
-    return (table.getParameters().get(hive_metastoreConstants.META_TABLE_STORAGE) != null);
+    return isNonNativeTable(table.getParameters());
+  }
+
+  public static boolean isNonNativeTable(Map<String, String> tblProps) {
+    return tblProps.get(
+            org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_STORAGE)
+            != null;
   }
 
   /**
@@ -280,6 +463,26 @@ public class MetaStoreUtils {
     }
     return pvals;
   }
+
+  /**
+   * If all the values of partVals are empty strings, it means we are returning
+   * all the partitions and hence we can use get_partitions API.
+   * @param partVals The partitions values used to filter out the partitions.
+   * @return true if partVals is empty or if all the values in partVals is empty strings.
+   * other wise false.
+   */
+  public static boolean arePartValsEmpty(List<String> partVals) {
+    if (partVals == null || partVals.isEmpty()) {
+      return true;
+    }
+    for (String val : partVals) {
+      if (val != null && !val.isEmpty()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   public static String makePartNameMatcher(Table table, List<String> partVals, String defaultStr) throws MetaException {
     List<FieldSchema> partCols = table.getPartitionKeys();
     int numPartKeys = partCols.size();
@@ -355,27 +558,16 @@ public class MetaStoreUtils {
   }
 
   /**
-   * Read and return the meta store Sasl configuration. Currently it uses the default
-   * Hadoop SASL configuration and can be configured using "hadoop.rpc.protection"
-   * HADOOP-10211, made a backward incompatible change due to which this call doesn't
-   * work with Hadoop 2.4.0 and later.
-   * @param conf
-   * @return The SASL configuration
+   * Returns currently known class paths as best effort. For system class loader, this may return
+   * In such cases we will anyway create new child class loader in {@link #addToClassPath(ClassLoader cloader, String[] newPaths)
+   * so all new class paths will be added and next time we will have a URLClassLoader to work wit
    */
-  public static Map<String, String> getMetaStoreSaslProperties(Configuration conf, boolean useSSL) {
-    // As of now Hive Meta Store uses the same configuration as Hadoop SASL configuration
-
-    // If SSL is enabled, override the given value of "hadoop.rpc.protection" and set it to "authentication"
-    // This disables any encryption provided by SASL, since SSL already provides it
-    String hadoopRpcProtectionVal = conf.get(CommonConfigurationKeysPublic.HADOOP_RPC_PROTECTION);
-    String hadoopRpcProtectionAuth = SaslRpcServer.QualityOfProtection.AUTHENTICATION.toString();
-
-    if (useSSL && hadoopRpcProtectionVal != null && !hadoopRpcProtectionVal.equals(hadoopRpcProtectionAuth)) {
-      LOG.warn("Overriding value of " + CommonConfigurationKeysPublic.HADOOP_RPC_PROTECTION + " setting it from "
-          + hadoopRpcProtectionVal + " to " + hadoopRpcProtectionAuth + " because SSL is enabled");
-      conf.set(CommonConfigurationKeysPublic.HADOOP_RPC_PROTECTION, hadoopRpcProtectionAuth);
+  private static List<URL> getCurrentClassPaths(ClassLoader parentLoader) {
+    if(parentLoader instanceof URLClassLoader) {
+      return Lists.newArrayList(((URLClassLoader) parentLoader).getURLs());
+    } else {
+      return Collections.emptyList();
     }
-    return HadoopThriftAuthBridge.getBridge().getHadoopSaslProperties(conf);
   }
 
   /**
@@ -385,15 +577,7 @@ public class MetaStoreUtils {
    *          Array of classpath elements
    */
   public static ClassLoader addToClassPath(ClassLoader cloader, String[] newPaths) throws Exception {
-    URLClassLoader loader = (URLClassLoader) cloader;
-    List<URL> curPath = Arrays.asList(loader.getURLs());
-    ArrayList<URL> newPath = new ArrayList<>(curPath.size());
-
-    // get a list with the current classpath components
-    for (URL onePath : curPath) {
-      newPath.add(onePath);
-    }
-    curPath = newPath;
+    List<URL> curPath = getCurrentClassPaths(cloader);
 
     for (String onestr : newPaths) {
       URL oneurl = urlFromPathString(onestr);
@@ -402,7 +586,12 @@ public class MetaStoreUtils {
       }
     }
 
-    return new URLClassLoader(curPath.toArray(new URL[0]), loader);
+    return AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
+      @Override
+      public ClassLoader run() {
+        return new URLClassLoader(curPath.toArray(new URL[0]), cloader);
+      }
+    });
   }
 
   /**
@@ -555,9 +744,8 @@ public class MetaStoreUtils {
         String key = param.getKey();
         if (schema.get(key) != null &&
             ((key.equals(cols) || key.equals(colTypes) || key.equals(parts) ||
-                // Skip Druid and JDBC properties which are used in respective SerDes,
+                // Skip JDBC properties which are used in respective SerDes,
                 // since they are also updated after SerDeInfo properties are copied.
-                key.startsWith(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.DRUID_CONFIG_PREFIX) ||
                 key.startsWith(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.JDBC_CONFIG_PREFIX)))) {
           continue;
         }
@@ -593,7 +781,7 @@ public class MetaStoreUtils {
       if (!first) {
         colNameBuf.append(columnNameDelimiter);
         colTypeBuf.append(":");
-        colComment.append('\0');
+        colComment.append(ColumnType.COLUMN_COMMENTS_DELIMITER);
       }
       colNameBuf.append(col.getName());
       colTypeBuf.append(col.getType());
@@ -644,9 +832,12 @@ public class MetaStoreUtils {
           org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_LOCATION,
           sd.getLocation());
     }
-    schema.setProperty(
-        org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.BUCKET_COUNT, Integer
-            .toString(sd.getNumBuckets()));
+    int bucket_cnt = sd.getNumBuckets();
+    if (bucket_cnt > 0) {
+      schema.setProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.BUCKET_COUNT,
+          Integer.toString(bucket_cnt));
+    }
+
     if (sd.getBucketCols() != null && sd.getBucketCols().size() > 0) {
       schema.setProperty(
           org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.BUCKET_FIELD_NAME,
@@ -662,39 +853,43 @@ public class MetaStoreUtils {
       }
     }
 
-    if (sd.getCols() != null) {
-      schema.setProperty(ColumnType.SERIALIZATION_DDL, getDDLFromFieldSchema(tableName, sd.getCols()));
-    }
-
-    String partString = StringUtils.EMPTY;
-    String partStringSep = StringUtils.EMPTY;
-    String partTypesString = StringUtils.EMPTY;
-    String partTypesStringSep = StringUtils.EMPTY;
-    for (FieldSchema partKey : partitionKeys) {
-      partString = partString.concat(partStringSep);
-      partString = partString.concat(partKey.getName());
-      partTypesString = partTypesString.concat(partTypesStringSep);
-      partTypesString = partTypesString.concat(partKey.getType());
-      if (partStringSep.length() == 0) {
-        partStringSep = "/";
-        partTypesStringSep = ":";
+    if (partitionKeys != null) {
+      String partString = StringUtils.EMPTY;
+      String partStringSep = StringUtils.EMPTY;
+      String partTypesString = StringUtils.EMPTY;
+      String partTypesStringSep = StringUtils.EMPTY;
+      for (FieldSchema partKey : partitionKeys) {
+        partString = partString.concat(partStringSep);
+        partString = partString.concat(partKey.getName());
+        partTypesString = partTypesString.concat(partTypesStringSep);
+        partTypesString = partTypesString.concat(partKey.getType());
+        if (partStringSep.length() == 0) {
+          partStringSep = "/";
+          partTypesStringSep = ":";
+        }
       }
-    }
-    if (partString.length() > 0) {
-      schema
-          .setProperty(
-              org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS,
-              partString);
-      schema
-          .setProperty(
-              org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES,
-              partTypesString);
+      if (partString.length() > 0) {
+        schema
+            .setProperty(
+                org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS,
+                partString);
+        schema
+            .setProperty(
+                org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES,
+                partTypesString);
+      }
     }
 
     if (parameters != null) {
       for (Map.Entry<String, String> e : parameters.entrySet()) {
         // add non-null parameters to the schema
-        if ( e.getValue() != null) {
+        String key = e.getKey();
+        if (!StatsSetupConst.COLUMN_STATS_ACCURATE.equals(key) &&
+            !hive_metastoreConstants.DDL_TIME.equals(key) &&
+            !StatsSetupConst.TOTAL_SIZE.equals(key) &&
+            !StatsSetupConst.RAW_DATA_SIZE.equals(key) &&
+            !StatsSetupConst.NUM_FILES.equals(key) &&
+            !StatsSetupConst.ROW_COUNT.equals(key) && e.getValue() != null) {
           schema.setProperty(e.getKey(), e.getValue());
         }
       }
@@ -741,15 +936,20 @@ public class MetaStoreUtils {
    * Convert FieldSchemas to columnTypes.
    */
   public static String getColumnTypesFromFieldSchema(
-      List<FieldSchema> fieldSchemas) {
+      List<FieldSchema> fieldSchemas, String delimiter) {
     StringBuilder sb = new StringBuilder();
     for (int i = 0; i < fieldSchemas.size(); i++) {
       if (i > 0) {
-        sb.append(",");
+        sb.append(delimiter);
       }
       sb.append(fieldSchemas.get(i).getType());
     }
     return sb.toString();
+  }
+
+  public static String getColumnTypesFromFieldSchema(
+      List<FieldSchema> fieldSchemas) {
+    return getColumnTypesFromFieldSchema(fieldSchemas, ",");
   }
 
   public static String getColumnCommentsFromFieldSchema(List<FieldSchema> fieldSchemas) {
@@ -800,7 +1000,8 @@ public class MetaStoreUtils {
 
   private static boolean hasCatalogName(String dbName) {
     return dbName != null && dbName.length() > 0 &&
-        dbName.charAt(0) == CATALOG_DB_THRIFT_NAME_MARKER;
+        dbName.charAt(0) == CATALOG_DB_THRIFT_NAME_MARKER &&
+        dbName.contains(CATALOG_DB_SEPARATOR);
   }
 
   /**
@@ -815,14 +1016,19 @@ public class MetaStoreUtils {
    */
   public static String prependCatalogToDbName(@Nullable String catalogName, @Nullable String dbName,
                                               Configuration conf) {
-    if (catalogName == null) catalogName = getDefaultCatalog(conf);
+    if (catalogName == null) {
+      catalogName = getDefaultCatalog(conf);
+    }
     StringBuilder buf = new StringBuilder()
         .append(CATALOG_DB_THRIFT_NAME_MARKER)
         .append(catalogName)
         .append(CATALOG_DB_SEPARATOR);
     if (dbName != null) {
-      if (dbName.isEmpty()) buf.append(DB_EMPTY_MARKER);
-      else buf.append(dbName);
+      if (dbName.isEmpty()) {
+        buf.append(DB_EMPTY_MARKER);
+      } else {
+        buf.append(dbName);
+      }
     }
     return buf.toString();
   }
@@ -860,23 +1066,20 @@ public class MetaStoreUtils {
    *            in the database name.
    * @return an array of two elements, the first being the catalog name, the second the database
    * name.
-   * @throws MetaException if the name is not either just a database name or a catalog plus
-   * database name with the proper delimiters.
    */
-  public static String[] parseDbName(String dbName, Configuration conf) throws MetaException {
-    if (dbName == null) return nullCatalogAndDatabase;
+  public static String[] parseDbName(String dbName, Configuration conf) {
+    if (dbName == null) {
+      return Arrays.copyOf(nullCatalogAndDatabase, nullCatalogAndDatabase.length);
+    }
     if (hasCatalogName(dbName)) {
-      if (dbName.endsWith(CATALOG_DB_SEPARATOR)) {
-        // This means the DB name is null
-        return new String[] {dbName.substring(1, dbName.length() - 1), null};
-      } else if (dbName.endsWith(DB_EMPTY_MARKER)) {
-        // This means the DB name is empty
-        return new String[] {dbName.substring(1, dbName.length() - DB_EMPTY_MARKER.length() - 1), ""};
-      }
       String[] names = dbName.substring(1).split(CATALOG_DB_SEPARATOR, 2);
-      if (names.length != 2) {
-        throw new MetaException(dbName + " is prepended with the catalog marker but does not " +
-            "appear to have a catalog name in it");
+      if (names.length == 1) {
+        return new String[] {names[0], null};
+      }
+      if (names[1].isEmpty()) {
+        names[1] = null;
+      } else if (names[1].equals(DB_EMPTY_MARKER)) {
+        names[1] = "";
       }
       return names;
     } else {
@@ -899,7 +1102,9 @@ public class MetaStoreUtils {
       return Warehouse.DEFAULT_CATALOG_NAME;
     }
     String catName = MetastoreConf.getVar(conf, MetastoreConf.ConfVars.CATALOG_DEFAULT);
-    if (catName == null || "".equals(catName)) catName = Warehouse.DEFAULT_CATALOG_NAME;
+    if (catName == null || "".equals(catName)) {
+      catName = Warehouse.DEFAULT_CATALOG_NAME;
+    }
     return catName;
   }
 
@@ -945,5 +1150,167 @@ public class MetaStoreUtils {
    */
   public static List<Predicate<String>> compilePatternsToPredicates(List<String> patterns) {
     return patterns.stream().map(pattern -> compile(pattern).asPredicate()).collect(Collectors.toList());
+  }
+
+  /**
+   * Get order specs from a represented string.
+   * @param order specified in partColIndex[,partColIndex]*:[-|\+]+ pattern
+   * @return the order specs
+   */
+  public static List<Object[]> makeOrderSpecs(String order) {
+    if (StringUtils.isBlank(order) || order.split(":").length != 2) {
+      return new ArrayList<Object[]>();
+    }
+    String[] parts = order.split(":");
+    String[] poses = parts[0].split(",");
+    char[] chars = parts[1].toCharArray();
+    List<Object[]> orderSpecs = new ArrayList<Object[]>(chars.length);
+    if (poses.length != chars.length) {
+      throw new IllegalArgumentException("The length of partition keys and sort order" +
+          " do not mismatch, order: " + order);
+    }
+    for (int i = 0; i < poses.length; i++) {
+      Object[] spec = new Object[2];
+      spec[0] = Integer.parseInt(poses[i]);
+      spec[1] = ('+' == chars[i]) ? "ASC" : "DESC";
+      orderSpecs.add(spec);
+    }
+    return orderSpecs;
+  }
+
+  public static void addPartitonSpecsToList(PartitionsSpecByExprResult r, List<PartitionSpec> result) {
+    result.addAll(r.getPartitionsSpec());
+  }
+
+  public static boolean hasUnknownPartitions(PartitionsSpecByExprResult r) {
+    return !r.isSetHasUnknownPartitions() || r.isHasUnknownPartitions();
+  }
+
+  public static TableName getTableNameFor(Table table) {
+    return TableName.fromString(table.getTableName().toLowerCase(), table.getCatName().toLowerCase(), table.getDbName().toLowerCase(), null);
+  }
+
+  /**
+   * Because TABLE_NO_AUTO_COMPACT was originally assumed to be NO_AUTO_COMPACT and then was moved
+   * to no_auto_compact, we need to check it in both cases.
+   * Check the database level no_auto_compact , if present it is given priority else table level no_auto_compact is considered.
+   */
+  public static boolean isNoAutoCompactSet(Map<String, String> dbParameters, Map<String, String> tblParameters) {
+    String dbNoAutoCompact = getNoAutoCompact(dbParameters);
+    if (dbNoAutoCompact == null) {
+      LOG.debug("Using table configuration '" + hive_metastoreConstants.NO_AUTO_COMPACT + "' for compaction");
+      String noAutoCompact = getNoAutoCompact(tblParameters);
+      return Boolean.parseBoolean(noAutoCompact);
+    }
+    LOG.debug("Using database configuration '" + hive_metastoreConstants.NO_AUTO_COMPACT + "' for compaction");
+    return Boolean.parseBoolean(dbNoAutoCompact);
+  }
+
+  /**
+   * Get no_auto_compact property by checking in both lower and upper cases
+   * @param parameters
+   * @return true/false if set, null if there is no NO_AUTO_COMPACT set in database level config,
+   */
+  public static String getNoAutoCompact(Map<String, String> parameters) {
+    String noAutoCompact = parameters.get(hive_metastoreConstants.NO_AUTO_COMPACT);
+    if (noAutoCompact == null) {
+      return parameters.get(hive_metastoreConstants.NO_AUTO_COMPACT.toUpperCase());
+    }
+    return noAutoCompact;
+  }
+
+  public static String getHostFromId(String id) {
+    if (id == null) {
+      return NO_VAL;
+    }
+    int lastDash = id.lastIndexOf('-');
+    return id.substring(0, lastDash > -1 ? lastDash : id.length());
+  }
+
+  public static String getThreadIdFromId(String id) {
+    if (id == null) {
+      return NO_VAL;
+    }
+    return id.substring(id.lastIndexOf('-') + 1);
+  }
+
+  public enum FailoverEndpoint {
+    /**
+     * EndPoint to specify nature of database for which failover is initiated.
+     */
+    SOURCE, TARGET;
+  }
+
+  public static boolean isNoCleanUpSet(Map<String, String> parameters) {
+    String noCleanUp = parameters.get(hive_metastoreConstants.NO_CLEANUP);
+    if (noCleanUp == null) {
+      noCleanUp = parameters.get(hive_metastoreConstants.NO_CLEANUP.toUpperCase());
+    }
+    return noCleanUp != null && noCleanUp.equalsIgnoreCase("true");
+  }
+
+  public static GetPartitionsByNamesRequest convertToGetPartitionsByNamesRequest(String dbName, String tblName,
+      List<String> partNames) {
+    GetPartitionsByNamesRequest result = new GetPartitionsByNamesRequest(dbName, tblName);
+    result.setNames(partNames);
+    result.setGet_col_stats(false);
+    return result;
+  }
+
+  public static GetPartitionsByNamesRequest convertToGetPartitionsByNamesRequest(String dbName, String tblName,
+      List<String> partNames, boolean getColStats, String engine, String validWriteIdList, Long tableId) {
+    GetPartitionsByNamesRequest result = new GetPartitionsByNamesRequest(dbName, tblName);
+    result.setNames(partNames);
+    result.setGet_col_stats(getColStats);
+    result.setEngine(engine);
+    result.setValidWriteIdList(validWriteIdList);
+    if (tableId != null) {
+      result.setId(tableId);
+    }
+    return result;
+  }
+
+  public static <T> T createThriftPartitionsReq(Class<T> clazz, Configuration conf, T... deepCopy) {
+    final T req;
+    if (deepCopy != null && deepCopy.length == 1) {
+      assert clazz.isAssignableFrom(deepCopy[0].getClass());
+      req = JavaUtils.newInstance(clazz, new Class[]{clazz}, deepCopy);
+    } else {
+      req = JavaUtils.newInstance(clazz);
+    }
+    JavaUtils.setField(req, "setSkipColumnSchemaForPartition", new Class[]{boolean.class},
+        MetastoreConf.getBoolVar(conf, MetastoreConf.ConfVars.METASTORE_CLIENT_FIELD_SCHEMA_FOR_PARTITIONS));
+    JavaUtils.setField(req, "setIncludeParamKeyPattern", new Class[]{String.class},
+        MetastoreConf.getAsString(conf, MetastoreConf.ConfVars.METASTORE_PARTITIONS_PARAMETERS_INCLUDE_PATTERN));
+    JavaUtils.setField(req, "setExcludeParamKeyPattern", new Class[]{String.class},
+        MetastoreConf.getAsString(conf, MetastoreConf.ConfVars.METASTORE_PARTITIONS_PARAMETERS_EXCLUDE_PATTERN));
+    return req;
+  }
+
+  /**
+   * The config parameter can be like "path", "/path", "/path/", "path/*", "/path1/path2/*" and so on.
+   * httpPath should end up as "/*", "/path/*" or "/path1/../pathN/*"
+   * @param httpPath
+   * @return
+   */
+  public static String getHttpPath(String httpPath) {
+    if (httpPath == null || httpPath.equals("")) {
+      httpPath = "/*";
+    } else {
+      if (!httpPath.startsWith("/")) {
+        httpPath = "/" + httpPath;
+      }
+      if (httpPath.endsWith("/")) {
+        httpPath = httpPath + "*";
+      }
+      if (!httpPath.endsWith("/*")) {
+        httpPath = httpPath + "/*";
+      }
+    }
+    return httpPath;
+  }
+
+  public static boolean isDatabaseRemote(Database db) {
+    return db != null && db.getType() == DatabaseType.REMOTE;
   }
 }

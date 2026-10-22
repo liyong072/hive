@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer;
@@ -38,12 +39,12 @@ import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.parse.ParseContext;
@@ -79,7 +80,7 @@ public class SkewJoinOptimizer extends Transform {
 
   private static final Logger LOG = LoggerFactory.getLogger(SkewJoinOptimizer.class.getName());
 
-  public static class SkewJoinProc implements NodeProcessor {
+  public static class SkewJoinProc implements SemanticNodeProcessor {
     private ParseContext parseContext;
 
     public SkewJoinProc(ParseContext parseContext) {
@@ -661,15 +662,15 @@ public class SkewJoinOptimizer extends Transform {
    */
   @Override
   public ParseContext transform(ParseContext pctx) throws SemanticException {
-    Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
+    Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
 
     opRules.put(new RuleRegExp("R1", "TS%.*RS%JOIN%"), getSkewJoinProc(pctx));
     SkewJoinOptProcCtx skewJoinOptProcCtx = new SkewJoinOptProcCtx(pctx);
     // The dispatcher fires the processor corresponding to the closest matching
     // rule and passes the context along
-    Dispatcher disp = new DefaultRuleDispatcher(
+    SemanticDispatcher disp = new DefaultRuleDispatcher(
       null, opRules, skewJoinOptProcCtx);
-    GraphWalker ogw = new DefaultGraphWalker(disp);
+    SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
 
     // Create a list of topop nodes
     List<Node> topNodes = new ArrayList<Node>();
@@ -678,7 +679,7 @@ public class SkewJoinOptimizer extends Transform {
     return pctx;
   }
 
-  private NodeProcessor getSkewJoinProc(ParseContext parseContext) {
+  private SemanticNodeProcessor getSkewJoinProc(ParseContext parseContext) {
     return new SkewJoinProc(parseContext);
   }
 

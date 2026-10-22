@@ -84,10 +84,12 @@ public class TestE2EScenarios {
     }
 
     HiveConf hiveConf = new HiveConf(this.getClass());
-    hiveConf.set(HiveConf.ConfVars.PREEXECHOOKS.varname, "");
-    hiveConf.set(HiveConf.ConfVars.POSTEXECHOOKS.varname, "");
+    //TODO: HIVE-27998: hcatalog tests on Tez
+    hiveConf.setVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE, "mr");
+    hiveConf.set(HiveConf.ConfVars.PRE_EXEC_HOOKS.varname, "");
+    hiveConf.set(HiveConf.ConfVars.POST_EXEC_HOOKS.varname, "");
     hiveConf.set(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname, "false");
-    hiveConf.set(HiveConf.ConfVars.METASTOREWAREHOUSE.varname, TEST_WAREHOUSE_DIR);
+    hiveConf.set(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname, TEST_WAREHOUSE_DIR);
     hiveConf
     .setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
         "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
@@ -118,11 +120,7 @@ public class TestE2EScenarios {
   }
 
   private void driverRun(String cmd) throws Exception {
-    int retCode = driver.run(cmd).getResponseCode();
-    if (retCode != 0) {
-      throw new IOException("Failed to run ["
-        + cmd + "], return code from hive driver : [" + retCode + "]");
-    }
+    driver.run(cmd);
   }
 
   private void pigDump(String tableName) throws IOException {

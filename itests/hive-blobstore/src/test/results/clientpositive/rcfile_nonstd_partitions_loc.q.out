@@ -1,7 +1,9 @@
 PREHOOK: query: DROP TABLE src_events
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: DROP TABLE src_events
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE TABLE src_events
 (
   log_id      BIGINT,
@@ -52,8 +54,10 @@ POSTHOOK: type: LOAD
 POSTHOOK: Output: default@src_events
 PREHOOK: query: DROP TABLE rcfile_events
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: DROP TABLE rcfile_events
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE TABLE rcfile_events
 (
   log_id      BIGINT,
@@ -99,6 +103,7 @@ POSTHOOK: query: INSERT OVERWRITE TABLE rcfile_events PARTITION (run_date, game_
 SELECT * FROM src_events
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@src_events
+POSTHOOK: Output: default@rcfile_events
 POSTHOOK: Output: default@rcfile_events@run_date=20120921/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@rcfile_events@run_date=20121021/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@rcfile_events@run_date=20121121/game_id=39/event_name=hq_change
@@ -323,6 +328,7 @@ POSTHOOK: query: INSERT OVERWRITE TABLE rcfile_events PARTITION (run_date, game_
 SELECT * FROM src_events
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@src_events
+POSTHOOK: Output: default@rcfile_events
 POSTHOOK: Output: default@rcfile_events@run_date=20120921/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@rcfile_events@run_date=20121021/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@rcfile_events@run_date=20121121/game_id=39/event_name=hq_change
@@ -453,6 +459,7 @@ POSTHOOK: query: INSERT OVERWRITE TABLE rcfile_events PARTITION (run_date, game_
 SELECT * FROM src_events
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@src_events
+POSTHOOK: Output: default@rcfile_events
 POSTHOOK: Output: default@rcfile_events@run_date=20120921/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@rcfile_events@run_date=20121021/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@rcfile_events@run_date=20121121/game_id=39/event_name=hq_change

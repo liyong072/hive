@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.llap.daemon.impl.comparator;
 
@@ -40,8 +41,8 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyInt;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -71,9 +72,9 @@ public class TestAMReporter {
     String am2Location = "am2";
     String umbilicalUser = "user";
     QueryIdentifier queryId = new QueryIdentifier("app", 0);
-    amReporter.registerTask(am1Location, am1Port, umbilicalUser, null, queryId,
+    amReporter.registerTask(false,am1Location, am1Port, umbilicalUser, null, queryId,
       mock(TezTaskAttemptID.class), false);
-    amReporter.registerTask(am2Location, am2Port, umbilicalUser, null, queryId,
+    amReporter.registerTask(false,am2Location, am2Port, umbilicalUser, null, queryId,
       mock(TezTaskAttemptID.class), false);
 
     Thread.currentThread().sleep(2000);

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
@@ -23,6 +24,7 @@ import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentTypeException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorUtils.PrimitiveGrouping;
@@ -48,6 +50,17 @@ public class GenericUDFNullif extends GenericUDF {
 
     returnOIResolver = new GenericUDFUtils.ReturnObjectInspectorResolver(true);
     returnOIResolver.update(arguments[0]);
+
+    switch (arguments[0].getCategory()) {
+    case LIST:
+    case MAP:
+    case STRUCT:
+    case PRIMITIVE:
+      break;
+    case UNION:
+    default:
+      throw new UDFArgumentTypeException(0, "Unsupported Argument type category: " + arguments[0].getCategory());
+    }
 
     boolean isPrimitive = (arguments[0] instanceof PrimitiveObjectInspector);
     if (isPrimitive)
@@ -86,17 +99,13 @@ public class GenericUDFNullif extends GenericUDF {
   public Object evaluate(DeferredObject[] arguments) throws HiveException {
     Object arg0 = arguments[0].get();
     Object arg1 = arguments[1].get();
-    Object value0 = null;
-    if (arg0 != null) {
-      value0 = returnOIResolver.convertIfNecessary(arg0, argumentOIs[0], false);
-    }
+    Object value0 = returnOIResolver.convertIfNecessary(arg0, argumentOIs[0], false);
     if (arg0 == null || arg1 == null) {
       return value0;
     }
-    PrimitiveObjectInspector compareOI = (PrimitiveObjectInspector) returnOIResolver.get();
-    if (PrimitiveObjectInspectorUtils.comparePrimitiveObjects(
-        value0, compareOI,
-        returnOIResolver.convertIfNecessary(arg1, argumentOIs[1], false), compareOI)) {
+    Object value1 = returnOIResolver.convertIfNecessary(arg1, argumentOIs[1], false);
+    ObjectInspector compareOI = returnOIResolver.get();
+    if (ObjectInspectorUtils.compare(value0, compareOI, value1, compareOI) == 0) {
       return null;
     }
     return value0;

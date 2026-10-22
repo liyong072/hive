@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.service.auth;
 
@@ -26,7 +27,7 @@ public interface PasswdAuthenticationProvider {
    * to authenticate users for their requests.
    * If a user is to be granted, return nothing/throw nothing.
    * When a user is to be disallowed, throw an appropriate {@link AuthenticationException}.
-   * <p/>
+   * <br>
    * For an example implementation, see {@link LdapAuthenticationProviderImpl}.
    *
    * @param user     The username received over the connection request
@@ -35,5 +36,5 @@ public interface PasswdAuthenticationProvider {
    * @throws AuthenticationException When a user is found to be
    *                                 invalid by the implementation
    */
-  void Authenticate(String user, String password) throws AuthenticationException;
+  void authenticate(String user, String password) throws AuthenticationException;
 }

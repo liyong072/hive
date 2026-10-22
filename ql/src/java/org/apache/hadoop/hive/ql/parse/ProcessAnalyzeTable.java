@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
@@ -22,16 +23,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.Stack;
 
-import org.apache.hadoop.hive.ql.io.AcidUtils;
-import org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat;
+import org.apache.hadoop.hive.ql.QueryProperties.QueryFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.exec.TaskFactory;
-import org.apache.hadoop.hive.ql.io.orc.OrcInputFormat;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
@@ -48,7 +47,7 @@ import org.apache.hadoop.mapred.InputFormat;
  * (normal, no scan.) The plan at this point will be a single
  * table scan operator.
  */
-public class ProcessAnalyzeTable implements NodeProcessor {
+public class ProcessAnalyzeTable implements SemanticNodeProcessor {
 
   private static final Logger LOG = LoggerFactory.getLogger(ProcessAnalyzeTable.class.getName());
 
@@ -75,7 +74,8 @@ public class ProcessAnalyzeTable implements NodeProcessor {
     Table table = tableScan.getConf().getTableMetadata();
     Class<? extends InputFormat> inputFormat = table.getInputFormatClass();
 
-    if (parseContext.getQueryProperties().isAnalyzeCommand()) {
+    if (parseContext.getQueryProperties().hasFeature(QueryFeature.ANALYZE)
+        && !parseContext.getQueryProperties().hasFeature(QueryFeature.REWRITE)) {
 
       assert tableScan.getChildOperators() == null || tableScan.getChildOperators().size() == 0;
 
@@ -88,8 +88,8 @@ public class ProcessAnalyzeTable implements NodeProcessor {
 
       assert alias != null;
       TezWork tezWork = context.currentTask.getWork();
-      if (BasicStatsNoJobTask.canUseFooterScan(table, inputFormat)) {
-        // For ORC & Parquet, all the following statements are the same
+      if (BasicStatsNoJobTask.canUseBasicStats(table, inputFormat)) {
+        // For ORC, Parquet and Iceberg tables, all the following statements are the same
         // ANALYZE TABLE T [PARTITION (...)] COMPUTE STATISTICS
         // ANALYZE TABLE T [PARTITION (...)] COMPUTE STATISTICS noscan;
 
@@ -117,7 +117,7 @@ public class ProcessAnalyzeTable implements NodeProcessor {
 
         BasicStatsWork basicStatsWork = new BasicStatsWork(table.getTableSpec());
         basicStatsWork.setIsExplicitAnalyze(true);
-        basicStatsWork.setNoScanAnalyzeCommand(parseContext.getQueryProperties().isNoScanAnalyzeCommand());
+        basicStatsWork.setNoScanAnalyzeCommand(parseContext.getQueryProperties().hasFeature(QueryFeature.NO_SCAN));
         StatsWork columnStatsWork = new StatsWork(table, basicStatsWork, parseContext.getConf());
         columnStatsWork.collectStatsFromAggregator(tableScan.getConf());
 
@@ -127,7 +127,7 @@ public class ProcessAnalyzeTable implements NodeProcessor {
 
         // ANALYZE TABLE T [PARTITION (...)] COMPUTE STATISTICS noscan;
         // The plan consists of a StatsTask only.
-        if (parseContext.getQueryProperties().isNoScanAnalyzeCommand()) {
+        if (parseContext.getQueryProperties().hasFeature(QueryFeature.NO_SCAN)) {
           statsTask.setParentTasks(null);
           context.rootTasks.remove(context.currentTask);
           context.rootTasks.add(statsTask);

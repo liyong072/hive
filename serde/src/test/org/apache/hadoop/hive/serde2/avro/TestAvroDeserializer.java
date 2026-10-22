@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.avro;
 
@@ -24,6 +25,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.rmi.server.UID;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Hashtable;
@@ -32,6 +34,7 @@ import java.util.Map;
 
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
+import org.apache.hadoop.hive.common.type.Timestamp;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.StandardListObjectInspector;
@@ -41,6 +44,8 @@ import org.apache.hadoop.hive.serde2.objectinspector.UnionObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.JavaStringObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.StringObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.VoidObjectInspector;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -270,6 +275,97 @@ public class TestAvroDeserializer {
     assertEquals(0, uoi.getTag(result.unionObject));
   }
 
+  /**
+   * Test whether Avro timestamps can be deserialized according to new behavior (storage in UTC but
+   * LocalDateTime semantics as timestamps are converted back to the writer time zone) as well as
+   * old behavior (Instant semantics).
+   */
+  @Test
+  public void canDeserializeTimestamps() throws SerDeException, IOException {
+    List<String> columnNames = new ArrayList<>();
+    columnNames.add("timestampField");
+    List<TypeInfo> columnTypes = new ArrayList<>();
+    columnTypes.add(TypeInfoFactory.getPrimitiveTypeInfo("timestamp"));
+    Schema readerSchema =
+        AvroSerdeUtils.getSchemaFor(TestAvroObjectInspectorGenerator.TIMESTAMP_SCHEMA);
+
+    // 2019-01-02 00:00:00 GMT is 1546387200000 milliseconds after epoch
+    GenericData.Record record = new GenericData.Record(readerSchema);
+    record.put("timestampField", 1546387200999L);
+    assertTrue(GENERIC_DATA.validate(readerSchema, record));
+
+    AvroGenericRecordWritable agrw = new AvroGenericRecordWritable(ZoneId.of("America/New_York"), false, false);
+    agrw.setRecord(record);
+    agrw.setFileSchema(readerSchema);
+    agrw.setRecordReaderID(new UID());
+
+    AvroDeserializer deserializer = new AvroDeserializer();
+    ArrayList<Object> row =
+        (ArrayList<Object>) deserializer.deserialize(columnNames, columnTypes, agrw, readerSchema);
+    Timestamp resultTimestamp = (Timestamp) row.get(0);
+
+    // 2019-01-02 00:00:00 GMT is 2019-01-01 19:00:00 GMT-0500 (America/New_York / EST)
+    assertEquals(Timestamp.valueOf("2019-01-01 19:00:00.999"), resultTimestamp);
+
+    // Do the same without specifying writer time zone. This tests deserialization of older records
+    // which should be interpreted in Instant semantics
+    AvroGenericRecordWritable agrw2 = new AvroGenericRecordWritable();
+    agrw2.setRecord(record);
+    agrw2.setFileSchema(readerSchema);
+    agrw2.setRecordReaderID(new UID());
+
+    row =
+        (ArrayList<Object>) deserializer.deserialize(columnNames, columnTypes, agrw2, readerSchema);
+    resultTimestamp = (Timestamp) row.get(0);
+
+    // 2019-01-02 00:00:00 GMT is 2019-01-01 16:00:00 in zone GMT-0800 (PST)
+    // This is the time zone for VM in test.
+    assertEquals(Timestamp.valueOf("2019-01-01 16:00:00.999"), resultTimestamp);
+  }
+
+  @Test
+  public void canDeserializeTimestampsMicros() throws SerDeException, IOException {
+    List<String> columnNames = new ArrayList<>();
+    columnNames.add("timestampField");
+    List<TypeInfo> columnTypes = new ArrayList<>();
+    columnTypes.add(TypeInfoFactory.getPrimitiveTypeInfo("timestamp"));
+    Schema readerSchema =
+            AvroSerdeUtils.getSchemaFor(TestAvroObjectInspectorGenerator.TIMESTAMP_SCHEMA_MICROS);
+
+    // 2019-01-02 00:00:00.123456 GMT is 1546387200123456 microseconds after epoch
+    GenericData.Record record = new GenericData.Record(readerSchema);
+    record.put("timestampField", 1546387200123456L);
+    assertTrue(GENERIC_DATA.validate(readerSchema, record));
+
+    AvroGenericRecordWritable agrw = new AvroGenericRecordWritable(ZoneId.of("America/New_York"), false, false);
+    agrw.setRecord(record);
+    agrw.setFileSchema(readerSchema);
+    agrw.setRecordReaderID(new UID());
+
+    AvroDeserializer deserializer = new AvroDeserializer();
+    ArrayList<Object> row =
+            (ArrayList<Object>) deserializer.deserialize(columnNames, columnTypes, agrw, readerSchema);
+    Timestamp resultTimestamp = (Timestamp) row.get(0);
+
+    // 2019-01-02 00:00:00.123456 GMT is 2019-01-01 19:00:00.123456 GMT-0500 (America/New_York / EST)
+    assertEquals(Timestamp.valueOf("2019-01-01 19:00:00.123456"), resultTimestamp);
+
+    // Do the same without specifying writer time zone. This tests deserialization of older records
+    // which should be interpreted in Instant semantics
+    AvroGenericRecordWritable agrw2 = new AvroGenericRecordWritable();
+    agrw2.setRecord(record);
+    agrw2.setFileSchema(readerSchema);
+    agrw2.setRecordReaderID(new UID());
+
+    row =
+            (ArrayList<Object>) deserializer.deserialize(columnNames, columnTypes, agrw2, readerSchema);
+    resultTimestamp = (Timestamp) row.get(0);
+
+    // 2019-01-02 00:00:00.123456 GMT is 2019-01-01 16:00:00.123456 in zone GMT-0800 (PST)
+    // This is the time zone for VM in test.
+    assertEquals(Timestamp.valueOf("2019-01-01 16:00:00.123456"), resultTimestamp);
+  }
+
   @Test
   public void canDeserializeUnions() throws SerDeException, IOException {
     Schema s = AvroSerdeUtils.getSchemaFor(TestAvroObjectInspectorGenerator.UNION_SCHEMA);
@@ -458,7 +554,7 @@ public class TestAvroDeserializer {
     assertEquals("DALEKS", finalValue);
   }
 
-  @Test // Fixed doesn't exist in Hive. Fixeds go in, lists of bytes go out.
+  @Test // Fixed doesn't exist in Hive. Fixed go in, lists of bytes go out.
   public void canDeserializeFixed() throws SerDeException, IOException {
     Schema s = AvroSerdeUtils.getSchemaFor(TestAvroObjectInspectorGenerator.FIXED_SCHEMA);
     GenericData.Record record = new GenericData.Record(s);

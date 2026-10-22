@@ -24,7 +24,7 @@ import java.io.UnsupportedEncodingException;
 import java.util.List;
 import java.util.Properties;
 
-import junit.framework.TestCase;
+
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -33,13 +33,11 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.io.RCFile;
 import org.apache.hadoop.hive.ql.io.RCFileOutputFormat;
 import org.apache.hadoop.hive.serde.serdeConstants;
-import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.columnar.BytesRefArrayWritable;
 import org.apache.hadoop.hive.serde2.columnar.BytesRefWritable;
 import org.apache.hadoop.hive.serde2.columnar.ColumnarSerDe;
 import org.apache.hadoop.hive.shims.ShimLoader;
 import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.Job;
@@ -47,14 +45,18 @@ import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.TaskAttemptID;
+import org.apache.hadoop.util.ExitUtil;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import static org.junit.Assert.assertEquals;
+import org.junit.Test;
 
 /**
  * TestRCFile.
  *
  */
-public class TestRCFileMapReduceInputFormat extends TestCase {
+public class TestRCFileMapReduceInputFormat {
 
   private static final Logger LOG = LoggerFactory.getLogger(TestRCFileMapReduceInputFormat.class);
 
@@ -78,7 +80,7 @@ public class TestRCFileMapReduceInputFormat extends TestCase {
       serDe = new ColumnarSerDe();
       // Create the SerDe
       tbl = createProperties();
-      SerDeUtils.initializeSerDe(serDe, conf, tbl, null);
+      serDe.initialize(conf, tbl, null);
     } catch (Exception e) {
     }
   }
@@ -128,7 +130,7 @@ public class TestRCFileMapReduceInputFormat extends TestCase {
     String usage = "Usage: RCFile " + "[-count N]" + " file";
     if (args.length == 0) {
       LOG.error(usage);
-      System.exit(-1);
+      ExitUtil.terminate(-1);
     }
 
     try {
@@ -145,7 +147,7 @@ public class TestRCFileMapReduceInputFormat extends TestCase {
 
       if (file == null) {
         LOG.error(usage);
-        System.exit(-1);
+        ExitUtil.terminate(-1);
       }
 
       LOG.info("count = {}", count);
@@ -173,6 +175,7 @@ public class TestRCFileMapReduceInputFormat extends TestCase {
   }
 
 
+  @Test
   public void testSynAndSplit() throws IOException, InterruptedException {
     splitBeforeSync();
     splitRightBeforeSync();
@@ -231,7 +234,7 @@ public class TestRCFileMapReduceInputFormat extends TestCase {
     jonconf.set("mapred.input.dir", testDir.toString());
     JobContext context = new Job(jonconf);
     HiveConf.setLongVar(context.getConfiguration(),
-        HiveConf.ConfVars.MAPREDMAXSPLITSIZE, maxSplitSize);
+        HiveConf.ConfVars.MAPRED_MAX_SPLIT_SIZE, maxSplitSize);
     List<InputSplit> splits = inputFormat.getSplits(context);
     assertEquals("splits length should be " + splitNumber, splitNumber, splits.size());
     int readCount = 0;

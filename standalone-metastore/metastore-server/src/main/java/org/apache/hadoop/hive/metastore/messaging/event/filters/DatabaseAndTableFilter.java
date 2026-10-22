@@ -9,16 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.messaging.event.filters;
 
 import org.apache.hadoop.hive.metastore.api.NotificationEvent;
-import org.apache.hadoop.hive.metastore.messaging.MessageBuilder;
 
 import java.util.regex.Pattern;
 
@@ -38,12 +38,6 @@ public class DatabaseAndTableFilter extends BasicFilter {
         ? null
         : Pattern.compile(databaseNameOrPattern, Pattern.CASE_INSENSITIVE);
     this.tableName = tableName;
-  }
-
-  private boolean isTxnRelatedEvent(final NotificationEvent event) {
-    return ((event.getEventType().equals(MessageBuilder.OPEN_TXN_EVENT)) ||
-            (event.getEventType().equals(MessageBuilder.COMMIT_TXN_EVENT)) ||
-            (event.getEventType().equals(MessageBuilder.ABORT_TXN_EVENT)));
   }
 
   @Override

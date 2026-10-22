@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec;
 
@@ -21,8 +22,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Properties;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
 import org.apache.hadoop.hive.ql.exec.persistence.RowContainer;
 import org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -32,7 +35,6 @@ import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
-import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.io.ShortWritable;
 import org.apache.hadoop.hive.serde2.lazybinary.LazyBinarySerDe;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -46,8 +48,12 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapred.SequenceFileInputFormat;
 import org.apache.hive.common.util.ReflectionUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class JoinUtil {
+
+  private static final Logger LOG = LoggerFactory.getLogger(JoinUtil.class);
 
   /**
    * Represents the join result between two tables
@@ -211,7 +217,7 @@ public class JoinUtil {
 
     // Compute the values
     int reserve = hasFilter ? valueFields.size() + 1 : valueFields.size();
-    List<Object> nr = new ArrayList<Object>(reserve);   
+    List<Object> nr = new ArrayList<Object>(reserve);
     for (int i = 0; i < valueFields.size(); i++) {
       nr.add(ObjectInspectorUtils.copyToStandardObject(valueFields.get(i)
           .evaluate(row), valueFieldsOI.get(i),
@@ -299,12 +305,12 @@ public class JoinUtil {
     if (desc == null) {
       return null;
     }
-    AbstractSerDe sd = (AbstractSerDe) ReflectionUtil.newInstance(desc.getDeserializerClass(),
+    AbstractSerDe sd = (AbstractSerDe) ReflectionUtil.newInstance(desc.getSerDeClass(),
         null);
     try {
-      SerDeUtils.initializeSerDe(sd, null, desc.getProperties(), null);
+      sd.initialize(null, desc.getProperties(), null);
     } catch (SerDeException e) {
-      e.printStackTrace();
+      LOG.warn("Error getting spill table", e);
       return null;
     }
     return sd;
@@ -319,7 +325,7 @@ public class JoinUtil {
       int columnSize = valueCols.size();
       StringBuilder colNames = new StringBuilder();
       StringBuilder colTypes = new StringBuilder();
-      if (columnSize <= 0) {
+      if (columnSize <= 0 && noFilter) {
         continue;
       }
       for (int k = 0; k < columnSize; k++) {
@@ -336,19 +342,22 @@ public class JoinUtil {
         colTypes.append(TypeInfoFactory.shortTypeInfo.getTypeName());
         colTypes.append(',');
       }
-      // remove the last ','
-      colNames.setLength(colNames.length() - 1);
-      colTypes.setLength(colTypes.length() - 1);
+      if (colNames.length() > 0) {
+        // remove the last ','
+        colNames.setLength(colNames.length() - 1);
+        colTypes.setLength(colTypes.length() - 1);
+      }
+
+      Properties props = new Properties();
+      props.put(org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_FORMAT, "" + Utilities.ctrlaCode);
+      props.put(org.apache.hadoop.hive.serde.serdeConstants.LIST_COLUMNS, colNames.toString());
+      props.put(org.apache.hadoop.hive.serde.serdeConstants.LIST_COLUMN_TYPES, colTypes.toString());
+      props.put(serdeConstants.SERIALIZATION_LIB, LazyBinarySerDe.class.getName());
+      props.put(hive_metastoreConstants.TABLE_BUCKETING_VERSION, "-1");
       TableDesc tblDesc = new TableDesc(
-          SequenceFileInputFormat.class, HiveSequenceFileOutputFormat.class,
-          Utilities.makeProperties(
-          org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_FORMAT, ""
-          + Utilities.ctrlaCode,
-          org.apache.hadoop.hive.serde.serdeConstants.LIST_COLUMNS, colNames
-          .toString(),
-          org.apache.hadoop.hive.serde.serdeConstants.LIST_COLUMN_TYPES,
-          colTypes.toString(),
-          serdeConstants.SERIALIZATION_LIB,LazyBinarySerDe.class.getName()));
+          SequenceFileInputFormat.class,
+          HiveSequenceFileOutputFormat.class,
+          props);
       spillTableDesc[tag] = tblDesc;
     }
     return spillTableDesc;
@@ -418,7 +427,7 @@ public class JoinUtil {
   private static ObjectInspector unflattenObjInspector(ObjectInspector oi) {
     if (oi instanceof StructObjectInspector) {
       // Check if all fields start with "key." or "value."
-      // If so, then unflatten by adding an additional level of nested key and value structs
+      // If so, then unflatten by adding a level of nested key and value structs
       // Example: { "key.reducesinkkey0":int, "key.reducesinkkey1": int, "value._col6":int }
       // Becomes
       //   { "key": { "reducesinkkey0":int, "reducesinkkey1":int }, "value": { "_col6":int } }

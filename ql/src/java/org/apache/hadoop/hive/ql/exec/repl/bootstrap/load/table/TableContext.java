@@ -9,50 +9,27 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.repl.bootstrap.load.table;
 
-import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.hive.ql.exec.repl.util.TaskTracker;
-import org.apache.hadoop.hive.ql.parse.SemanticException;
-import org.apache.hadoop.hive.ql.plan.ImportTableDesc;
-import org.apache.hadoop.hive.ql.exec.repl.util.ReplUtils;
 
 public class TableContext {
   final String dbNameToLoadIn;
   private final TaskTracker parentTracker;
-  // this will only be available when we are doing table load only in replication not otherwise
-  private final String tableNameToLoadIn;
 
-  public TableContext(TaskTracker parentTracker, String dbNameToLoadIn,
-      String tableNameToLoadIn) {
+  public TableContext(TaskTracker parentTracker, String dbNameToLoadIn) {
     this.dbNameToLoadIn = dbNameToLoadIn;
     this.parentTracker = parentTracker;
-    this.tableNameToLoadIn = tableNameToLoadIn;
   }
 
   boolean waitOnPrecursor() {
     return parentTracker.hasTasks();
-  }
-
-  ImportTableDesc overrideProperties(ImportTableDesc importTableDesc)
-      throws SemanticException {
-    if (StringUtils.isNotBlank(tableNameToLoadIn)) {
-      importTableDesc.setTableName(tableNameToLoadIn);
-
-      //For table level load, add this property to avoid duplicate copy.
-      // This flag will be set to false after first incremental load is done. This flag is used by
-      // repl copy task to check if duplicate file check is required or not. This flag is used by
-      // compaction to check if compaction can be done for this database or not. If compaction is
-      // done before first incremental then duplicate check will fail as compaction may change
-      // the directory structure.
-      importTableDesc.getTblProps().put(ReplUtils.REPL_FIRST_INC_PENDING_FLAG, "true");
-    }
-    return importTableDesc;
   }
 }

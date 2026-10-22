@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore;
 
@@ -28,30 +29,26 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public interface MetaStoreThread extends Configurable {
 
   /**
-   * Set the id for this thread.
-   * @param threadId id of the thread
-   */
-  void setThreadId(int threadId);
-
-  /**
    * Initialize the thread.  This must not be called until after
-   * {@link #setConf(Configuration)}  and  {@link #setThreadId(int)}
-   * have been called.
+   * {@link #setConf(Configuration)} has been called.
    * @param stop a flag to watch for when to stop.  If this value is set to true,
    *             the thread will terminate the next time through its main loop.
-   * @param looped a flag that is set to true everytime a thread goes through it's main loop.
-   *               This is purely for testing so that tests can assure themselves that the thread
-   *               has run through it's loop once.  The test can set this value to false.  The
-   *               thread should then assure that the loop has been gone completely through at
-   *               least once.
    */
   // TODO: move these test parameters to more specific places... there's no need to have them here
-  void init(AtomicBoolean stop, AtomicBoolean looped) throws Exception;
+  void init(AtomicBoolean stop) throws Exception;
 
   /**
    * Run the thread in the background.  This must not be called until
-   * {@link MetaStoreThread#init(java.util.concurrent.atomic.AtomicBoolean,java.util.concurrent.atomic.AtomicBoolean)} has
+   * {@link MetaStoreThread#init(java.util.concurrent.atomic.AtomicBoolean)} has
    * been called.
    */
   void start();
+
+  /**
+   * Should use mutex support to allow only one copy of this task running across the warehouse.
+   * @param enableMutex true for enabling the mutex, false otherwise
+   */
+  default void enforceMutex(boolean enableMutex) {
+    // no-op
+  }
 }

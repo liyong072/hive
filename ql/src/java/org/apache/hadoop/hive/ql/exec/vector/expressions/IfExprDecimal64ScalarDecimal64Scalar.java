@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -52,7 +53,7 @@ public class IfExprDecimal64ScalarDecimal64Scalar extends IfExprLongScalarLongSc
     HiveDecimalWritable writable2 = new HiveDecimalWritable();
     writable2.deserialize64(arg3Scalar, decimalTypeInfo2.scale());
     return
-        getColumnParamString(0, arg1Column) +
+        getColumnParamString(0, inputColumnNum[0]) +
         ", decimal64Val1 " + arg2Scalar + ", decimalVal1 " + writable1.toString() +
         ", decimal64Val2 " + arg3Scalar + ", decimalVal2 " + writable2.toString();
   }
@@ -71,5 +72,10 @@ public class IfExprDecimal64ScalarDecimal64Scalar extends IfExprLongScalarLongSc
             VectorExpressionDescriptor.InputExpressionType.COLUMN,
             VectorExpressionDescriptor.InputExpressionType.SCALAR,
             VectorExpressionDescriptor.InputExpressionType.SCALAR).build();
+  }
+
+  @Override
+  public boolean shouldConvertDecimal64ToDecimal() {
+    return false;
   }
 }

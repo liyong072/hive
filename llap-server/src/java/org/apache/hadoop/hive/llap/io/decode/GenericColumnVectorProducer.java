@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.io.decode;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
+import java.util.concurrent.ExecutorService;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -52,6 +54,7 @@ import org.apache.hive.common.util.FixedSizedObjectPool;
 import org.apache.orc.CompressionKind;
 import org.apache.orc.OrcFile;
 import org.apache.orc.OrcProto;
+import org.apache.orc.OrcProto.CalendarKind;
 import org.apache.orc.OrcProto.ColumnEncoding;
 import org.apache.orc.OrcProto.RowIndex;
 import org.apache.orc.OrcProto.RowIndexEntry;
@@ -65,10 +68,11 @@ public class GenericColumnVectorProducer implements ColumnVectorProducer {
   private final LlapDaemonCacheMetrics cacheMetrics;
   private final LlapDaemonIOMetrics ioMetrics;
   private final FixedSizedObjectPool<IoTrace> tracePool;
+  private final ExecutorService encodeExecutor;
 
   public GenericColumnVectorProducer(SerDeLowLevelCacheImpl serdeCache,
       BufferUsageManager bufferManager, Configuration conf, LlapDaemonCacheMetrics cacheMetrics,
-      LlapDaemonIOMetrics ioMetrics, FixedSizedObjectPool<IoTrace> tracePool) {
+      LlapDaemonIOMetrics ioMetrics, FixedSizedObjectPool<IoTrace> tracePool, ExecutorService encodeExecutor) {
     LlapIoImpl.LOG.info("Initializing ORC column vector producer");
     this.cache = serdeCache;
     this.bufferManager = bufferManager;
@@ -76,6 +80,7 @@ public class GenericColumnVectorProducer implements ColumnVectorProducer {
     this.cacheMetrics = cacheMetrics;
     this.ioMetrics = ioMetrics;
     this.tracePool = tracePool;
+    this.encodeExecutor = encodeExecutor;
   }
 
   @Override
@@ -84,8 +89,7 @@ public class GenericColumnVectorProducer implements ColumnVectorProducer {
       SchemaEvolutionFactory sef, InputFormat<?, ?> sourceInputFormat, Deserializer sourceSerDe,
       Reporter reporter, JobConf job, Map<Path, PartitionDesc> parts) throws IOException {
     cacheMetrics.incrCacheReadRequests();
-    OrcEncodedDataConsumer edc = new OrcEncodedDataConsumer(
-        consumer, includes, false, counters, ioMetrics);
+    OrcEncodedDataConsumer edc = new OrcEncodedDataConsumer(consumer, includes, counters, ioMetrics);
     SerDeFileMetadata fm;
     try {
       fm = new SerDeFileMetadata(sourceSerDe);
@@ -97,7 +101,7 @@ public class GenericColumnVectorProducer implements ColumnVectorProducer {
     // TODO: add tracing to serde reader
     SerDeEncodedDataReader reader = new SerDeEncodedDataReader(cache, bufferManager, conf,
         split, includes.getPhysicalColumnIds(), edc, job, reporter, sourceInputFormat,
-        sourceSerDe, counters, fm.getSchema(), parts);
+        sourceSerDe, counters, fm.getSchema(), parts, encodeExecutor);
     edc.init(reader, reader, new IoTrace(0, false));
     return edc;
   }
@@ -217,6 +221,9 @@ public class GenericColumnVectorProducer implements ColumnVectorProducer {
         case TIMESTAMP:
           type.setKind(OrcProto.Type.Kind.TIMESTAMP);
           break;
+        case TIMESTAMP_INSTANT:
+          type.setKind(OrcProto.Type.Kind.TIMESTAMP_INSTANT);
+          break;
         case DATE:
           type.setKind(OrcProto.Type.Kind.DATE);
           break;
@@ -291,6 +298,11 @@ public class GenericColumnVectorProducer implements ColumnVectorProducer {
     @Override
     public OrcFile.Version getFileVersion() {
       return null;
+    }
+
+    @Override
+    public CalendarKind getCalendar() {
+      return CalendarKind.JULIAN_GREGORIAN;
     }
   }
 }

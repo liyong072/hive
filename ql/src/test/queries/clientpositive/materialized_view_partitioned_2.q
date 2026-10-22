@@ -32,15 +32,16 @@ SELECT * FROM src_txn_2 where value > 'val_220' and value < 'val_230';
 
 SELECT * FROM src_txn_2 where value > 'val_220' and value < 'val_230';
 
--- SHOULD CHOOSE partition_mv_4 SINCE IT IS THE MOST EFFICIENT
--- READING ONLY ONE PARTITION
+DROP MATERIALIZED VIEW partition_mv_1;
+DROP MATERIALIZED VIEW partition_mv_4;
+
+-- SHOULD CHOOSE partition_mv_1, partition_mv_3 OR partition_mv_4
+-- SINCE IT IS THE MOST EFFICIENT READING ONLY ONE PARTITION
 EXPLAIN
 SELECT * FROM src_txn_2 where key > 224 and key < 226;
 
 SELECT * FROM src_txn_2 where key > 223 and key < 225;
 
-DROP MATERIALIZED VIEW partition_mv_1;
 DROP MATERIALIZED VIEW partition_mv_2;
 DROP MATERIALIZED VIEW partition_mv_3;
-DROP MATERIALIZED VIEW partition_mv_4;
 DROP TABLE src_txn_2;

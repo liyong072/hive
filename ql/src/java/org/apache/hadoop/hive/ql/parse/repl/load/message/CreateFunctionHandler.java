@@ -1,4 +1,3 @@
-
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -10,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.load.message;
 
@@ -27,6 +27,8 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.ReplChangeManager;
 import org.apache.hadoop.hive.metastore.api.ResourceUri;
 import org.apache.hadoop.hive.ql.ErrorMsg;
+import org.apache.hadoop.hive.ql.ddl.DDLWork;
+import org.apache.hadoop.hive.ql.ddl.function.create.CreateFunctionDesc;
 import org.apache.hadoop.hive.ql.exec.FunctionUtils;
 import org.apache.hadoop.hive.ql.exec.ReplCopyTask;
 import org.apache.hadoop.hive.ql.exec.Task;
@@ -36,12 +38,11 @@ import org.apache.hadoop.hive.ql.parse.ReplicationSpec;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.parse.repl.PathBuilder;
 import org.apache.hadoop.hive.ql.parse.repl.load.MetaData;
-import org.apache.hadoop.hive.ql.plan.CreateFunctionDesc;
+import org.apache.hadoop.hive.ql.plan.CopyWork;
 import org.apache.hadoop.hive.ql.plan.DependencyCollectionWork;
-import org.apache.hadoop.hive.ql.plan.FunctionWork;
+import org.apache.hadoop.util.Time;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -56,18 +57,18 @@ public class CreateFunctionHandler extends AbstractMessageHandler {
   }
 
   @Override
-  public List<Task<? extends Serializable>> handle(Context context)
+  public List<Task<?>> handle(Context context)
       throws SemanticException {
     try {
       FunctionDescBuilder builder = new FunctionDescBuilder(context);
       CreateFunctionDesc descToLoad = builder.build();
       this.functionName = builder.metadata.function.getFunctionName();
-
       context.log.debug("Loading function desc : {}", descToLoad.toString());
-      Task<FunctionWork> createTask = TaskFactory.get(
-          new FunctionWork(descToLoad), context.hiveConf);
+      Task<DDLWork> createTask = TaskFactory.get(
+          new DDLWork(readEntitySet, writeEntitySet, descToLoad,
+                      true, context.getDumpDirectory(), context.getMetricCollector()), context.hiveConf);
       context.log.debug("Added create function task : {}:{},{}", createTask.getId(),
-          descToLoad.getFunctionName(), descToLoad.getClassName());
+          descToLoad.getName(), descToLoad.getClassName());
       // This null check is specifically done as the same class is used to handle both incremental and
       // bootstrap replication scenarios for create function. When doing bootstrap we do not have
       // event id for this event but rather when bootstrap started and hence we pass in null dmd for
@@ -91,7 +92,7 @@ public class CreateFunctionHandler extends AbstractMessageHandler {
          *  add the 'many' to parent/root tasks. The execution environment will make sure that the child barrier task will not get executed unless all parents of the barrier task are complete,
          *  which should only happen when the last task is finished, at which point the child of the barrier task is picked up.
          */
-        Task<? extends Serializable> barrierTask =
+        Task<?> barrierTask =
             TaskFactory.get(new DependencyCollectionWork(), context.hiveConf);
         builder.replCopyTasks.forEach(t -> t.addDependentTask(barrierTask));
         barrierTask.addDependentTask(createTask);
@@ -129,9 +130,9 @@ public class CreateFunctionHandler extends AbstractMessageHandler {
       // and not do them lazily. The reason being the function class used for transformations additionally
       // also creates the corresponding replCopyTasks, which cannot be evaluated lazily. since the query
       // plan needs to be complete before we execute and not modify it while execution in the driver.
-      List<ResourceUri> transformedUris = ImmutableList.copyOf(
-          Lists.transform(metadata.function.getResourceUris(), conversionFunction)
-      );
+      List<ResourceUri> transformedUris = (metadata.function.getResourceUris() == null)
+              ? null
+              : ImmutableList.copyOf(Lists.transform(metadata.function.getResourceUris(), conversionFunction));
       replCopyTasks.addAll(conversionFunction.replCopyTasks);
       String fullQualifiedFunctionName = FunctionUtils.qualifyFunctionName(
           metadata.function.getFunctionName(), destinationDbName
@@ -140,7 +141,7 @@ public class CreateFunctionHandler extends AbstractMessageHandler {
       // Only for incremental load, need to validate if event is newer than the database.
       ReplicationSpec replSpec = (context.dmd == null) ? null : context.eventOnlyReplicationSpec();
       return new CreateFunctionDesc(
-              fullQualifiedFunctionName, false, metadata.function.getClassName(),
+              fullQualifiedFunctionName, metadata.function.getClassName(), false,
               transformedUris, replSpec
       );
     }
@@ -187,21 +188,29 @@ public class CreateFunctionHandler extends AbstractMessageHandler {
           pathBuilder
               .addDescendant(destinationDbName.toLowerCase())
               .addDescendant(metadata.function.getFunctionName().toLowerCase())
-              .addDescendant(String.valueOf(System.nanoTime()))
+              .addDescendant(String.valueOf(Time.monotonicNowNanos()))
               .addDescendant(split[split.length - 1])
               .build(),
           new Path(functionsRootDir).getFileSystem(context.hiveConf)
       );
 
-      Task<?> copyTask = ReplCopyTask.getLoadCopyTask(
-          metadata.getReplicationSpec(), new Path(sourceUri), qualifiedDestinationPath,
-          context.hiveConf
-      );
-      replCopyTasks.add(copyTask);
+      replCopyTasks.add(getCopyTask(sourceUri, qualifiedDestinationPath));
       ResourceUri destinationUri =
           new ResourceUri(resourceUri.getResourceType(), qualifiedDestinationPath.toString());
       context.log.debug("copy source uri : {} to destination uri: {}", sourceUri, destinationUri);
       return destinationUri;
+    }
+
+    private Task<?> getCopyTask(String sourceUri, Path dest) {
+      boolean copyAtLoad = context.hiveConf.getBoolVar(HiveConf.ConfVars.REPL_RUN_DATA_COPY_TASKS_ON_TARGET);
+      if (copyAtLoad ) {
+        return ReplCopyTask.getLoadCopyTask(metadata.getReplicationSpec(), new Path(sourceUri), dest, context.hiveConf,
+                context.getDumpDirectory(), context.getMetricCollector());
+      } else {
+        //CopyTask expects the destination directory, hence we pass the parent of the actual destination path
+        return TaskFactory.get(new CopyWork(new Path(sourceUri), dest.getParent(), true, false,
+                context.getDumpDirectory(), context.getMetricCollector(), true), context.hiveConf);
+      }
     }
   }
 }

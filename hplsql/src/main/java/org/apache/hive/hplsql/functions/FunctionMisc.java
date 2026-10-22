@@ -9,38 +9,45 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.hplsql.functions;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.hive.hplsql.*;
+import org.apache.hive.hplsql.Conn;
+import org.apache.hive.hplsql.Exec;
+import org.apache.hive.hplsql.HplsqlParser;
+import org.apache.hive.hplsql.Utils;
+import org.apache.hive.hplsql.Var;
+import org.apache.hive.hplsql.executor.QueryException;
+import org.apache.hive.hplsql.executor.QueryExecutor;
+import org.apache.hive.hplsql.executor.QueryResult;
 
-public class FunctionMisc extends Function {
-  public FunctionMisc(Exec e) {
-    super(e);
+public class FunctionMisc extends BuiltinFunctions {
+  public FunctionMisc(Exec e, QueryExecutor queryExecutor) {
+    super(e, queryExecutor);
   }
 
   /** 
    * Register functions
    */
   @Override
-  public void register(Function f) {
+  public void register(BuiltinFunctions f) {
     f.map.put("COALESCE", this::nvl);
     f.map.put("DECODE", this::decode);
     f.map.put("NVL", this::nvl);
     f.map.put("NVL2", this::nvl2);
     f.map.put("PART_COUNT_BY", this::partCountBy);
+    f.map.put("MOD", this::modulo);
 
     f.specMap.put("ACTIVITY_COUNT", this::activityCount);
     f.specMap.put("CAST", this::cast);
@@ -58,7 +65,7 @@ public class FunctionMisc extends Function {
   void activityCount(HplsqlParser.Expr_spec_funcContext ctx) {
     evalInt(Long.valueOf(exec.getRowCount()));
   }
-  
+
   /**
    * CAST function
    */
@@ -75,10 +82,28 @@ public class FunctionMisc extends Function {
       if (ctx.dtype_len().L_INT(1) != null) {
         scale = ctx.dtype_len().L_INT(1).getText();
       }
-    }    
+    }
     Var var = new Var(null, type, len, scale, null);
-    var.cast(evalPop(ctx.expr(0)));
-    evalVar(var);
+    Var value = evalPop(ctx.expr(0));
+    if (value.type == Var.Type.STRING) {
+      Var newValue = new Var(value.name, value.type, Utils.unquoteString(value.toString()));
+      value = newValue;
+    }
+    if (value.type != Var.Type.NULL) {
+      String valueUpper = value.toString().toUpperCase();
+      if (valueUpper.startsWith("TIMESTAMP ") || valueUpper.startsWith("DATE ")) {
+        boolean old = exec.buildSql;
+        exec.buildSql = false;
+        value = evalPop(ctx.expr(0));
+        exec.buildSql = old;
+      }
+    }
+    var.cast(value);
+    if (exec.buildSql && var.type == Var.Type.STRING) {
+      evalString(var.toSqlString());
+    } else {
+      evalVar(var);
+    }
   }
   
   /**
@@ -93,7 +118,7 @@ public class FunctionMisc extends Function {
       evalVar(FunctionDatetime.currentTimestamp(precision)); 
     }
     else if (ctx.T_USER() != null) {
-      evalVar(FunctionMisc.currentUser());
+      evalVar(currentUser());
     }
     else {
       evalNull();
@@ -106,22 +131,23 @@ public class FunctionMisc extends Function {
   void currentSql(HplsqlParser.Expr_spec_funcContext ctx) {
     if (ctx.T_DATE() != null) {
       if (exec.getConnectionType() == Conn.Type.HIVE) {
-        evalString("TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP()))");
+        evalSqlString("TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP()))");
       } 
       else {
-        evalString("CURRENT_DATE");
+        evalSqlString("CURRENT_DATE");
       }
     }
     else if (ctx.T_TIMESTAMP() != null) {
       if (exec.getConnectionType() == Conn.Type.HIVE) {
-        evalString("FROM_UNIXTIME(UNIX_TIMESTAMP())");
+        evalSqlString("FROM_UNIXTIME(UNIX_TIMESTAMP())");
       } 
       else {
-        evalString("CURRENT_TIMESTAMP");
+        evalSqlString("CURRENT_TIMESTAMP");
       }
-    }
-    else {
-      evalString(exec.getFormattedText(ctx));
+    } else if (ctx.T_USER() != null) {
+      evalSqlString("CURRENT_USER()");
+    } else {
+      evalSqlString(exec.getFormattedText(ctx));
     }
   }
   
@@ -132,8 +158,9 @@ public class FunctionMisc extends Function {
     evalVar(currentUser());
   }
   
-  public static Var currentUser() {
-    return new Var(System.getProperty("user.name"));
+  public Var currentUser() {
+    String currentUser = System.getProperty("user.name");
+    return new Var(currentUser);
   }
   
   /**
@@ -162,7 +189,7 @@ public class FunctionMisc extends Function {
       evalNull();
     }
   }
-  
+
   /**
    * NVL function - Return first non-NULL expression
    */
@@ -182,7 +209,8 @@ public class FunctionMisc extends Function {
    */
   void nvl2(HplsqlParser.Expr_func_paramsContext ctx) {
     if (ctx.func_param().size() == 3) {
-      if (!evalPop(ctx.func_param(0).expr()).isNull()) {
+      Var firstParam = evalPop(ctx.func_param(0).expr());
+      if (!firstParam.isNull()) {
         eval(ctx.func_param(1).expr());
       }
       else {
@@ -226,25 +254,34 @@ public class FunctionMisc extends Function {
       evalNull();
       return;
     }
-    Query query = exec.executeQuery(ctx, sql.toString(), exec.conf.defaultConnection);
+    QueryResult query = queryExecutor.executeQuery(sql.toString(), ctx);
     if (query.error()) {
-      evalNullClose(query, exec.conf.defaultConnection);
+      evalNullClose(query);
       return;
     }
     int result = 0;
-    ResultSet rs = query.getResultSet();
     try {
-      while (rs.next()) {
+      while (query.next()) {
         result++;
       }
-    } catch (SQLException e) {
-      evalNullClose(query, exec.conf.defaultConnection);
+    } catch (Exception e) {
+      evalNullClose(query);
       return;
     }
     evalInt(result);
-    exec.closeQuery(query, exec.conf.defaultConnection);
+    query.close();
   }
-  
+
+  public void modulo(HplsqlParser.Expr_func_paramsContext ctx) {
+    if (ctx.func_param().size() == 2) {
+      int a = evalPop(ctx.func_param(0).expr()).intValue();
+      int b = evalPop(ctx.func_param(1).expr()).intValue();
+      evalInt(a % b);
+    } else {
+      evalNull();
+    }
+  }
+
   /**
    * PART_COUNT_BY function
    */
@@ -256,22 +293,21 @@ public class FunctionMisc extends Function {
     String tabname = evalPop(ctx.func_param(0).expr()).toString();
     ArrayList<String> keys = null;
     if (cnt > 1) {
-      keys = new ArrayList<String>();
+      keys = new ArrayList<>();
       for (int i = 1; i < cnt; i++) {
         keys.add(evalPop(ctx.func_param(i).expr()).toString().toUpperCase());
       }
     }    
     String sql = "SHOW PARTITIONS " + tabname;
-    Query query = exec.executeQuery(ctx, sql, exec.conf.defaultConnection);
+    QueryResult query = queryExecutor.executeQuery(sql, ctx);
     if (query.error()) {
-      exec.closeQuery(query, exec.conf.defaultConnection);
+      query.close();
       return;
     }
-    ResultSet rs = query.getResultSet();
-    Map<String, Integer> group = new HashMap<String, Integer>();
+    Map<String, Integer> group = new HashMap<>();
     try {
-      while (rs.next()) {
-        String part = rs.getString(1);
+      while (query.next()) {
+        String part = query.column(0, String.class);
         String[] parts = part.split("/");
         String key = parts[0];
         if (cnt > 1) {
@@ -292,8 +328,8 @@ public class FunctionMisc extends Function {
         }
         group.put(key, count + 1);        
       }
-    } catch (SQLException e) {
-      exec.closeQuery(query, exec.conf.defaultConnection);
+    } catch (QueryException e) {
+      query.close();
       return;
     }
     if (cnt == 1) {
@@ -301,9 +337,9 @@ public class FunctionMisc extends Function {
     }
     else {
       for (Map.Entry<String, Integer> i : group.entrySet()) {
-        System.out.println(i.getKey() + '\t' + i.getValue());
+        console.printLine(i.getKey() + '\t' + i.getValue());
       }
     }
-    exec.closeQuery(query, exec.conf.defaultConnection);
+    query.close();
   }
 }

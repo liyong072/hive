@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -28,6 +29,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 
+import org.apache.hadoop.hive.ql.exec.FileSinkOperator;
+import org.apache.hadoop.hive.ql.exec.OperatorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.common.type.DataTypePhysicalVariation;
@@ -54,7 +57,7 @@ public abstract class BaseWork extends AbstractOperatorDesc {
   protected static final Logger LOG = LoggerFactory.getLogger(BaseWork.class);
 
   // dummyOps is a reference to all the HashTableDummy operators in the
-  // plan. These have to be separately initialized when we setup a task.
+  // plan. These have to be separately initialized when we set up a task.
   // Their function is mainly as root ops to give the mapjoin the correct
   // schema info.
   List<HashTableDummyOperator> dummyOps;
@@ -510,7 +513,13 @@ public abstract class BaseWork extends AbstractOperatorDesc {
     reservedMemoryMB = memoryMB;
   }
 
-  public abstract void configureJobConf(JobConf job);
+  public void configureJobConf(JobConf job) {
+    OperatorUtils.findOperators(getAllRootOperators(), FileSinkOperator.class).forEach(fs -> {
+      LOG.debug("Configuring JobConf for table {}.{}", fs.getConf().getTableInfo().getDbName(),
+          fs.getConf().getTableInfo().getTableName());
+      PlanUtils.configureJobConf(fs.getConf().getTableInfo(), job);
+    });
+  }
 
   public void setTag(int tag) {
     this.tag = tag;
@@ -536,5 +545,13 @@ public abstract class BaseWork extends AbstractOperatorDesc {
   public void setInputSourceToRuntimeValuesInfo(
           String workName, RuntimeValuesInfo runtimeValuesInfo) {
     inputSourceToRuntimeValuesInfo.put(workName, runtimeValuesInfo);
+  }
+
+  public void abort() {
+    if (dummyOps != null) {
+      for (Operator<?> dummyOp : dummyOps) {
+        dummyOp.abort();
+      }
+    }
   }
 }

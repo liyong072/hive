@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules.jdbc;
 
@@ -104,16 +105,6 @@ public abstract class JDBCAbstractSplitFilterRule extends RelOptRule {
     return visitor.canBeSplit();
   }
 
-  public boolean matches(RelOptRuleCall call, SqlDialect dialect) {
-    LOGGER.debug("MySplitFilter.matches has been called");
-
-    final HiveFilter filter = call.rel(0);
-
-    RexNode cond = filter.getCondition();
-
-    return canSplitFilter(cond, dialect);
-  }
-
   public void onMatch(RelOptRuleCall call, SqlDialect dialect) {
     LOGGER.debug("MySplitFilter.onMatch has been called");
 
@@ -168,17 +159,20 @@ public abstract class JDBCAbstractSplitFilterRule extends RelOptRule {
     public boolean matches(RelOptRuleCall call) {
       LOGGER.debug("MyUpperJoinFilterFilter.matches has been called");
 
+      final HiveFilter filter = call.rel(0);
       final HiveJoin join = call.rel(1);
       final HiveJdbcConverter conv = call.rel(2);
 
       RexNode joinCond = join.getCondition();
+      SqlDialect dialect = conv.getJdbcDialect();
 
-      return super.matches(call) && JDBCRexCallValidator.isValidJdbcOperation(joinCond, conv.getJdbcDialect());
+      return canSplitFilter(filter.getCondition(), dialect)
+        && JDBCRexCallValidator.isValidJdbcOperation(joinCond, dialect);
     }
 
     @Override
     public void onMatch(RelOptRuleCall call) {
-      final HiveJdbcConverter conv = call.rel(0);
+      final HiveJdbcConverter conv = call.rel(2);
       super.onMatch(call, conv.getJdbcDialect());
     }
   }
@@ -194,8 +188,9 @@ public abstract class JDBCAbstractSplitFilterRule extends RelOptRule {
 
     @Override
     public boolean matches(RelOptRuleCall call) {
+      final HiveFilter filter = call.rel(0);
       final HiveJdbcConverter conv = call.rel(1);
-      return super.matches(call, conv.getJdbcDialect());
+      return canSplitFilter(filter.getCondition(), conv.getJdbcDialect());
     }
 
     @Override

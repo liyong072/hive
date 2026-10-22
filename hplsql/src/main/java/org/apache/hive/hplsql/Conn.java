@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.hplsql;
@@ -71,11 +72,7 @@ public class Conn {
     }
     return query;
   }
-  
-  public Query executeQuery(String sql, String connName) {
-    return executeQuery(new Query(sql), connName);
-  }
-  
+
   /**
    * Prepare a SQL query
    */
@@ -94,33 +91,7 @@ public class Conn {
     }
     return query;
   }
-  
-  /**
-   * Execute a SQL statement
-   */
-  public Query executeSql(String sql, String connName) {
-    Query query = new Query(sql);
-    try {
-      Connection conn = getConnection(connName);
-      runPreSql(connName, conn);
-      Statement stmt = conn.createStatement();
-      ResultSet rs = null;
-      exec.info(null, "Starting SQL statement");
-      timer.start();
-      if (stmt.execute(sql)) {
-        rs = stmt.getResultSet();        
-      } 
-      timer.stop();
-      query.set(conn, stmt, rs);
-      if (info) {
-        exec.info(null, "SQL statement executed successfully (" + timer.format() + ")");
-      } 
-    } catch (Exception e) {
-      query.setError(e);
-    }
-    return query;
-  }
-  
+
   /**
    * Close the query object
    */
@@ -176,15 +147,11 @@ public class Conn {
    * @throws Exception 
    */
   Connection openConnection(String connStr) throws Exception {
-    String driver = "org.apache.hadoop.hive.jdbc.HiveDriver";
     StringBuilder url = new StringBuilder();
     String usr = "";
     String pwd = "";
     if (connStr != null) {
       String[] c = connStr.split(";");
-      if (c.length >= 1) {
-        driver = c[0];
-      }
       if (c.length >= 2) {
         url.append(c[1]);
       }
@@ -204,7 +171,6 @@ public class Conn {
         }
       }
     }
-    Class.forName(driver);
     timer.start();
     Connection conn = DriverManager.getConnection(url.toString().trim(), usr, pwd);
     timer.stop();

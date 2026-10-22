@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.parquet.vector;
@@ -32,8 +33,8 @@ import org.apache.parquet.column.page.PageReader;
 import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridDecoder;
 import org.apache.parquet.io.ParquetDecodingException;
-import org.apache.parquet.schema.DecimalMetadata;
 import org.apache.parquet.schema.Type;
+import org.apache.parquet.schema.LogicalTypeAnnotation.DecimalLogicalTypeAnnotation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +56,8 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
 
   protected boolean skipTimestampConversion = false;
   protected ZoneId writerTimezone = null;
+  protected boolean skipProlepticConversion = false;
+  protected boolean legacyConversionEnabled = true;
 
   /**
    * Total number of values read.
@@ -84,6 +87,9 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
 
   protected int definitionLevel;
   protected int repetitionLevel;
+
+  protected int[] currentDefLevels;
+  protected int defLevelIndex = 0;
 
   /**
    * Repetition/Definition/Value readers.
@@ -119,6 +125,8 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
       PageReader pageReader,
       boolean skipTimestampConversion,
       ZoneId writerTimezone,
+      boolean skipProlepticConversion,
+      boolean legacyConversionEnabled,
       Type parquetType, TypeInfo hiveType) throws IOException {
     this.descriptor = descriptor;
     this.type = parquetType;
@@ -126,6 +134,8 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
     this.maxDefLevel = descriptor.getMaxDefinitionLevel();
     this.skipTimestampConversion = skipTimestampConversion;
     this.writerTimezone = writerTimezone;
+    this.skipProlepticConversion = skipProlepticConversion;
+    this.legacyConversionEnabled = legacyConversionEnabled;
     this.hiveType = hiveType;
 
     DictionaryPage dictionaryPage = pageReader.readDictionaryPage();
@@ -134,7 +144,7 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
         this.dictionary = ParquetDataColumnReaderFactory
             .getDataColumnReaderByTypeOnDictionary(parquetType.asPrimitiveType(), hiveType,
                 dictionaryPage.getEncoding().initDictionary(descriptor, dictionaryPage),
-                skipTimestampConversion, writerTimezone);
+                skipTimestampConversion, writerTimezone, legacyConversionEnabled);
         this.isCurrentPageDictionaryEncoded = true;
       } catch (IOException e) {
         throw new IOException("could not decode the dictionary for " + descriptor, e);
@@ -148,6 +158,9 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
   protected void readRepetitionAndDefinitionLevels() {
     repetitionLevel = repetitionLevelColumn.nextInt();
     definitionLevel = definitionLevelColumn.nextInt();
+    if (currentDefLevels != null && defLevelIndex < currentDefLevels.length) {
+      currentDefLevels[defLevelIndex++] = definitionLevel;
+    }
     valuesRead++;
   }
 
@@ -186,11 +199,11 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
       }
       dataColumn = ParquetDataColumnReaderFactory.getDataColumnReaderByType(type.asPrimitiveType(), hiveType,
           dataEncoding.getDictionaryBasedValuesReader(descriptor, VALUES, dictionary
-              .getDictionary()), skipTimestampConversion, writerTimezone);
+              .getDictionary()), skipTimestampConversion, writerTimezone, legacyConversionEnabled);
       this.isCurrentPageDictionaryEncoded = true;
     } else {
       dataColumn = ParquetDataColumnReaderFactory.getDataColumnReaderByType(type.asPrimitiveType(), hiveType,
-          dataEncoding.getValuesReader(descriptor, VALUES), skipTimestampConversion, writerTimezone);
+          dataEncoding.getValuesReader(descriptor, VALUES), skipTimestampConversion, writerTimezone, legacyConversionEnabled);
       this.isCurrentPageDictionaryEncoded = false;
     }
 
@@ -254,8 +267,7 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
    * @param type
    */
   protected void decimalTypeCheck(Type type) {
-    DecimalMetadata decimalMetadata = type.asPrimitiveType().getDecimalMetadata();
-    if (decimalMetadata == null) {
+    if (!(type.getLogicalTypeAnnotation() instanceof DecimalLogicalTypeAnnotation)) {
       throw new UnsupportedOperationException("The underlying Parquet type cannot be able to " +
           "converted to Hive Decimal type: " + type);
     }
@@ -303,5 +315,10 @@ public abstract class BaseVectorizedColumnReader implements VectorizedColumnRead
     int nextInt() {
       return 0;
     }
+  }
+
+  @Override
+  public int[] getDefinitionLevels() {
+    return currentDefLevels;
   }
 }

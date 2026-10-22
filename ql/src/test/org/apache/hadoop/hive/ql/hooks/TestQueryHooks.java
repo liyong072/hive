@@ -6,38 +6,36 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.hooks;
 
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.ql.Driver;
-import org.apache.hadoop.hive.ql.QueryState;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorException;
 import org.apache.hadoop.hive.ql.session.SessionState;
-
+import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockito.ArgumentMatcher;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.argThat;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-
 
 public class TestQueryHooks {
 
@@ -45,7 +43,7 @@ public class TestQueryHooks {
 
   @BeforeClass
   public static void setUpBeforeClass() {
-    conf = new HiveConf(TestQueryHooks.class);
+    conf = new HiveConfForTest(TestQueryHooks.class);
     conf.setBoolVar(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY, false);
     conf.setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
             "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
@@ -58,8 +56,7 @@ public class TestQueryHooks {
     QueryLifeTimeHookWithParseHooks mockHook = mock(QueryLifeTimeHookWithParseHooks.class);
     Driver driver = createDriver();
     driver.getHookRunner().addLifeTimeHook(mockHook);
-    int ret = driver.run(query).getResponseCode();
-    assertEquals("Expected query to succeed", 0, ret);
+    driver.run(query);
 
     verify(mockHook).beforeParse(argThat(argMatcher));
     verify(mockHook).afterParse(argThat(argMatcher), eq(false));
@@ -76,8 +73,13 @@ public class TestQueryHooks {
     QueryLifeTimeHookWithParseHooks mockHook = mock(QueryLifeTimeHookWithParseHooks.class);
     Driver driver = createDriver();
     driver.getHookRunner().addLifeTimeHook(mockHook);
-    int ret = driver.run(query).getResponseCode();
-    assertNotEquals("Expected parsing to fail", 0, ret);
+    try {
+      driver.run(query);
+      Assert.fail("Expected parsing to fail");
+    } catch (CommandProcessorException e) {
+      // we expect to get here
+    }
+
 
     verify(mockHook).beforeParse(argThat(argMatcher));
     verify(mockHook).afterParse(argThat(argMatcher), eq(true));
@@ -94,8 +96,13 @@ public class TestQueryHooks {
     QueryLifeTimeHookWithParseHooks mockHook = mock(QueryLifeTimeHookWithParseHooks.class);
     Driver driver = createDriver();
     driver.getHookRunner().addLifeTimeHook(mockHook);
-    int ret = driver.run(query).getResponseCode();
-    assertNotEquals("Expected compilation to fail", 0, ret);
+    try {
+      driver.run(query);
+      Assert.fail("Expected compilation to fail");
+    } catch (CommandProcessorException e) {
+      // we expect to get here
+    }
+
 
     verify(mockHook).beforeParse(argThat(argMatcher));
     verify(mockHook).afterParse(argThat(argMatcher), eq(false));
@@ -112,8 +119,7 @@ public class TestQueryHooks {
     QueryLifeTimeHook mockHook = mock(QueryLifeTimeHook.class);
     Driver driver = createDriver();
     driver.getHookRunner().addLifeTimeHook(mockHook);
-    int ret = driver.run(query).getResponseCode();
-    assertEquals("Expected query to succeed", 0, ret);
+    driver.run(query);
 
     verify(mockHook).beforeCompile(argThat(argMatcher));
     verify(mockHook).afterCompile(argThat(argMatcher), eq(false));
@@ -128,8 +134,12 @@ public class TestQueryHooks {
     QueryLifeTimeHook mockHook = mock(QueryLifeTimeHook.class);
     Driver driver = createDriver();
     driver.getHookRunner().addLifeTimeHook(mockHook);
-    int ret = driver.run(query).getResponseCode();
-    assertNotEquals("Expected compilation to fail", 0, ret);
+    try {
+      driver.run(query);
+      Assert.fail("Expected compilation to fail");
+    } catch (CommandProcessorException e) {
+      // we expect to get here
+    }
 
     verify(mockHook).beforeCompile(argThat(argMatcher));
     verify(mockHook).afterCompile(argThat(argMatcher), eq(true));
@@ -143,7 +153,7 @@ public class TestQueryHooks {
     return driver;
   }
 
-  private static final class QueryLifeTimeHookContextMatcher extends ArgumentMatcher<QueryLifeTimeHookContext> {
+  private static final class QueryLifeTimeHookContextMatcher implements ArgumentMatcher<QueryLifeTimeHookContext> {
 
     private final String command;
 
@@ -152,8 +162,8 @@ public class TestQueryHooks {
     }
 
     @Override
-    public boolean matches(Object o) {
-      return ((QueryLifeTimeHookContext) o).getCommand().equals(this.command);
+    public boolean matches(QueryLifeTimeHookContext queryLifeTimeHookContext) {
+      return queryLifeTimeHookContext.getCommand().equals(this.command);
     }
   }
 }

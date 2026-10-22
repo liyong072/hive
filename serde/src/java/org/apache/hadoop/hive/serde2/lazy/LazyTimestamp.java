@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.lazy;
 
@@ -46,7 +47,7 @@ public class LazyTimestamp extends LazyPrimitive<LazyTimestampObjectInspector, T
   }
 
   /**
-   * Initilizes LazyTimestamp object by interpreting the input bytes
+   * Initializes LazyTimestamp object by interpreting the input bytes
    * as a JDBC timestamp string
    *
    * @param bytes
@@ -62,18 +63,12 @@ public class LazyTimestamp extends LazyPrimitive<LazyTimestampObjectInspector, T
     String s =
         new String(bytes.getData(), start, length, StandardCharsets.US_ASCII);
 
-    Timestamp t = null;
-    if ("NULL".equals(s)) {
+    Timestamp t = oi.getTimestampParser().parseTimestamp(s);
+    if (t == null) {
       isNull = true;
       logExceptionMessage(bytes, start, length, "TIMESTAMP");
     } else {
-      try {
-        t = oi.getTimestampParser().parseTimestamp(s);
-        isNull = false;
-      } catch (IllegalArgumentException e) {
-        isNull = true;
-        logExceptionMessage(bytes, start, length, "TIMESTAMP");
-      }
+      isNull = false;
     }
     data.set(t);
   }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.processors;
@@ -87,24 +88,20 @@ public class ErasureProcessor implements CommandProcessor {
     return parser.parse(opts, args);
   }
 
-  private CommandProcessorResponse returnErrorResponse(final String errmsg) {
-    return new CommandProcessorResponse(1, "Erasure Processor Helper Failed: " + errmsg, null);
-  }
-
   private void writeTestOutput(final String msg) {
     SessionState.get().out.println(msg);
   }
 
   @Override
-  public CommandProcessorResponse run(String command) {
+  public CommandProcessorResponse run(String command) throws CommandProcessorException {
     String[] args = command.split("\\s+");
 
     if (args.length < 1) {
-      return returnErrorResponse("Command arguments are empty.");
+      throw new CommandProcessorException("Erasure Processor Helper Failed: Command arguments are empty.");
     }
 
     if (erasureCodingShim == null) {
-      return returnErrorResponse("Hadoop erasure shim is not initialized.");
+      throw new CommandProcessorException("Erasure Processor Helper Failed: Hadoop erasure shim is not initialized.");
     }
 
     String action = args[0].toLowerCase();
@@ -138,13 +135,14 @@ public class ErasureProcessor implements CommandProcessor {
         unsetPolicy(params);
         break;
       default:
-        return returnErrorResponse("Unknown erasure command action: " + action);
+        throw new CommandProcessorException(
+            "Erasure Processor Helper Failed: Unknown erasure command action: " + action);
       }
     } catch (Exception e) {
-      return returnErrorResponse(e.getMessage());
+      throw new CommandProcessorException("Erasure Processor Helper Failed: " + e.getMessage());
     }
 
-    return new CommandProcessorResponse(0);
+    return new CommandProcessorResponse();
   }
 
   /**

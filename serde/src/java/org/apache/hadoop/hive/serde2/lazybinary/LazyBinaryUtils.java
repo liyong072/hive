@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.lazybinary;
 
@@ -35,6 +36,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.MapTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.StructTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.UnionTypeInfo;
 import org.apache.hadoop.io.WritableUtils;
 
@@ -343,6 +345,11 @@ public final class LazyBinaryUtils {
     writeVLong(byteStream, i);
   }
 
+  public static void writeVInt(RandomAccessOutput byteStream, int i,
+      byte[] scratchBytes) {
+    writeVLong(byteStream, i, scratchBytes);
+  }
+
   /**
    * Read a zero-compressed encoded long from a byte array.
    *
@@ -420,6 +427,12 @@ public final class LazyBinaryUtils {
     byte[] vLongBytes = vLongBytesThreadLocal.get();
     int len = LazyBinaryUtils.writeVLongToByteArray(vLongBytes, l);
     byteStream.write(vLongBytes, 0, len);
+  }
+
+  public static void writeVLong(RandomAccessOutput byteStream, long l,
+      byte[] scratchBytes) {
+    int len = LazyBinaryUtils.writeVLongToByteArray(scratchBytes, l);
+    byteStream.write(scratchBytes, 0, len);
   }
 
   public static void writeDouble(RandomAccessOutput byteStream, double d) {
@@ -502,6 +515,11 @@ public final class LazyBinaryUtils {
             .getLazyBinaryUnionObjectInspector(fieldObjectInspectors);
         break;
       }
+      case UNKNOWN:
+        // Unknown columns are always null and are not stored in data files.
+        result = PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(
+            TypeInfoFactory.voidTypeInfo);
+        break;
       default: {
         result = null;
       }

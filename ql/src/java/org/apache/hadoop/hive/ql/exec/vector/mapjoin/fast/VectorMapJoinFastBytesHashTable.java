@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
@@ -27,8 +28,6 @@ import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinByte
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.serde2.WriteBuffers;
 import org.apache.hadoop.io.BytesWritable;
-
-import com.google.common.annotations.VisibleForTesting;
 
 /*
  * An single byte array value hash map optimized for vector map join.
@@ -46,15 +45,22 @@ public abstract class VectorMapJoinFastBytesHashTable
   protected BytesWritable testKeyBytesWritable;
 
   @Override
-  public void putRow(BytesWritable currentKey, BytesWritable currentValue) throws HiveException, IOException {
+  public void putRow(long hashCode, BytesWritable currentKey, BytesWritable currentValue)
+      throws HiveException, IOException {
     // No deserialization of key(s) here -- just get reference to bytes.
     byte[] keyBytes = currentKey.getBytes();
     int keyLength = currentKey.getLength();
-    add(keyBytes, 0, keyLength, currentValue);
+    add(keyBytes, 0, keyLength, currentValue, hashCode);
+  }
+
+  @Override
+  public boolean containsLongKey(long currentKey) {
+    // Only supported for Long-Hash implementations
+    throw new RuntimeException("Not supported yet!");
   }
 
   public abstract void add(byte[] keyBytes, int keyStart, int keyLength,
-      BytesWritable currentValue);
+      BytesWritable currentValue, long hashCode);
 
   protected void expandAndRehash() {
 
@@ -62,8 +68,8 @@ public abstract class VectorMapJoinFastBytesHashTable
     if (logicalHashBucketCount > HIGHEST_INT_POWER_OF_2) {
       throwExpandError(HIGHEST_INT_POWER_OF_2, "Bytes");
     }
-    int newLogicalHashBucketCount = logicalHashBucketCount * 2;
-    int newLogicalHashBucketMask = newLogicalHashBucketCount - 1;
+    final int newLogicalHashBucketCount = Math.max(FIRST_SIZE_UP, logicalHashBucketCount * 2);
+    final int newLogicalHashBucketMask = newLogicalHashBucketCount - 1;
     int newMetricPutConflict = 0;
     int newLargestNumberOfSteps = 0;
 

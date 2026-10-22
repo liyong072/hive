@@ -9,19 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.hplsql;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.io.StringReader;
 import org.apache.commons.io.FileUtils;
 import org.junit.Assert;
 import org.junit.Test;
@@ -30,8 +27,6 @@ import org.junit.Test;
  * Unit tests for HPL/SQL (no Hive connection required)
  */
 public class TestHplsqlLocal {
-
-  private final ByteArrayOutputStream out = new ByteArrayOutputStream();
 
   @Test
   public void testAdd() throws Exception {
@@ -67,7 +62,7 @@ public class TestHplsqlLocal {
   public void testCast() throws Exception {
     run("cast");
   }
-  
+
   @Test
   public void testCast2() throws Exception {
     run("cast2");
@@ -129,20 +124,30 @@ public class TestHplsqlLocal {
   }
 
   @Test
+  public void testDropPackage() throws Exception {
+    run("drop_package");
+  }
+
+  @Test
+  public void testDropProcedure() throws Exception {
+    run("drop_proc");
+  }
+
+  @Test
   public void testCreateProcedure() throws Exception {
     run("create_procedure");
   }
-  
+
   @Test
   public void testCreateProcedure2() throws Exception {
     run("create_procedure2");
   }
-  
+
   @Test
   public void testCreateProcedure3() throws Exception {
     run("create_procedure3");
   }
-  
+
   @Test
   public void testCreateProcedure4() throws Exception {
     run("create_procedure4");
@@ -157,7 +162,12 @@ public class TestHplsqlLocal {
   public void testDatatypes() throws Exception {
     run("datatypes");
   }
-  
+
+  @Test
+  public void testTableType() throws Exception {
+    run("table_type");
+  }
+
   @Test
   public void testDate() throws Exception {
     run("date");
@@ -257,6 +267,7 @@ public class TestHplsqlLocal {
   public void testInclude() throws Exception {
     run("include");
   }
+
   @Test
   public void testInstr() throws Exception {
     run("instr");
@@ -320,11 +331,6 @@ public class TestHplsqlLocal {
   @Test
   public void testReturn() throws Exception {
     run("return");
-  }
-
-  @Test
-  public void testSetError() throws Exception {
-    run("seterror");
   }
 
   @Test
@@ -397,34 +403,72 @@ public class TestHplsqlLocal {
     run("while");
   }
 
+  @Test
+  public void testArity() throws Exception {
+    run("arity");
+  }
+
+  @Test
+  public void testArity2() throws Exception {
+    run("arity2");
+  }
+
+  @Test
+  public void testTypeCheck() throws Exception {
+    run("type_check");
+  }
+
+  @Test
+  public void testUndefFunc() throws Exception {
+    run("undef_func");
+  }
+
+  @Test
+  public void testUndefVar() throws Exception {
+    run("undef_var");
+  }
+
+  @Test
+  public void testNull() throws Exception {
+    run("null");
+  }
+
+  @Test
+  public void testFuncNoReturn() throws Exception {
+    run("func_no_return");
+  }
+
+  @Test
+  public void testInvalidSyntax() throws Exception {
+    run("invalid_syntax");
+  }
+
+  @Test
+  public void testPrecedence() throws Exception {
+    run("preced");
+  }
+
+  @Test
+  public void testConversion() throws Exception {
+    run("conversion");
+  }
+
   /**
    * Run a test file
    */
   void run(String testFile) throws Exception {
-    System.setOut(new PrintStream(out));
+    TestConsole console = new TestConsole("(Configuration file|Parser tree):.*");
     Exec exec = new Exec();
+    exec.console = console;
+
     String[] args = { "-f", "src/test/queries/local/" + testFile + ".sql", "-trace" };
     exec.run(args);
-    String s = getTestOutput(out.toString()).trim();
-    FileUtils.writeStringToFile(new java.io.File("target/tmp/log/" + testFile + ".out.txt"), s);
-    String t = FileUtils.readFileToString(new java.io.File("src/test/results/local/" + testFile + ".out.txt"), "utf-8").trim();
-    System.setOut(null);
-    Assert.assertEquals(s, t);
+    String sout = console.out.toString();
+    String serr = console.err.toString();
+    String output = (sout + (serr.isEmpty() ? "" : serr));
+    FileUtils.writeStringToFile(new java.io.File("target/tmp/log/" + testFile + ".out.txt"), output);
+    String t = FileUtils.readFileToString(new java.io.File("src/test/results/local/" + testFile + ".out.txt"), "utf-8");
+    Assert.assertEquals(t, output);
   }
 
-  /**
-   * Get test output
-   */
-  String getTestOutput(String s) throws Exception {
-    StringBuilder sb = new StringBuilder();
-    BufferedReader reader = new BufferedReader(new StringReader(s));
-    String line = null;
-    while ((line = reader.readLine()) != null) {
-      if (!line.startsWith("log4j:") && !line.contains("INFO Log4j")) {
-        sb.append(line);
-        sb.append("\n");
-      }
-    }
-    return sb.toString();
-  }
 }

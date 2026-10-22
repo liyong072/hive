@@ -9,23 +9,24 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.index;
 
 import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
@@ -142,11 +143,11 @@ public class IndexPredicateAnalyzer {
     ExprNodeDesc predicate,
     final List<IndexSearchCondition> searchConditions) {
 
-    Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
-    NodeProcessor nodeProcessor = new NodeProcessor() {
+    Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
+    SemanticNodeProcessor nodeProcessor = new SemanticNodeProcessor() {
       @Override
       public Object process(Node nd, Stack<Node> stack,
-        NodeProcessorCtx procCtx, Object... nodeOutputs)
+                            NodeProcessorCtx procCtx, Object... nodeOutputs)
         throws SemanticException {
 
         // We can only push down stuff which appears as part of
@@ -160,13 +161,17 @@ public class IndexPredicateAnalyzer {
           }
         }
 
-        return analyzeExpr((ExprNodeGenericFuncDesc) nd, searchConditions, nodeOutputs);
+        if (nd instanceof ExprNodeGenericFuncDesc) {
+          return analyzeExpr((ExprNodeGenericFuncDesc) nd, searchConditions, nodeOutputs);
+        } else {
+          return nd;
+        }
       }
     };
 
-    Dispatcher disp = new DefaultRuleDispatcher(
+    SemanticDispatcher disp = new DefaultRuleDispatcher(
       nodeProcessor, opRules, null);
-    GraphWalker ogw = new DefaultGraphWalker(disp);
+    SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
     ArrayList<Node> topNodes = new ArrayList<Node>();
     topNodes.add(predicate);
     HashMap<Node, Object> nodeOutput = new HashMap<Node, Object>();

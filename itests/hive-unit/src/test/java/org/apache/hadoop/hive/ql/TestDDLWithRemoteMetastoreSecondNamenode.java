@@ -1,44 +1,53 @@
 /*
- * Copyright 2014 The Apache Software Foundation.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.apache.hadoop.hive.ql;
 
 import java.io.IOException;
 import java.net.URI;
 import java.util.HashMap;
 import junit.framework.JUnit4TestAdapter;
-import junit.framework.TestCase;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.metastore.MetaStoreTestUtils;
 import org.apache.hadoop.hive.metastore.api.Database;
-import org.apache.hadoop.hive.ql.exec.mr.ExecDriver;
 import org.apache.hadoop.hive.ql.metadata.*;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorException;
 import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
 import org.apache.hadoop.hive.ql.session.SessionState;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import org.junit.Before;
+import org.junit.After;
+import org.junit.Test;
 
 /**
  * Tests DDL with remote metastore service and second namenode (HIVE-6374)
  *
  */
-public class TestDDLWithRemoteMetastoreSecondNamenode extends TestCase {
+public class TestDDLWithRemoteMetastoreSecondNamenode {
   static HiveConf conf;
 
   private static final String Database1Name = "db1_nondefault_nn";
@@ -50,8 +59,6 @@ public class TestDDLWithRemoteMetastoreSecondNamenode extends TestCase {
   private static final String Table5Name = "table5_nondefault_nn";
   private static final String Table6Name = "table6_nondefault_nn";
   private static final String Table7Name = "table7_nondefault_nn";
-  private static final String Index1Name = "index1_table1_nondefault_nn";
-  private static final String Index2Name = "index2_table1_nondefault_nn";
   private static final String tmpdir = System.getProperty("test.tmp.dir");
   private static final String tmpdirFs2 = "/" + TestDDLWithRemoteMetastoreSecondNamenode.class.getName();
   private static final Path tmppath = new Path(tmpdir);
@@ -65,23 +72,23 @@ public class TestDDLWithRemoteMetastoreSecondNamenode extends TestCase {
   private static int tests = 0;
   private static Boolean isInitialized = false;
 
-  @Override
-  protected void setUp() throws Exception {
-    super.setUp();
+  @Before
+  public void setUp() throws Exception {
+
     if (tests > 0) {
       return;
     }
     tests = new JUnit4TestAdapter(this.getClass()).countTestCases();
     try {
-      conf = new HiveConf(ExecDriver.class);
+      conf = new HiveConfForTest(getClass());
       SessionState.start(conf);
 
       // Test with remote metastore service
       int port = MetaStoreTestUtils.startMetaStoreWithRetry();
-      conf.setVar(HiveConf.ConfVars.METASTOREURIS, "thrift://localhost:" + port);
-      conf.setIntVar(HiveConf.ConfVars.METASTORETHRIFTCONNECTIONRETRIES, 3);
+      conf.setVar(HiveConf.ConfVars.METASTORE_URIS, "thrift://localhost:" + port);
+      conf.setIntVar(HiveConf.ConfVars.METASTORE_THRIFT_CONNECTION_RETRIES, 3);
       conf.set(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname, "false");
-      conf.setVar(HiveConf.ConfVars.METASTOREWAREHOUSE, new URI(tmppath + "/warehouse").getPath());
+      conf.setVar(HiveConf.ConfVars.METASTORE_WAREHOUSE, new URI(tmppath + "/warehouse").getPath());
 
       // Initialize second mocked filesystem (implement only necessary stuff)
       // Physical files are resides in local file system in the similar location
@@ -125,9 +132,9 @@ public class TestDDLWithRemoteMetastoreSecondNamenode extends TestCase {
     }
   }
 
-  @Override
-  protected void tearDown() throws Exception {
-    super.tearDown();
+  @After
+  public void tearDown() throws Exception {
+
     if (--tests == 0) {
       cleanup();
       shutdownMiniDfs();
@@ -141,10 +148,6 @@ public class TestDDLWithRemoteMetastoreSecondNamenode extends TestCase {
   }
 
   private void cleanup() throws Exception {
-      String[] srcidx = {Index1Name, Index2Name};
-      for (String src : srcidx) {
-        driver.run("DROP INDEX IF EXISTS " + src + " ON " + Table1Name);
-      }
       String[] srctables = {Table1Name, Table2Name, Database1Name + "." + Table3Name,
         Database1Name + "." + Table4Name, Table5Name, Table6Name};
       for (String src : srctables) {
@@ -157,12 +160,13 @@ public class TestDDLWithRemoteMetastoreSecondNamenode extends TestCase {
   }
 
   private void executeQuery(String query) throws Exception {
-    CommandProcessorResponse result =  driver.run(query);
-    assertNotNull("driver.run() was expected to return result for query: " + query, result);
-    assertEquals("Execution of (" + query + ") failed with exit status: "
-          + result.getResponseCode() + ", " + result.getErrorMessage()
-          + ", query: " + query,
-          result.getResponseCode(), 0);
+    try {
+      CommandProcessorResponse result =  driver.run(query);
+      assertNotNull("driver.run() was expected to return result for query: " + query, result);
+    } catch (CommandProcessorException e) {
+      throw new RuntimeException("Execution of (" + query + ") failed with exit status: " +
+          e.getResponseCode() + ", " + e.getMessage() + ", query: " + query);
+    }
   }
 
   private String buildLocationClause(String location) {
@@ -220,7 +224,7 @@ public class TestDDLWithRemoteMetastoreSecondNamenode extends TestCase {
   }
 
   private Table createTableAndCheck(Table baseTable, String tableName, String tableLocation) throws Exception {
-    executeQuery("CREATE TABLE " + tableName + (baseTable == null ?
+    executeQuery("CREATE EXTERNAL TABLE " + tableName + (baseTable == null ?
             " (col1 string, col2 string) PARTITIONED BY (p string) " :
             " LIKE " + baseTable.getTableName())
             + buildLocationClause(tableLocation));
@@ -255,6 +259,7 @@ public class TestDDLWithRemoteMetastoreSecondNamenode extends TestCase {
     }
   }
 
+  @Test
   public void testAlterPartitionSetLocationNonDefaultNameNode() throws Exception {
     assertTrue("Test suite should have been initialized", isInitialized);
     String tableLocation = tmppathFs2 + "/" + "test_set_part_loc";
@@ -264,6 +269,7 @@ public class TestDDLWithRemoteMetastoreSecondNamenode extends TestCase {
     alterPartitionAndCheck(table, "p", "p1", "/tmp/test/2");
   }
 
+  @Test
   public void testCreateDatabaseWithTableNonDefaultNameNode() throws Exception {
     assertTrue("Test suite should be initialied", isInitialized );
     final String tableLocation = tmppathFs2 + "/" + Table3Name;

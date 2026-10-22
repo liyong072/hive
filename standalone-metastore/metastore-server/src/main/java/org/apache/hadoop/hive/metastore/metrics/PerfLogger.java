@@ -9,17 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.metrics;
 
 import com.codahale.metrics.Timer;
-import com.google.common.collect.ImmutableMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +38,10 @@ public class PerfLogger {
   static final private Logger LOG = LoggerFactory.getLogger(PerfLogger.class.getName());
   protected static final ThreadLocal<PerfLogger> perfLogger = new ThreadLocal<>();
 
+  public static final String GET_DATABASE = "getDatabase";
+  public static final String GET_TABLE = "getTable";
+  public static final String GET_TABLE_COL_STATS = "getTableColumnStatistics";
+  public static final String GET_TABLE_COL_STATS_2 = "getTableColumnStatistics_2";
 
   private PerfLogger() {
     // Use getPerfLogger to get an instance of PerfLogger
@@ -62,16 +66,12 @@ public class PerfLogger {
     return result;
   }
 
-  public static void setPerfLogger(PerfLogger resetPerfLogger) {
-    perfLogger.set(resetPerfLogger);
-  }
-
   /**
    * Call this function when you start to measure time spent by a piece of code.
    * @param callerName the logging object to be used.
    * @param method method or ID that identifies this perf log element.
    */
-  public void PerfLogBegin(String callerName, String method) {
+  public void perfLogBegin(String callerName, String method) {
     long startTime = System.currentTimeMillis();
     startTimes.put(method, Long.valueOf(startTime));
     if (LOG.isDebugEnabled()) {
@@ -85,8 +85,8 @@ public class PerfLogger {
    * @param method
    * @return long duration  the difference between now and startTime, or -1 if startTime is null
    */
-  public long PerfLogEnd(String callerName, String method) {
-    return PerfLogEnd(callerName, method, null);
+  public long perfLogEnd(String callerName, String method) {
+    return perfLogEnd(callerName, method, null);
   }
 
   /**
@@ -95,7 +95,7 @@ public class PerfLogger {
    * @param method
    * @return long duration  the difference between now and startTime, or -1 if startTime is null
    */
-  public long PerfLogEnd(String callerName, String method, String additionalInfo) {
+  public long perfLogEnd(String callerName, String method, String additionalInfo) {
     Long startTime = startTimes.get(method);
     long endTime = System.currentTimeMillis();
     endTimes.put(method, Long.valueOf(endTime));
@@ -119,49 +119,6 @@ public class PerfLogger {
     }
     endMetrics(method);
     return duration;
-  }
-
-  public Long getStartTime(String method) {
-    long startTime = 0L;
-
-    if (startTimes.containsKey(method)) {
-      startTime = startTimes.get(method);
-    }
-    return startTime;
-  }
-
-  public Long getEndTime(String method) {
-    long endTime = 0L;
-
-    if (endTimes.containsKey(method)) {
-      endTime = endTimes.get(method);
-    }
-    return endTime;
-  }
-
-  public boolean startTimeHasMethod(String method) {
-    return startTimes.containsKey(method);
-  }
-
-  public boolean endTimeHasMethod(String method) {
-    return endTimes.containsKey(method);
-  }
-
-  public Long getDuration(String method) {
-    long duration = 0;
-    if (startTimes.containsKey(method) && endTimes.containsKey(method)) {
-      duration = endTimes.get(method) - startTimes.get(method);
-    }
-    return duration;
-  }
-
-
-  public ImmutableMap<String, Long> getStartTimes() {
-    return ImmutableMap.copyOf(startTimes);
-  }
-
-  public ImmutableMap<String, Long> getEndTimes() {
-    return ImmutableMap.copyOf(endTimes);
   }
 
   // Methods for metrics integration.  Each thread-local PerfLogger will open/close scope during each perf-log method.

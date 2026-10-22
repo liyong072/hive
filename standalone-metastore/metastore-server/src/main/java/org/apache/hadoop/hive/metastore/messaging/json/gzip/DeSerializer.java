@@ -22,6 +22,8 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.hive.metastore.messaging.AbortTxnMessage;
 import org.apache.hadoop.hive.metastore.messaging.AcidWriteMessage;
+import org.apache.hadoop.hive.metastore.messaging.AddCheckConstraintMessage;
+import org.apache.hadoop.hive.metastore.messaging.AddDefaultConstraintMessage;
 import org.apache.hadoop.hive.metastore.messaging.AddForeignKeyMessage;
 import org.apache.hadoop.hive.metastore.messaging.AddNotNullConstraintMessage;
 import org.apache.hadoop.hive.metastore.messaging.AddPartitionMessage;
@@ -30,8 +32,10 @@ import org.apache.hadoop.hive.metastore.messaging.AddUniqueConstraintMessage;
 import org.apache.hadoop.hive.metastore.messaging.AllocWriteIdMessage;
 import org.apache.hadoop.hive.metastore.messaging.AlterDatabaseMessage;
 import org.apache.hadoop.hive.metastore.messaging.AlterPartitionMessage;
+import org.apache.hadoop.hive.metastore.messaging.AlterPartitionsMessage;
 import org.apache.hadoop.hive.metastore.messaging.AlterTableMessage;
 import org.apache.hadoop.hive.metastore.messaging.CommitTxnMessage;
+import org.apache.hadoop.hive.metastore.messaging.CommitCompactionMessage;
 import org.apache.hadoop.hive.metastore.messaging.CreateDatabaseMessage;
 import org.apache.hadoop.hive.metastore.messaging.CreateFunctionMessage;
 import org.apache.hadoop.hive.metastore.messaging.CreateTableMessage;
@@ -132,6 +136,11 @@ public class DeSerializer extends JSONMessageDeserializer {
   }
 
   @Override
+  public AlterPartitionsMessage getAlterPartitionsMessage(String messageBody) {
+    return super.getAlterPartitionsMessage(deCompress(messageBody));
+  }
+
+  @Override
   public DropPartitionMessage getDropPartitionMessage(String messageBody) {
     return super.getDropPartitionMessage(deCompress(messageBody));
   }
@@ -167,8 +176,18 @@ public class DeSerializer extends JSONMessageDeserializer {
   }
 
   @Override
+  public AddDefaultConstraintMessage getAddDefaultConstraintMessage(String messageBody) {
+    return super.getAddDefaultConstraintMessage(deCompress(messageBody));
+  }
+
+  @Override
   public AddNotNullConstraintMessage getAddNotNullConstraintMessage(String messageBody) {
     return super.getAddNotNullConstraintMessage(deCompress(messageBody));
+  }
+
+  @Override
+  public AddCheckConstraintMessage getAddCheckConstraintMessage(String messageBody) {
+    return super.getAddCheckConstraintMessage(deCompress(messageBody));
   }
 
   @Override
@@ -197,6 +216,11 @@ public class DeSerializer extends JSONMessageDeserializer {
   }
 
   @Override
+  public CommitCompactionMessage getCommitCompactionMessage(String messageBody) {
+    return super.getCommitCompactionMessage(deCompress(messageBody));
+  }
+
+  @Override
   public AcidWriteMessage getAcidWriteMessage(String messageBody) {
     return super.getAcidWriteMessage(deCompress(messageBody));
   }
@@ -219,5 +243,9 @@ public class DeSerializer extends JSONMessageDeserializer {
   @Override
   public DeletePartitionColumnStatMessage getDeletePartitionColumnStatMessage(String messageBody) {
     return super.getDeletePartitionColumnStatMessage(deCompress(messageBody));
+  }
+
+  public String deSerializeGenericString(String messageBody) {
+    return deCompress(messageBody);
   }
 }

@@ -9,16 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.stats;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -34,6 +36,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.common.TableName;
 import org.apache.hadoop.hive.common.ValidReaderWriteIdList;
+import org.apache.hadoop.hive.conf.Constants;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.MetaStoreThread;
 import org.apache.hadoop.hive.metastore.ObjectStore;
@@ -43,18 +46,23 @@ import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.metastore.api.ColumnStatistics;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.GetPartitionsFilterSpec;
+import org.apache.hadoop.hive.metastore.api.GetProjectionsSpec;
 import org.apache.hadoop.hive.metastore.api.GetValidWriteIdsRequest;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 import org.apache.hadoop.hive.metastore.api.NoSuchTxnException;
 import org.apache.hadoop.hive.metastore.api.Partition;
+import org.apache.hadoop.hive.metastore.api.PartitionFilterMode;
 import org.apache.hadoop.hive.metastore.api.Table;
+import org.apache.hadoop.hive.metastore.client.builder.GetPartitionProjectionsSpecBuilder;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf.ConfVars;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf.StatsUpdateMode;
 import org.apache.hadoop.hive.metastore.txn.TxnCommonUtils;
 import org.apache.hadoop.hive.metastore.txn.TxnStore;
 import org.apache.hadoop.hive.metastore.txn.TxnUtils;
+import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
 import org.apache.hadoop.hive.ql.DriverUtils;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.session.SessionState;
@@ -67,6 +75,7 @@ import com.google.common.collect.Lists;
 
 public class StatsUpdaterThread extends Thread implements MetaStoreThread {
   public static final String SKIP_STATS_AUTOUPDATE_PROPERTY = "skip.stats.autoupdate";
+  public static final String WORKER_NAME_PREFIX = "Stats updater worker ";
   private static final Logger LOG = LoggerFactory.getLogger(StatsUpdaterThread.class);
 
   protected Configuration conf;
@@ -122,14 +131,8 @@ public class StatsUpdaterThread extends Thread implements MetaStoreThread {
   }
 
   @Override
-  public void setThreadId(int threadId) {
-    this.threadId = threadId;
-  }
-
-  @Override
-  public void init(AtomicBoolean stop, AtomicBoolean looped) throws MetaException {
+  public void init(AtomicBoolean stop) throws MetaException {
     this.stop = stop;
-    this.looped = looped;
     setPriority(MIN_PRIORITY);
     setDaemon(true);
     String user = "anonymous";
@@ -140,16 +143,17 @@ public class StatsUpdaterThread extends Thread implements MetaStoreThread {
     }
     txnHandler = TxnUtils.getTxnStore(conf);
     rs = RawStoreProxy.getProxy(conf, conf,
-        MetastoreConf.getVar(conf, MetastoreConf.ConfVars.RAW_STORE_IMPL), threadId);
+        MetastoreConf.getVar(conf, MetastoreConf.ConfVars.RAW_STORE_IMPL));
     for (int i = 0; i < workers.length; ++i) {
       workers[i] = new Thread(new WorkerRunnable(conf, user));
       workers[i].setDaemon(true);
-      workers[i].setName("Stats updater worker " + i);
+      workers[i].setName(WORKER_NAME_PREFIX + i);
     }
   }
 
   @Override
   public void run() {
+    LOG.info("Stats updater thread started");
     startWorkers();
     while (!stop.get()) {
       boolean hadUpdates = runOneIteration();
@@ -161,18 +165,20 @@ public class StatsUpdaterThread extends Thread implements MetaStoreThread {
         return;
       }
     }
+    stopWorkers();
     LOG.info("Stats updater thread was stopped and will now exit");
   }
 
   @VisibleForTesting
   void startWorkers() {
     for (int i = 0; i < workers.length; ++i) {
+      LOG.info("Stats updater worker thread " + workers[i].getName() + " started");
       workers[i].start();
     }
   }
 
   @VisibleForTesting
-  boolean runOneIteration() {
+  public boolean runOneIteration() {
     List<TableName> fullTableNames;
     try {
       fullTableNames = getTablesToCheck();
@@ -183,9 +189,10 @@ public class StatsUpdaterThread extends Thread implements MetaStoreThread {
     }
     LOG.debug("Processing {}", fullTableNames);
     boolean hadUpdates = false;
+    Map<String, Boolean> dbsToSkip = new HashMap<>();
     for (TableName fullTableName : fullTableNames) {
       try {
-        List<AnalyzeWork> commands = processOneTable(fullTableName);
+        List<AnalyzeWork> commands = processOneTable(fullTableName, dbsToSkip);
         hadUpdates = hadUpdates || commands != null;
         if (commands != null) {
           for (AnalyzeWork req : commands) {
@@ -206,10 +213,18 @@ public class StatsUpdaterThread extends Thread implements MetaStoreThread {
     }
   }
 
-  private List<AnalyzeWork> processOneTable(TableName fullTableName)
+  private List<AnalyzeWork> processOneTable(TableName fullTableName, Map<String, Boolean> dbsToSkip)
       throws MetaException, NoSuchTxnException, NoSuchObjectException {
     if (isAnalyzeTableInProgress(fullTableName)) return null;
     String cat = fullTableName.getCat(), db = fullTableName.getDb(), tbl = fullTableName.getTable();
+    String dbName = MetaStoreUtils.prependCatalogToDbName(cat,db, conf);
+    if (!dbsToSkip.containsKey(dbName)) {
+      dbsToSkip.put(dbName, MetaStoreUtils.checkIfDbNeedsToBeSkipped(rs.getDatabase(cat, db)));
+    }
+    if (dbsToSkip.get(dbName)) {
+      LOG.debug("Skipping table {}", tbl);
+      return null;
+    }
     Table table = rs.getTable(cat, db, tbl);
     LOG.debug("Processing table {}", table);
 
@@ -321,8 +336,15 @@ public class StatsUpdaterThread extends Thread implements MetaStoreThread {
         List<String> currentNames = partNames.subList(nextBatchStart, nextBatchEnd);
         currentBatchStart = nextBatchStart;
         nextBatchStart = nextBatchEnd;
+
+        GetProjectionsSpec projectionsSpec = new GetPartitionProjectionsSpecBuilder()
+            .addProjectFieldList(Arrays.asList("values","parameters","writeId")).build();
+        GetPartitionsFilterSpec partitionsFilterSpec = new GetPartitionsFilterSpec();
+        partitionsFilterSpec.setFilters(currentNames);
+        partitionsFilterSpec.setFilterMode(PartitionFilterMode.BY_NAMES);
+
         try {
-          currentBatch = rs.getPartitionsByNames(cat, db, tbl, currentNames);
+          currentBatch = rs.getPartitionSpecsByFilterAndProjection(t, projectionsSpec, partitionsFilterSpec);
         } catch (NoSuchObjectException e) {
           LOG.error("Failed to get partitions for " + fullTableName + ", skipping some partitions", e);
           currentBatch = null;
@@ -441,7 +463,7 @@ public class StatsUpdaterThread extends Thread implements MetaStoreThread {
     try {
       // Note: this should NOT do txn verification - we want to get outdated stats, to
       //       see if we need to update anything.
-      existingStats = rs.getTableColumnStatistics(cat, db, tbl, allCols);
+      existingStats = rs.getTableColumnStatistics(cat, db, tbl, allCols, Constants.HIVE_ENGINE);
     } catch (NoSuchObjectException e) {
       LOG.error("Cannot retrieve existing stats, skipping " + fullTableName, e);
       return null;
@@ -611,12 +633,17 @@ public class StatsUpdaterThread extends Thread implements MetaStoreThread {
     }
     String cmd = null;
     try {
-      cmd = req.buildCommand();
-      LOG.debug("Running {} based on {}", cmd, req);
       if (doWait) {
         SessionState.start(ss); // This is the first call, open the session
       }
-      DriverUtils.runOnDriver(conf, user, ss, cmd);
+      TableName tb = req.tableName;
+      if (MetaStoreUtils.isDbBeingPlannedFailedOver(rs.getDatabase(tb.getCat(), tb.getDb()))) {
+        LOG.info("Skipping table: {} as it belongs to database which is being failed over." + tb.getTable());
+        return true;
+      }
+      cmd = req.buildCommand();
+      LOG.debug("Running {} based on {}", cmd, req);
+      DriverUtils.runOnDriver(conf, ss, cmd);
     } catch (Exception e) {
       LOG.error("Analyze command failed: " + cmd, e);
       try {

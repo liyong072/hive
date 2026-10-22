@@ -1,7 +1,9 @@
 PREHOOK: query: drop table if exists mm_srcpart
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: drop table if exists mm_srcpart
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE TABLE mm_srcpart (key STRING, value STRING) PARTITIONED BY (ds STRING, hr STRING) stored as ORC TBLPROPERTIES ('transactional'='true', 'transactional_properties'='insert_only')
 PREHOOK: type: CREATETABLE
 PREHOOK: Output: database:default
@@ -25,6 +27,7 @@ POSTHOOK: Input: default@srcpart@ds=2008-04-08/hr=11
 POSTHOOK: Input: default@srcpart@ds=2008-04-08/hr=12
 POSTHOOK: Input: default@srcpart@ds=2008-04-09/hr=11
 POSTHOOK: Input: default@srcpart@ds=2008-04-09/hr=12
+POSTHOOK: Output: default@mm_srcpart
 POSTHOOK: Output: default@mm_srcpart@ds=2008-04-08/hr=11
 POSTHOOK: Output: default@mm_srcpart@ds=2008-04-08/hr=12
 POSTHOOK: Output: default@mm_srcpart@ds=2008-04-09/hr=11
@@ -55,4 +58,4 @@ POSTHOOK: Input: default@mm_srcpart@ds=2008-04-09/hr=11
 2008-04-09	11	43	val_43
 2008-04-09	11	413	val_413
 2008-04-09	11	413	val_413
-FAILED: SemanticException [Error 10414]: Attempt to do update or delete on table default.mm_srcpart that is insert-only transactional
+FAILED: SemanticException [Error 10414]: Attempt to do update or delete on table mm_srcpart that is insert-only transactional

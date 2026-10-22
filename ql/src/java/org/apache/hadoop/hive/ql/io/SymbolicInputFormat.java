@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io;
@@ -43,7 +44,7 @@ public class SymbolicInputFormat implements ReworkMapredInputFormat {
     Map<Path, PartitionDesc> pathToParts = work.getMapWork().getPathToPartitionInfo();
     List<Path> toRemovePaths = new ArrayList<>();
     Map<Path, PartitionDesc> toAddPathToPart = new HashMap<>();
-    Map<Path, ArrayList<String>> pathToAliases = work.getMapWork().getPathToAliases();
+    Map<Path, List<String>> pathToAliases = work.getMapWork().getPathToAliases();
 
     for (Map.Entry<Path, PartitionDesc> pathPartEntry : pathToParts.entrySet()) {
       Path path = pathPartEntry.getKey();
@@ -62,7 +63,7 @@ public class SymbolicInputFormat implements ReworkMapredInputFormat {
           symlinks = fileSystem.listStatus(path, FileUtils.HIDDEN_FILES_PATH_FILTER);
         }
         toRemovePaths.add(path);
-        ArrayList<String> aliases = pathToAliases.remove(path);
+        List<String> aliases = pathToAliases.remove(path);
         for (FileStatus symlink : symlinks) {
           BufferedReader reader = null;
           try {

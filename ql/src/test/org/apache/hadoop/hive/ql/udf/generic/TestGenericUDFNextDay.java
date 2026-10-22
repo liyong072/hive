@@ -9,15 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
-import junit.framework.TestCase;
+
 
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -26,9 +27,16 @@ import org.apache.hadoop.hive.ql.udf.generic.GenericUDF.DeferredObject;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.io.Text;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
+import org.junit.Test;
 
-public class TestGenericUDFNextDay extends TestCase {
+/**
+ * TestGenericUDFNextDay.
+ */
+public class TestGenericUDFNextDay {
 
+  @Test
   public void testNextDay() throws HiveException {
     GenericUDFNextDay udf = new GenericUDFNextDay();
     ObjectInspector valueOI0 = PrimitiveObjectInspectorFactory.writableStringObjectInspector;
@@ -70,6 +78,7 @@ public class TestGenericUDFNextDay extends TestCase {
     runAndVerify(null, null, null, udf);
   }
 
+  @Test
   public void testNotValidValues() throws Exception {
     GenericUDFNextDay udf = new GenericUDFNextDay();
     ObjectInspector valueOI0 = PrimitiveObjectInspectorFactory.writableStringObjectInspector;
@@ -80,14 +89,15 @@ public class TestGenericUDFNextDay extends TestCase {
 
     runAndVerify("01/14/2015", "TU", null, udf);
     runAndVerify("2015-01-14", "VT", null, udf);
-    runAndVerify("2015-02-30", "WE", "2015-03-04", udf);
-    runAndVerify("2015-02-32", "WE", "2015-03-11", udf);
-    runAndVerify("2015-02-30 10:30:00", "WE", "2015-03-04", udf);
-    runAndVerify("2015-02-32 10:30:00", "WE", "2015-03-11", udf);
+    runAndVerify("2015-02-30", "WE", null, udf);
+    runAndVerify("2015-02-32", "WE", null, udf);
+    runAndVerify("2015-02-30 10:30:00", "WE", null, udf);
+    runAndVerify("2015-02-32 10:30:00", "WE", null, udf);
     runAndVerify("2015/01/14 14:04:34", "SAT", null, udf);
-    runAndVerify("2015-01-14T14:04:34", "SAT", null, udf);
+    runAndVerify("2015-01-14T14:04:34", "SAT", "2015-01-17", udf);
   }
 
+  @Test
   public void testNextDayErrorArg1() throws HiveException {
     @SuppressWarnings("resource")
     GenericUDFNextDay udf = new GenericUDFNextDay();
@@ -105,6 +115,7 @@ public class TestGenericUDFNextDay extends TestCase {
     }
   }
 
+  @Test
   public void testNextDayErrorArg2() throws HiveException {
     @SuppressWarnings("resource")
     GenericUDFNextDay udf = new GenericUDFNextDay();

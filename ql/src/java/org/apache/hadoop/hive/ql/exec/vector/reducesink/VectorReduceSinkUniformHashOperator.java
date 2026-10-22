@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.reducesink;
@@ -28,7 +29,7 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 import org.apache.hadoop.hive.ql.plan.VectorDesc;
 import org.apache.hadoop.hive.serde2.ByteStream.Output;
-import org.apache.hive.common.util.HashCodeUtil;
+import org.apache.hive.common.util.Murmur3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,7 +87,7 @@ public abstract class VectorReduceSinkUniformHashOperator extends VectorReduceSi
       int nullBytesLength = nullKeyOutput.getLength();
       nullBytes = new byte[nullBytesLength];
       System.arraycopy(nullKeyOutput.getData(), 0, nullBytes, 0, nullBytesLength);
-      nullKeyHashCode = HashCodeUtil.calculateBytesHashCode(nullBytes, 0, nullBytesLength);
+      nullKeyHashCode = Murmur3.hash32(nullBytes, 0, nullBytesLength, 0);
     } catch (Exception e) {
       throw new HiveException(e);
     }

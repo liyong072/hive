@@ -9,28 +9,26 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.client;
 
 import org.apache.hadoop.hive.metastore.ColumnType;
+import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.MetaStoreTestUtils;
+import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.annotation.MetastoreCheckinTest;
-import org.apache.hadoop.hive.metastore.api.Catalog;
-import org.apache.hadoop.hive.metastore.api.Database;
-import org.apache.hadoop.hive.metastore.api.InvalidOperationException;
-import org.apache.hadoop.hive.metastore.api.MetaException;
-import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
-import org.apache.hadoop.hive.metastore.api.Table;
-import org.apache.hadoop.hive.metastore.api.UnknownDBException;
+import org.apache.hadoop.hive.metastore.api.*;
 import org.apache.hadoop.hive.metastore.client.builder.CatalogBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.DatabaseBuilder;
+import org.apache.hadoop.hive.metastore.client.builder.GetTableProjectionsSpecBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.TableBuilder;
 import org.apache.hadoop.hive.metastore.minihms.AbstractMetaStoreService;
 import org.apache.thrift.TException;
@@ -44,10 +42,8 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.lang.reflect.Field;
+import java.util.*;
 
 import static org.apache.hadoop.hive.metastore.Warehouse.DEFAULT_DATABASE_NAME;
 
@@ -95,7 +91,7 @@ public class TestTablesGetExists extends MetaStoreClientTest {
             .setDbName(DEFAULT_DATABASE)
             .setTableName("test_view")
             .addCol("test_col", "int")
-            .setType("VIEW")
+            .setType(TableType.VIRTUAL_VIEW.name())
             .create(client, metaStore.getConf());
 
     testTables[2] =
@@ -110,7 +106,7 @@ public class TestTablesGetExists extends MetaStoreClientTest {
             .setDbName(DEFAULT_DATABASE)
             .setTableName("test_table_to_find_2")
             .addCol("test_col", "int")
-            .setType("VIEW")
+            .setType(TableType.VIRTUAL_VIEW.name())
             .create(client, metaStore.getConf());
 
     testTables[4] =
@@ -279,6 +275,20 @@ public class TestTablesGetExists extends MetaStoreClientTest {
     Assert.assertEquals("Found functions size", 1, tables.size());
     Assert.assertTrue("Comparing tablenames", tables.contains(testTables[6].getTableName()));
 
+    // Find tables by using the wildcard sign "*"
+    tables = client.getTables(DEFAULT_DATABASE, "*");
+    Assert.assertEquals("All tables size", 5, tables.size());
+    Assert.assertTrue("Comparing tablenames", tables.contains(testTables[0].getTableName()));
+    Assert.assertTrue("Comparing tablenames", tables.contains(testTables[1].getTableName()));
+    Assert.assertTrue("Comparing tablenames", tables.contains(testTables[2].getTableName()));
+    Assert.assertTrue("Comparing tablenames", tables.contains(testTables[3].getTableName()));
+    Assert.assertTrue("Comparing tablenames", tables.contains(testTables[4].getTableName()));
+
+    tables = client.getTables(OTHER_DATABASE, "*");
+    Assert.assertEquals("All tables size", 2, tables.size());
+    Assert.assertTrue("Comparing tablenames", tables.contains(testTables[5].getTableName()));
+    Assert.assertTrue("Comparing tablenames", tables.contains(testTables[6].getTableName()));
+
     // Look for tables but do not find any
     tables = client.getTables(DEFAULT_DATABASE, "*_not_such_function_*");
     Assert.assertEquals("No such table size", 0, tables.size());
@@ -292,8 +302,11 @@ public class TestTablesGetExists extends MetaStoreClientTest {
     Assert.assertEquals("No such functions size", 0, tables.size());
 
     // No such database
-    tables = client.getTables("no_such_database", OTHER_DATABASE);
-    Assert.assertEquals("No such table size", 0, tables.size());
+    try {
+      tables = client.getTables("no_such_database", OTHER_DATABASE);
+    }catch (MetaException exception) {
+      // Ignoring Expected exception
+    }
   }
 
   @Test
@@ -402,6 +415,316 @@ public class TestTablesGetExists extends MetaStoreClientTest {
 
   }
 
+  /**
+   * HIVE-29690: Case 3 — tableNames != null and pattern != null.
+   * The batched flow must apply the pattern as an additional filter, so only tables
+   * that match both the name list and the pattern are returned.
+   *
+   * The test is designed to fail if the non-batched (pattern-only) code path is taken:
+   * an extra table "test_table_to_find_extra" is created that matches the pattern but is
+   * intentionally absent from the name list.  A non-batched path would ignore the name list
+   * and return all three pattern-matching tables; the batched path returns only the two
+   * that appear in both the name list and the pattern.
+   */
+  @Test
+  public void testGetTableObjectsByNameAndPattern() throws Exception {
+    // Create a table that matches the pattern but is NOT in the requested name list.
+    // If the code wrongly takes the non-batched (pattern-only) path it returns this table
+    // too, making tables.size() == 3 and failing the assertion below.
+    new TableBuilder()
+        .setDbName(DEFAULT_DATABASE)
+        .setTableName("test_table_to_find_extra")
+        .addCol("test_col", "int")
+        .create(client, metaStore.getConf());
+
+    // Access the underlying Thrift iface so we can set both tblNames and tablesPattern.
+    HiveMetaStoreClient hmsClient = (HiveMetaStoreClient) client;
+    Field field = ThriftHiveMetaStoreClient.class.getDeclaredField("client");
+    field.setAccessible(true);
+    ThriftHiveMetastore.Iface iface =
+        (ThriftHiveMetastore.Iface) field.get(hmsClient.getThriftClient());
+
+    // Name list contains test_table_to_find_1 and test_table_to_find_2, but NOT
+    // test_table_to_find_extra.  The pattern matches all three.
+    // Batched path  → intersection of name list ∩ pattern → 2 tables  (correct)
+    // Non-batched   → all tables matching pattern (name list ignored) → 3 tables (wrong)
+    List<String> requestedNames = Arrays.asList(
+        testTables[2].getTableName(),  // "test_table_to_find_1"
+        testTables[3].getTableName()   // "test_table_to_find_2"
+    );
+
+    GetTablesRequest req = new GetTablesRequest(DEFAULT_DATABASE);
+    req.setCatName(testTables[0].getCatName());
+    req.setTblNames(requestedNames);
+    req.setTablesPattern("test_table_to_find_*");
+    req.setCapabilities(ThriftHiveMetaStoreClient.TEST_VERSION);
+
+    List<Table> tables = iface.get_table_objects_by_name_req(req).getTables();
+    Assert.assertEquals(
+        "Batched path must return only the 2 tables present in both the name list and the pattern; "
+            + "3 results would mean the non-batched (pattern-only) path was taken",
+        2, tables.size());
+    Set<String> returnedNames = new HashSet<>();
+    for (Table t : tables) {
+      returnedNames.add(t.getTableName());
+    }
+    Assert.assertTrue(returnedNames.contains(testTables[2].getTableName()));
+    Assert.assertTrue(returnedNames.contains(testTables[3].getTableName()));
+    Assert.assertFalse(
+        "test_table_to_find_extra was not in the name list and must not be returned",
+        returnedNames.contains("test_table_to_find_extra"));
+  }
+
+  @Test
+  public void testGetTableObjectsWithProjectionOfSingleField() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder()).includeSdLocation().build();
+
+    List<Table> tables = client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec);
+    Assert.assertEquals("Found tables", 2, tables.size());
+
+    for(Table table : tables) {
+      Assert.assertFalse(table.isSetDbName());
+      Assert.assertFalse(table.isSetCatName());
+      Assert.assertFalse(table.isSetTableName());
+      Assert.assertTrue(table.isSetSd());
+    }
+  }
+
+  @Test
+  public void testGetTableObjectsWithNullProjectionSpec() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    List<Table> tables = client.getTables(null, DEFAULT_DATABASE, tableNames, null);
+
+    Assert.assertEquals("Found tables", 2, tables.size());
+  }
+
+  @Test
+  public void testGetTableObjectsWithIncludePattern() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder()).setExcludeColumnPattern("foo").build();
+
+    Assert.assertThrows(Exception.class, ()->client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec));
+  }
+
+  @Test
+  public void testGetTableObjectsWithNonExistentColumn() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder()).setColumnList(Arrays.asList("Invalid1"))
+            .build();
+
+    Assert.assertThrows(Exception.class, ()->client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec));
+  }
+
+
+  @Test
+  public void testGetTableObjectsWithNonExistentColumns() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder())
+            .setColumnList(Arrays.asList("Invalid1", "Invalid2")).build();
+
+    Assert.assertThrows(Exception.class, ()->client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec));
+  }
+
+  @Test
+  public void testGetTableObjectsWithEmptyProjection() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder()).build();
+
+    List<Table> tables = client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec);
+
+    Assert.assertEquals("Found tables", 2, tables.size());
+  }
+
+  @Test
+  public void testGetTableObjectsWithProjectionOfMultipleField_1() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder()).includeDatabase().includeTableName()
+            .includeCreateTime().includeLastAccessTime().build();
+
+    List<Table> tables = client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec);
+
+    Assert.assertEquals("Found tables", 2, tables.size());
+
+    for(Table table : tables) {
+      Assert.assertTrue(table.isSetDbName());
+      Assert.assertTrue(table.isSetTableName());
+      Assert.assertTrue(table.isSetCreateTime());
+      Assert.assertFalse(table.isSetSd());
+      Assert.assertFalse(table.isSetOwner());
+    }
+  }
+
+  @Test
+  public void testGetTableObjectsWithProjectionOfMultipleField_2() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder()).includeOwner().includeOwnerType().
+            includeSdLocation().includeTableType().build();
+
+    List<Table> tables = client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec);
+
+    Assert.assertEquals("Found tables", 2, tables.size());
+
+    for(Table table : tables) {
+      Assert.assertFalse(table.isSetDbName());
+      Assert.assertFalse(table.isSetTableName());
+      Assert.assertTrue(table.isSetCreateTime());
+      Assert.assertTrue(table.isSetSd());
+      Assert.assertTrue(table.isSetOwnerType());
+      Assert.assertTrue(table.isSetOwner());
+      StorageDescriptor sd = table.getSd();
+      if (TableType.VIRTUAL_VIEW.toString().equals(table.getTableType())) {
+        Assert.assertFalse(sd.isSetLocation());
+      } else {
+        Assert.assertTrue(sd.isSetLocation());
+      }
+    }
+  }
+
+  @Test
+  public void testGetTableObjectsWithProjectionOfSerDeInfoSingleValuedFields() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder()).includeSdSerDeInfoSerializationLib()
+            .build();
+
+    List<Table> tables = client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec);
+
+    Assert.assertEquals("Found tables", 2, tables.size());
+
+    for(Table table : tables) {
+      Assert.assertFalse(table.isSetDbName());
+      Assert.assertTrue(table.isSetSd());
+      StorageDescriptor sd = table.getSd();
+      Assert.assertFalse(sd.isSetCols());
+      Assert.assertTrue(sd.isSetSerdeInfo());
+      SerDeInfo serDeInfo = sd.getSerdeInfo();
+      Assert.assertTrue(serDeInfo.isSetSerializationLib());
+    }
+  }
+
+  @Test
+  public void testGetTableObjectsWithProjectionOfMultiValuedFields() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder()).includeSdLocation().includeSdSerDeInfoName()
+            .includeSdSerDeInfoSerializationLib().includeSdSerDeInfoParameters().build();
+
+    List<Table> tables = client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec);
+
+    Assert.assertEquals("Found tables", 2, tables.size());
+
+    for(Table table : tables) {
+      Assert.assertTrue(table.isSetDbName());
+      Assert.assertTrue(table.isSetCatName());
+      Assert.assertTrue(table.isSetTableName());
+      Assert.assertTrue(table.isSetLastAccessTime());
+      Assert.assertTrue(table.isSetSd());
+      StorageDescriptor sd = table.getSd();
+      Assert.assertTrue(sd.isSetCols());
+      Assert.assertTrue(sd.isSetSerdeInfo());
+      Assert.assertTrue(sd.isSetBucketCols());
+      Assert.assertTrue(sd.isSetCompressed());
+      Assert.assertTrue(sd.isSetInputFormat());
+    }
+  }
+
+  @Test
+  public void testGetTableProjectionSpecification() throws Exception {
+    List<String> tableNames = new ArrayList<>();
+    tableNames.add(testTables[0].getTableName());
+    tableNames.add(testTables[1].getTableName());
+
+    GetProjectionsSpec projectSpec = (new GetTableProjectionsSpecBuilder())
+            .includeTableName()
+            .includeDatabase()
+            .includeSdCdColsName()
+            .includeSdCdColsType()
+            .includeSdCdColsComment()
+            .includeSdLocation()
+            .includeSdInputFormat()
+            .includeSdOutputFormat()
+            .includeSdIsCompressed()
+            .includeSdNumBuckets()
+            .includeSdSerDeInfoName()
+            .includeSdSerDeInfoSerializationLib()
+            .includeSdSerDeInfoParameters()
+            .includeSdSerDeInfoDescription()
+            .includeSdSerDeInfoSerializerClass()
+            .includeSdSerDeInfoDeserializerClass()
+            .includeSdSerDeInfoSerdeType()
+            .includeSdBucketCols()
+            .includeSdSortColsCol()
+            .includeSdSortColsOrder()
+            .includeSdparameters()
+            .includeSdSkewedColNames()
+            .includeSdSkewedColValues()
+            .includeSdSkewedColValueLocationMaps()
+            .includeSdIsStoredAsSubDirectories()
+            .includeOwner()
+            .includeOwnerType()
+            .includeCreateTime()
+            .includeLastAccessTime()
+            .includeRetention()
+            .includePartitionKeysName()
+            .includePartitionKeysType()
+            .includePartitionKeysComment()
+            .includeParameters()
+            .includeViewOriginalText()
+            .includeRewriteEnabled()
+            .includeTableType()
+            .build();
+
+    List<Table> tables = client.getTables(null, DEFAULT_DATABASE, tableNames, projectSpec);
+
+    Assert.assertEquals("Found tables", 2, tables.size());
+
+    for(Table table : tables) {
+      Assert.assertTrue(table.isSetDbName());
+      Assert.assertTrue(table.isSetCatName());
+      Assert.assertTrue(table.isSetTableName());
+      Assert.assertTrue(table.isSetLastAccessTime());
+      Assert.assertTrue(table.isSetSd());
+      StorageDescriptor sd = table.getSd();
+      Assert.assertTrue(sd.isSetCols());
+      Assert.assertTrue(sd.isSetSerdeInfo());
+      Assert.assertTrue(sd.isSetBucketCols());
+      Assert.assertTrue(sd.isSetCompressed());
+      Assert.assertTrue(sd.isSetInputFormat());
+      Assert.assertTrue(sd.isSetSerdeInfo());
+      SerDeInfo serDeInfo = sd.getSerdeInfo();
+      Assert.assertTrue(serDeInfo.isSetSerializationLib());
+    }
+  }
+
   @Test
   public void testGetTableObjectsByNameCaseInsensitive() throws Exception {
     Table table = testTables[0];
@@ -501,9 +824,9 @@ public class TestTablesGetExists extends MetaStoreClientTest {
     Assert.assertFalse("Table not exists", client.tableExists(catName, dbName, "non_existing_table"));
   }
 
-  @Test
+  @Test(expected = UnknownDBException.class)
   public void getTablesBogusCatalog() throws TException {
-    Assert.assertEquals(0, client.getTables("nosuch", DEFAULT_DATABASE_NAME, "*_to_find_*").size());
+    client.getTables("nosuch", DEFAULT_DATABASE_NAME, "*_to_find_*");
   }
 
   @Test

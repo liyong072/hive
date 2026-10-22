@@ -9,24 +9,27 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.conf;
 
 import com.google.common.collect.Lists;
+import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
-import org.apache.hadoop.util.Shell;
 import org.apache.hive.common.util.HiveTestUtils;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.File;
 import java.io.UnsupportedEncodingException;
+import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
@@ -69,26 +72,30 @@ public class TestHiveConf {
     // checkHiveConf(ConfVars.HADOOPFS.varname, "core-site.xml");
 
     // Make sure non-null-valued ConfVar properties *do* override the Hadoop Configuration
-    checkHadoopConf(ConfVars.HADOOPNUMREDUCERS.varname, "1");
-    checkConfVar(ConfVars.HADOOPNUMREDUCERS, "-1");
-    checkHiveConf(ConfVars.HADOOPNUMREDUCERS.varname, "-1");
+    checkHadoopConf(ConfVars.HADOOP_NUM_REDUCERS.varname, "1");
+    checkConfVar(ConfVars.HADOOP_NUM_REDUCERS, "-1");
+    checkHiveConf(ConfVars.HADOOP_NUM_REDUCERS.varname, "-1");
 
     // Non-null ConfVar only defined in ConfVars
-    checkHadoopConf(ConfVars.HIVESKEWJOINKEY.varname, null);
-    checkConfVar(ConfVars.HIVESKEWJOINKEY, "100000");
-    checkHiveConf(ConfVars.HIVESKEWJOINKEY.varname, "100000");
+    checkHadoopConf(ConfVars.HIVE_SKEWJOIN_KEY.varname, null);
+    checkConfVar(ConfVars.HIVE_SKEWJOIN_KEY, "100000");
+    checkHiveConf(ConfVars.HIVE_SKEWJOIN_KEY.varname, "100000");
 
     // ConfVar overridden in in hive-site.xml
-    checkHadoopConf(ConfVars.HIVETESTMODEDUMMYSTATAGGR.varname, null);
-    checkConfVar(ConfVars.HIVETESTMODEDUMMYSTATAGGR, "");
-    checkHiveConf(ConfVars.HIVETESTMODEDUMMYSTATAGGR.varname, "value2");
+    checkHadoopConf(ConfVars.HIVE_TEST_MODE_DUMMY_STAT_AGGR.varname, null);
+    checkConfVar(ConfVars.HIVE_TEST_MODE_DUMMY_STAT_AGGR, "");
+    checkHiveConf(ConfVars.HIVE_TEST_MODE_DUMMY_STAT_AGGR.varname, "value2");
+
+    //Property defined for hive masking algorithm
+    checkConfVar(ConfVars.HIVE_MASKING_ALGO, "sha256");
+    checkHiveConf(ConfVars.HIVE_MASKING_ALGO.varname, "sha256");
 
     // Property defined in hive-site.xml only
     checkHadoopConf("test.property1", null);
     checkHiveConf("test.property1", "value1");
 
     // Test HiveConf property variable substitution in hive-site.xml
-    checkHiveConf("test.var.hiveconf.property", ConfVars.DEFAULTPARTITIONNAME.getDefaultValue());
+    checkHiveConf("test.var.hiveconf.property", ConfVars.DEFAULT_PARTITION_NAME.getDefaultValue());
   }
 
   @Test
@@ -119,6 +126,25 @@ public class TestHiveConf {
   }
 
   @Test
+  public void testReplCmRetainTimeUnit() {
+    HiveConf conf = new HiveConf();
+
+    // The default (240h) is 10 days. Guards against accidentally changing the default duration.
+    Assert.assertEquals(10, conf.getTimeVar(ConfVars.REPL_CM_RETAIN, TimeUnit.DAYS));
+    Assert.assertEquals(240, conf.getTimeVar(ConfVars.REPL_CM_RETAIN, TimeUnit.HOURS));
+
+    // A unit-less value is interpreted in hours, matching the metastore counterpart
+    // metastore.repl.cm.retain, which uses a HOURS base unit.
+    Assert.assertEquals(TimeUnit.HOURS, HiveConf.getDefaultTimeUnit(ConfVars.REPL_CM_RETAIN));
+    conf.setVar(ConfVars.REPL_CM_RETAIN, "10");
+    Assert.assertEquals(10, conf.getTimeVar(ConfVars.REPL_CM_RETAIN, TimeUnit.HOURS));
+
+    // An explicit unit suffix is still honoured.
+    conf.setVar(ConfVars.REPL_CM_RETAIN, "10d");
+    Assert.assertEquals(10, conf.getTimeVar(ConfVars.REPL_CM_RETAIN, TimeUnit.DAYS));
+  }
+
+  @Test
   public void testToSizeBytes() throws Exception {
     Assert.assertEquals(1L, HiveConf.toSizeBytes("1b"));
     Assert.assertEquals(1L, HiveConf.toSizeBytes("1bytes"));
@@ -144,12 +170,14 @@ public class TestHiveConf {
     }
 
     ArrayList<String> hiddenList = Lists.newArrayList(
-        HiveConf.ConfVars.METASTOREPWD.varname,
+        HiveConf.ConfVars.METASTORE_PWD.varname,
         HiveConf.ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PASSWORD.varname,
+        HiveConf.ConfVars.HIVE_SERVER2_WEBUI_SSL_KEYSTORE_PASSWORD.varname,
         "fs.s3.awsSecretAccessKey",
         "fs.s3n.awsSecretAccessKey",
         "dfs.adls.oauth2.credential",
-        "fs.adl.oauth2.credential"
+        "fs.adl.oauth2.credential",
+        "fs.azure.account.oauth2.client.secret"
     );
 
     for (String hiddenConfig : hiddenList) {
@@ -169,24 +197,81 @@ public class TestHiveConf {
   }
 
   @Test
-  public void testSparkConfigUpdate(){
+  public void testLockedConfig() throws Exception {
     HiveConf conf = new HiveConf();
-    Assert.assertFalse(conf.getSparkConfigUpdated());
-
-    conf.verifyAndSet("spark.master", "yarn");
-    Assert.assertTrue(conf.getSparkConfigUpdated());
-    conf.verifyAndSet("hive.execution.engine", "spark");
-    Assert.assertTrue("Expected spark config updated.", conf.getSparkConfigUpdated());
-
-    conf.setSparkConfigUpdated(false);
-    Assert.assertFalse(conf.getSparkConfigUpdated());
+    // Set the default value of the config
+    conf.setVar(ConfVars.HIVE_EXECUTION_ENGINE, "mr");
+    String defaultVal = conf.get(ConfVars.HIVE_EXECUTION_ENGINE.varname);
+    // Update the lockedSet variable
+    conf.addToLockedSet(ConfVars.HIVE_EXECUTION_ENGINE.varname);
+    // Update the value of sample/test config
+    conf.verifyAndSet(ConfVars.HIVE_EXECUTION_ENGINE.varname, "tez");
+    String modifiedVal = conf.get(ConfVars.HIVE_EXECUTION_ENGINE.varname);
+    // Check if the value is changed.
+    Assert.assertEquals(defaultVal, modifiedVal);
   }
+
   @Test
   public void testEncodingDecoding() throws UnsupportedEncodingException {
     HiveConf conf = new HiveConf();
     String query = "select blah, '\u0001' from random_table";
     conf.setQueryString(query);
-    Assert.assertEquals(URLEncoder.encode(query, "UTF-8"), conf.get(ConfVars.HIVEQUERYSTRING.varname));
+    Assert.assertEquals(URLEncoder.encode(query, "UTF-8"), conf.get(ConfVars.HIVE_QUERY_STRING.varname));
     Assert.assertEquals(query, conf.getQueryString());
+  }
+
+  @Test
+  public void testAdditionalConfigFiles() throws Exception{
+    URL url = ClassLoader.getSystemResource("hive-site.xml");
+    File fileHiveSite = new File(url.getPath());
+
+    String parFolder = fileHiveSite.getParent();
+    //back up hive-site.xml
+    String bakHiveSiteFileName = parFolder + "/hive-site-bak.xml";
+    File fileBakHiveSite = new File(bakHiveSiteFileName);
+    FileUtils.copyFile(fileHiveSite, fileBakHiveSite);
+
+    String content = FileUtils.readFileToString(fileHiveSite);
+    content = content.substring(0, content.lastIndexOf("</configuration>"));
+
+    String testHiveSiteString = content + "<property>\n" +
+            " <name>HIVE_SERVER2_PLAIN_LDAP_DOMAIN</name>\n" +
+            " <value>a.com</value>\n" +
+            "</property>\n" +
+            "\n" +
+            " <property>\n" +
+            "   <name>hive.additional.config.files</name>\n" +
+            "   <value>ldap-site.xml,other.xml</value>\n" +
+            "   <description>additional config dir for Hive to load</description>\n" +
+            " </property>\n" +
+            "\n" +
+            "</configuration>";
+
+    FileUtils.writeStringToFile(fileHiveSite, testHiveSiteString);
+
+    String testLdapString = """
+            <?xml version="1.0"?>
+            <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+            <configuration>
+              <property>
+              <name>hive.server2.authentication.ldap.Domain</name>
+              <value>b.com</value>
+            </property>
+            
+            </configuration>\
+            """;
+
+
+    String newFileName = parFolder+"/ldap-site.xml";
+    File f2 = new File(newFileName);
+    FileUtils.writeStringToFile(f2, testLdapString);
+
+    HiveConf conf = new HiveConf();
+    String val = conf.getVar(ConfVars.HIVE_SERVER2_PLAIN_LDAP_DOMAIN);
+    Assert.assertEquals("b.com", val);
+    //restore and clean up
+    FileUtils.copyFile(fileBakHiveSite, fileHiveSite);
+    f2.delete();
+    fileBakHiveSite.delete();
   }
 }

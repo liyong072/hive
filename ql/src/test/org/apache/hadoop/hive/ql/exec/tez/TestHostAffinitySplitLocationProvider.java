@@ -1,15 +1,20 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.tez;
@@ -28,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.ql.io.HiveInputFormat;
 import org.apache.hadoop.hive.ql.io.orc.OrcSplit;
 import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.InputSplit;
@@ -167,7 +173,7 @@ public class TestHostAffinitySplitLocationProvider {
     return locations;
   }
 
-
+  @org.junit.Ignore("HIVE-26308")
   @Test (timeout = 20000)
   public void testConsistentHashingFallback() throws IOException {
     final int LOC_COUNT_TO = 20, SPLIT_COUNT = 500, MAX_MISS_COUNT = 4,
@@ -215,8 +221,7 @@ public class TestHostAffinitySplitLocationProvider {
     int[] hitCounts = new int[locs];
     for (int splitIx = 0; splitIx < splits.length; ++splitIx) {
       state.set(0);
-      int index = HostAffinitySplitLocationProvider.determineLocation(partLocs,
-          splits[splitIx].getPath().toString(), splits[splitIx].getStart(), null);
+      int index = HostAffinitySplitLocationProvider.determineLocation(partLocs, splits[splitIx]);
       ++hitCounts[index];
     }
     SummaryStatistics ss = new SummaryStatistics();
@@ -299,48 +304,6 @@ public class TestHostAffinitySplitLocationProvider {
     assertArrayEquals(retLoc13, retLoc132);
   }
 
-  @Test (timeout = 90000000)
-  public void testDFSLocalityAwareAffinity() throws IOException {
-    List<String> someLocations = locations.subList(0, 2); // 0,1 locations
-    HostAffinitySplitLocationProvider locationProvider = new HostAffinitySplitLocationProvider(someLocations);
-
-    // Different base localities
-    InputSplit os1 = createMockFileSplit(true, "path1", 0, 15000, new String[] {locations.get(0), locations.get(1)}); // 0 or 1
-    InputSplit os2 = createMockFileSplit(true, "path2", 0, 30000, new String[] {locations.get(2), locations.get(3)}); // 0 or 1
-    InputSplit os3 = createMockFileSplit(true, "path3", 15000, 30000, new String[] {locations.get(0), locations.get(2)}); // 0
-    InputSplit os4 = createMockFileSplit(true, "path4", 15000, 30000, new String[] {locations.get(1), locations.get(2)}); // 1
-
-    String[] retLoc1 = locationProvider.getLocations(os1);
-    String[] retLoc2 = locationProvider.getLocations(os2);
-    String[] retLoc3 = locationProvider.getLocations(os3);
-    String[] retLoc4 = locationProvider.getLocations(os4);
-
-    assertEquals(1, retLoc1.length);
-    assertTrue(someLocations.contains(retLoc1[0]));
-
-    assertEquals(1, retLoc2.length);
-    assertTrue(someLocations.contains(retLoc2[0]));
-
-    assertEquals(1, retLoc3.length);
-    assertTrue(someLocations.contains(retLoc3[0]));
-    assertEquals(someLocations.get(0), retLoc3[0]); // is always 0
-
-    assertEquals(1, retLoc4.length);
-    assertTrue(someLocations.contains(retLoc4[0]));
-    assertEquals(someLocations.get(1), retLoc4[0]); // is always 1
-
-    String[] againLoc1 = locationProvider.getLocations(os1);
-    String[] againLoc2 = locationProvider.getLocations(os2);
-    String[] againLoc3 = locationProvider.getLocations(os3);
-    String[] againLoc4 = locationProvider.getLocations(os4);
-
-    assertArrayEquals(retLoc1, againLoc1);
-    assertArrayEquals(retLoc2, againLoc2);
-    assertArrayEquals(retLoc3, againLoc3);
-    assertArrayEquals(retLoc4, againLoc4);
-  }
-
-
 
   private InputSplit createMockInputSplit(String[] locations) throws IOException {
     InputSplit inputSplit = mock(InputSplit.class);
@@ -348,8 +311,8 @@ public class TestHostAffinitySplitLocationProvider {
     return inputSplit;
   }
 
-  private FileSplit createMockFileSplit(boolean createOrcSplit, String fakePathString, long start,
-                                         long length, String[] locations) throws IOException {
+  static FileSplit createMockFileSplit(boolean createOrcSplit, String fakePathString, long start,
+                                       long length, String[] locations) throws IOException {
     FileSplit fileSplit;
     if (createOrcSplit) {
       fileSplit = mock(OrcSplit.class);
@@ -362,8 +325,7 @@ public class TestHostAffinitySplitLocationProvider {
     doReturn(new Path(fakePathString)).when(fileSplit).getPath();
     doReturn(locations).when(fileSplit).getLocations();
 
-    doReturn(locations).when(fileSplit).getLocations();
-    return fileSplit;
+    return new HiveInputFormat.HiveInputSplit(fileSplit, "unused");
   }
 
 

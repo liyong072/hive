@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.binarysortable;
 
@@ -24,7 +25,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.serde2.ByteStream.Output;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerdeRandomRowSource;
@@ -39,10 +40,12 @@ import org.apache.hadoop.hive.serde2.objectinspector.UnionObject;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.io.BytesWritable;
 
-import junit.framework.TestCase;
 import org.junit.Assert;
+import static org.junit.Assert.fail;
+import static org.junit.Assert.assertTrue;
+import org.junit.Test;
 
-public class TestBinarySortableFast extends TestCase {
+public class TestBinarySortableFast {
 
   private static String debugDetailedReadPositionString;
   private static StackTraceElement[] debugStackTrace;
@@ -140,7 +143,7 @@ public class TestBinarySortableFast extends TestCase {
         }
       }
       if (writeColumnCount == columnCount) {
-        TestCase.assertTrue(binarySortableDeserializeRead.isEndOfInputReached());
+        assertTrue(binarySortableDeserializeRead.isEndOfInputReached());
       }
 
       /*
@@ -306,7 +309,7 @@ public class TestBinarySortableFast extends TestCase {
         }
       }
       if (writeColumnCount == columnCount) {
-        TestCase.assertTrue(binarySortableDeserializeRead.isEndOfInputReached());
+        assertTrue(binarySortableDeserializeRead.isEndOfInputReached());
       }
     }
   }
@@ -319,7 +322,7 @@ public class TestBinarySortableFast extends TestCase {
       Object complexFieldObj = VerifyFast.deserializeReadComplexType(binarySortableDeserializeRead, typeInfo);
       if (expectedObject == null) {
         if (complexFieldObj != null) {
-          TestCase.fail("Field reports not null but object is null (class " + complexFieldObj.getClass().getName() +
+          fail("Field reports not null but object is null (class " + complexFieldObj.getClass().getName() +
               ", " + complexFieldObj.toString() + ")");
         }
       } else {
@@ -331,12 +334,12 @@ public class TestBinarySortableFast extends TestCase {
               return;
             }
           }
-          TestCase.fail("Field reports null but object is not null (class " + expectedObject.getClass().getName() +
+          fail("Field reports null but object is not null (class " + expectedObject.getClass().getName() +
               ", " + expectedObject.toString() + ")");
         }
       }
       if (!VerifyLazy.lazyCompare(typeInfo, complexFieldObj, expectedObject)) {
-        TestCase.fail("Comparision failed typeInfo " + typeInfo.toString());
+        fail("Comparison failed typeInfo " + typeInfo.toString());
       }
     }
   }
@@ -414,7 +417,7 @@ public class TestBinarySortableFast extends TestCase {
     Arrays.fill(columnNotNullMarker, BinarySortableSerDe.ONE);
 
     /*
-     * Acending.
+     * Ascending.
      */
     testBinarySortableFast(source, rows,
         columnSortOrderIsDesc, columnNullMarker, columnNotNullMarker,
@@ -500,14 +503,17 @@ public class TestBinarySortableFast extends TestCase {
     }
   }
 
+  @Test
   public void testBinarySortableFastPrimitive() throws Throwable {
     testBinarySortableFast(SerdeRandomRowSource.SupportedTypes.PRIMITIVE, 0);
   }
 
+  @Test
   public void testBinarySortableFastComplexDepthOne() throws Throwable {
     testBinarySortableFast(SerdeRandomRowSource.SupportedTypes.ALL_EXCEPT_MAP, 1);
   }
 
+  @Test
   public void testBinarySortableFastComplexDepthFour() throws Throwable {
     testBinarySortableFast(SerdeRandomRowSource.SupportedTypes.ALL_EXCEPT_MAP, 4);
   }

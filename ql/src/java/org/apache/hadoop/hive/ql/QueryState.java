@@ -9,16 +9,24 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql;
 
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
+
+import org.apache.calcite.sql.SqlKind;
+import org.apache.hadoop.hive.common.ValidTxnList;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.lockmgr.HiveTxnManager;
 import org.apache.hadoop.hive.ql.plan.HiveOperation;
@@ -27,12 +35,17 @@ import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.tez.dag.api.TezConfiguration;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * The class to store query level info such as queryId. Multiple queries can run
  * in the same session, so SessionState is to hold common session related info, and
  * each QueryState is to hold query related info.
  */
 public class QueryState {
+  private static final Logger LOG = LoggerFactory.getLogger(QueryState.class);
+
   /**
    * current configuration.
    */
@@ -41,6 +54,12 @@ public class QueryState {
    * type of the command.
    */
   private HiveOperation commandType;
+
+  /**
+   * The SqlKind of the command. This typically covers additional information to HiveOperation.QUERY,
+   * it could be: INSERT, DELETE, UPDATE, MERGE, EXPLAIN.
+   */
+  private SqlKind sqlKind;
 
   /**
    * Per-query Lineage state to track what happens in the query
@@ -53,26 +72,79 @@ public class QueryState {
   private HiveTxnManager txnManager;
 
   /**
+   * validTxnList supplier
+   */
+  private Supplier<String> validTxnList;
+
+  /**
    * Holds the number of rows affected for insert queries.
    */
   private long numModifiedRows = 0;
 
+  private boolean analyzePartition;
+
   static public final String USERID_TAG = "userid";
+
+  /**
+   * map of resources involved in the query.
+   */
+  private final Map<String, Object> resourceMap = new HashMap<>();
+
+  /**
+   * Cache of HMS requests/responses utilized by SessionHiveMetaStoreClient.
+   */
+  private Map<Object, Object> hmsCache;
+
+  /**
+   * Tracks if HMS cache should be used to answer metadata requests.
+   * In some sections, it makes sense to disable the cache to get fresh responses.
+   */
+  private boolean hmsCacheEnabled;
+
+  /**
+   * query level lock for ConditionalTask#resolveTask.
+   */
+  private final ReentrantLock resolveConditionalTaskLock = new ReentrantLock(true);
+
   /**
    * Private constructor, use QueryState.Builder instead.
    * @param conf The query specific configuration object
    */
   private QueryState(HiveConf conf) {
     this.queryConf = conf;
+    this.validTxnList = () -> conf.get(ValidTxnList.VALID_TXNS_KEY);
   }
 
   // Get the query id stored in query specific config.
   public String getQueryId() {
-    return (queryConf.getVar(HiveConf.ConfVars.HIVEQUERYID));
+    return queryConf.getVar(HiveConf.ConfVars.HIVE_QUERY_ID);
   }
 
   public String getQueryString() {
     return queryConf.getQueryString();
+  }
+
+  // Returns the HMS cache if it is currently enabled
+  public Map<Object, Object> getHMSCache() {
+    return hmsCacheEnabled ? hmsCache : null;
+  }
+
+  /**
+   * Disable the HMS cache. Useful in situations when you
+   * must not get cached metadata responses.
+   */
+  public void disableHMSCache() {
+    hmsCacheEnabled = false;
+  }
+
+  public void enableHMSCache() {
+    hmsCacheEnabled = true;
+  }
+
+  public void createHMSCache() {
+    LOG.info("Query-level HMS cache created for {}", getQueryId());
+    hmsCache = new HashMap<>();
+    hmsCacheEnabled = true;
   }
 
   public String getCommandType() {
@@ -88,6 +160,14 @@ public class QueryState {
 
   public void setCommandType(HiveOperation commandType) {
     this.commandType = commandType;
+  }
+
+  public SqlKind getSqlKind() {
+    return sqlKind;
+  }
+
+  public void setSqlKind(SqlKind sqlKind) {
+    this.sqlKind = sqlKind;
   }
 
   public HiveConf getConf() {
@@ -110,24 +190,46 @@ public class QueryState {
     this.txnManager = txnManager;
   }
 
+  public String getValidTxnList() {
+    return validTxnList.get();
+  }
+  
+  public void setValidTxnList(Supplier<String> validTxnList) {
+    this.validTxnList = validTxnList;
+  }
+
   public long getNumModifiedRows() {
     return numModifiedRows;
+  }
+
+  public boolean isTxnOpen() {
+    return Optional.ofNullable(txnManager).map(HiveTxnManager::isTxnOpen)
+        .orElse(false);
   }
 
   public void setNumModifiedRows(long numModifiedRows) {
     this.numModifiedRows = numModifiedRows;
   }
 
+  /** Whether an ANALYZE named the partitions it is for, leaving the rest of the table alone. */
+  public boolean isAnalyzePartition() {
+    return analyzePartition;
+  }
+
+  public void setAnalyzePartition(boolean analyzePartition) {
+    this.analyzePartition = analyzePartition;
+  }
+
   public String getQueryTag() {
-    return HiveConf.getVar(this.queryConf, HiveConf.ConfVars.HIVEQUERYTAG);
+    return HiveConf.getVar(this.queryConf, HiveConf.ConfVars.HIVE_QUERY_TAG);
   }
 
   public void setQueryTag(String queryTag) {
-    HiveConf.setVar(this.queryConf, HiveConf.ConfVars.HIVEQUERYTAG, queryTag);
+    HiveConf.setVar(this.queryConf, HiveConf.ConfVars.HIVE_QUERY_TAG, queryTag);
   }
 
   public static void setApplicationTag(HiveConf queryConf, String queryTag) {
-    String jobTag = HiveConf.getVar(queryConf, HiveConf.ConfVars.HIVEQUERYTAG);
+    String jobTag = HiveConf.getVar(queryConf, HiveConf.ConfVars.HIVE_QUERY_TAG);
     if (jobTag == null || jobTag.isEmpty()) {
       jobTag = queryTag;
     } else {
@@ -140,6 +242,37 @@ public class QueryState {
     queryConf.set(TezConfiguration.TEZ_APPLICATION_TAGS, jobTag);
   }
 
+  public void addResource(String resourceIdentifier, Object resource) {
+    resourceMap.put(resourceIdentifier, resource);
+  }
+
+  public Object getResource(String resourceIdentifier) {
+    return resourceMap.get(resourceIdentifier);
+  }
+
+  // Resets the resourceMap by removing all stored resource information.
+  public void clearResourceMap() {
+    resourceMap.clear();
+  }
+
+  public ReentrantLock getResolveConditionalTaskLock() {
+    return resolveConditionalTaskLock;
+  }
+
+  /**
+   * Generating the new QueryState object. Making sure, that the new queryId is generated.
+   * @param conf The HiveConf which should be used
+   * @param lineageState a LineageState to be set in the new QueryState object
+   * @return The new QueryState object
+   */
+  public static QueryState getNewQueryState(HiveConf conf, LineageState lineageState) {
+    return new QueryState.Builder()
+        .withGenerateNewQueryId(true)
+        .withHiveConf(conf)
+        .withLineageState(lineageState)
+        .build();
+  }
+
   /**
    * Builder to instantiate the QueryState object.
    */
@@ -148,6 +281,7 @@ public class QueryState {
     private boolean isolated = true;
     private boolean generateNewQueryId = false;
     private HiveConf hiveConf = null;
+    private Supplier<String> validTxnList;
     private LineageState lineageState = null;
 
     /**
@@ -200,6 +334,11 @@ public class QueryState {
       this.hiveConf = hiveConf;
       return this;
     }
+    
+    public Builder withValidTxnList(Supplier<String> validTxnList) {
+      this.validTxnList = validTxnList;
+      return this;
+    }
 
     /**
      * add a LineageState that will be set in the built QueryState
@@ -248,19 +387,20 @@ public class QueryState {
       // Generate the new queryId if needed
       if (generateNewQueryId) {
         String queryId = QueryPlan.makeQueryId();
-        queryConf.setVar(HiveConf.ConfVars.HIVEQUERYID, queryId);
+        queryConf.setVar(HiveConf.ConfVars.HIVE_QUERY_ID, queryId);
         setApplicationTag(queryConf, queryId);
 
-        // FIXME: druid storage handler relies on query.id to maintain some staging directories
-        // expose queryid to session level
         if (hiveConf != null) {
-          hiveConf.setVar(HiveConf.ConfVars.HIVEQUERYID, queryId);
+          hiveConf.setVar(HiveConf.ConfVars.HIVE_QUERY_ID, queryId);
         }
       }
 
       QueryState queryState = new QueryState(queryConf);
       if (lineageState != null) {
         queryState.setLineageState(lineageState);
+      }
+      if (validTxnList != null) {
+        queryState.setValidTxnList(validTxnList);
       }
       return queryState;
     }

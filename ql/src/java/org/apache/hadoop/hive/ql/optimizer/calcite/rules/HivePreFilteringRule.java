@@ -9,26 +9,29 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.calcite.plan.RelOptRule;
+import org.apache.calcite.plan.RelOptPredicateList;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.RelFactories.FilterFactory;
 import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.rules.ReduceExpressionsRule;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexNode;
@@ -44,7 +47,15 @@ import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 
-public class HivePreFilteringRule extends RelOptRule {
+import static org.apache.calcite.rel.rules.ReduceExpressionsRule.FilterReduceExpressionsRule.FilterReduceExpressionsRuleConfig;
+
+/**
+ *  A rule that splits a {@code Filter} operator into two, deterministic and non-deterministic, to facilitate push down
+ *  of the latter by other rules.
+ *  It is a reduction rule cause along with splitting it needs to reduce some of the new conditions to ensure that it
+ *  can reach a fix point.
+ */
+public class HivePreFilteringRule extends ReduceExpressionsRule<ReduceExpressionsRule.Config> {
 
   protected static final Logger LOG = LoggerFactory.getLogger(HivePreFilteringRule.class);
 
@@ -54,7 +65,10 @@ public class HivePreFilteringRule extends RelOptRule {
   private final int maxCNFNodeCount;
 
   public HivePreFilteringRule(int maxCNFNodeCount) {
-    super(operand(Filter.class, operand(RelNode.class, any())));
+    super(FilterReduceExpressionsRuleConfig.DEFAULT.withMatchNullability(false)
+        .withOperandSupplier(o -> o.operand(Filter.class).oneInput(c -> c.operand(RelNode.class).anyInputs()))
+        .withDescription("HivePreFilteringRule")
+        .as(ReduceExpressionsRule.Config.class));
     this.filterFactory = HiveRelFactories.HIVE_FILTER_FACTORY;
     this.maxCNFNodeCount = maxCNFNodeCount;
   }
@@ -157,6 +171,15 @@ public class HivePreFilteringRule extends RelOptRule {
       return;
     }
 
+    // The created expressions must be reduced/folded before we check if they are pushed already below.
+    // Comparing reduced with no reduced predicates may cause this rule to fire indefinitely failing to reach a
+    // fixpoint.
+    reduceExpressions(filter,
+        operandsToPushDown,
+        RelOptPredicateList.EMPTY,
+        true,
+        config.matchNullability(),
+        config.treatDynamicCallsAsConstant());
     // 3. If the new conjuncts are already present in the plan, we bail out
     final List<RexNode> newConjuncts = HiveCalciteUtil.getPredsNotPushedAlready(filter.getInput(),
         operandsToPushDown);
@@ -204,13 +227,13 @@ public class HivePreFilteringRule extends RelOptRule {
       for (RexNode conjunction : conjunctions) {
         // We do not know what it is, we bail out for safety
         if (!(conjunction instanceof RexCall) || !HiveCalciteUtil.isDeterministic(conjunction)) {
-          return new ArrayList<>();
+          return Collections.emptyList();
         }
         RexCall conjCall = (RexCall) conjunction;
         Set<Integer> refs = HiveCalciteUtil.getInputRefs(conjCall);
         if (refs.size() != 1) {
           // We do not know what it is, we bail out for safety
-          return new ArrayList<>();
+          return Collections.emptyList();
         }
         RexNode ref = rexBuilder.makeInputRef(input, refs.iterator().next());
         String stringRef = ref.toString();
@@ -227,7 +250,7 @@ public class HivePreFilteringRule extends RelOptRule {
       // If we did not add any factor or there are no common factors, we can
       // bail out
       if (refsInAllOperands.isEmpty()) {
-        return new ArrayList<>();
+        return Collections.emptyList();
       }
     }
 

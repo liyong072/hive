@@ -9,16 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.tez;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -28,8 +30,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
+import com.google.common.collect.Maps;
+import org.apache.hadoop.hive.ql.io.AcidUtils;
+import org.apache.hadoop.hive.ql.io.BucketizedHiveInputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -56,20 +60,16 @@ import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 
+
 /**
  * SplitGrouper is used to combine splits based on head room and locality. It
  * also enforces restrictions around schema, file format and bucketing.
  */
 public class SplitGrouper {
-
   private static final Logger LOG = LoggerFactory.getLogger(SplitGrouper.class);
 
-  // TODO This needs to be looked at. Map of Map to Map... Made concurrent for now since split generation
-  // can happen in parallel.
-  private static final Map<Map<Path, PartitionDesc>, Map<Path, PartitionDesc>> cache =
-      new ConcurrentHashMap<>();
-
   private final TezMapredSplitsGrouper tezGrouper = new TezMapredSplitsGrouper();
+  private final Map<Path, Path> cache = Maps.newHashMap();
 
   /**
    * group splits for each bucket separately - while evenly filling all the
@@ -86,16 +86,22 @@ public class SplitGrouper {
 
     // allocate map bucket id to grouped splits
     Multimap<Integer, InputSplit> bucketGroupedSplitMultimap =
-        ArrayListMultimap.<Integer, InputSplit> create();
+        ArrayListMultimap.create();
 
     // use the tez grouper to combine splits once per bucket
     for (int bucketId : bucketSplitMultimap.keySet()) {
       Collection<InputSplit> inputSplitCollection = bucketSplitMultimap.get(bucketId);
-
+      Class inputFormatClass = conf.getClass("mapred.input.format.class",
+              HiveInputFormat.class);
+      if (inputFormatClass != BucketizedHiveInputFormat.class &&
+              inputFormatClass != HiveInputFormat.class) {
+        // As of now only these two formats are supported.
+        inputFormatClass = HiveInputFormat.class;
+      }
       InputSplit[] rawSplits = inputSplitCollection.toArray(new InputSplit[0]);
       InputSplit[] groupedSplits =
           tezGrouper.getGroupedSplits(conf, rawSplits, bucketTaskMap.get(bucketId),
-              HiveInputFormat.class.getName(), new ColumnarSplitSizeEstimator(), splitLocationProvider);
+                  inputFormatClass.getName(), new ColumnarSplitSizeEstimator(), splitLocationProvider);
 
       LOG.info("Original split count is " + rawSplits.length + " grouped split count is "
           + groupedSplits.length + ", for bucket: " + bucketId);
@@ -126,9 +132,8 @@ public class SplitGrouper {
         String [] locations = split.getLocations();
         if (locations != null && locations.length > 0) {
           // Worthwhile only if more than 1 split, consistentGroupingEnabled and is a FileSplit
-          if (consistentLocations && locations.length > 1 && split instanceof FileSplit) {
+          if (consistentLocations && locations.length > 1 && split instanceof FileSplit fileSplit) {
             Arrays.sort(locations);
-            FileSplit fileSplit = (FileSplit) split;
             Path path = fileSplit.getPath();
             long startLocation = fileSplit.getStart();
             int hashCode = Objects.hash(path, startLocation);
@@ -142,8 +147,8 @@ public class SplitGrouper {
             locationHints.add(TaskLocationHint.createTaskLocationHint(locationSet, null));
           } else {
             locationHints.add(TaskLocationHint
-                .createTaskLocationHint(new LinkedHashSet<String>(Arrays.asList(split
-                    .getLocations())), null));
+                .createTaskLocationHint(new LinkedHashSet<>(Arrays.asList(split
+                  .getLocations())), null));
           }
         } else {
           locationHints.add(TaskLocationHint.createTaskLocationHint(null, null));
@@ -175,19 +180,20 @@ public class SplitGrouper {
   public Multimap<Integer, InputSplit> generateGroupedSplits(JobConf jobConf, Configuration conf, InputSplit[] splits,
       float waves, int availableSlots, String inputName, boolean groupAcrossFiles,
       SplitLocationProvider locationProvider) throws Exception {
+    boolean isMinorCompaction = true;
     MapWork mapWork = populateMapWork(jobConf, inputName);
     // ArrayListMultimap is important here to retain the ordering for the splits.
-    Multimap<Integer, InputSplit> schemaGroupedSplitMultiMap = ArrayListMultimap.<Integer, InputSplit> create();
-    
+    Multimap<Integer, InputSplit> schemaGroupedSplitMultiMap = ArrayListMultimap.create();
     if (HiveConf.getVar(jobConf, HiveConf.ConfVars.SPLIT_GROUPING_MODE).equalsIgnoreCase("compactor")) {
       List<Path> paths = Utilities.getInputPathsTez(jobConf, mapWork);
       for (Path path : paths) {
         List<String> aliases = mapWork.getPathToAliases().get(path);
         if ((aliases != null) && (aliases.size() == 1)) {
-          Operator<? extends OperatorDesc> op = mapWork.getAliasToWork().get(aliases.get(0));
-          if ((op != null) && (op instanceof TableScanOperator)) {
-            TableScanOperator tableScan = (TableScanOperator) op;
-            if (!tableScan.getConf().isTranscationalTable()) {
+          Operator<? extends OperatorDesc> op = mapWork.getAliasToWork().get(aliases.getFirst());
+          if (op instanceof TableScanOperator tableScan) {
+            PartitionDesc partitionDesc = mapWork.getPartitionDesc(aliases.getFirst());
+            isMinorCompaction &= AcidUtils.isCompactionTable(partitionDesc.getTableDesc().getProperties());
+            if (!tableScan.getConf().isTranscationalTable() && !isMinorCompaction) {
               String splitPath = getFirstSplitPath(splits);
               String errorMessage =
                   "Compactor split grouping is enabled only for transactional tables. Please check the path: "
@@ -209,7 +215,7 @@ public class SplitGrouper {
        * Create a TezGroupedSplit for each bucketId and return.
        * TODO: Are there any other config values (split size etc) that can override this per writer split grouping?
        */
-      return getCompactorSplitGroups(splits, conf);
+      return getCompactorSplitGroups(splits, conf, isMinorCompaction);
     }
 
     int i = 0;
@@ -244,26 +250,40 @@ public class SplitGrouper {
    * Takes a list of {@link org.apache.hadoop.hive.ql.io.HiveInputFormat.HiveInputSplit}s
    * and groups them for Acid Compactor, creating one TezGroupedSplit per bucket number.
    */
-  Multimap<Integer, InputSplit> getCompactorSplitGroups(InputSplit[] rawSplits, Configuration conf) {
+  Multimap<Integer, InputSplit> getCompactorSplitGroups(InputSplit[] rawSplits, Configuration conf,
+      boolean isMinorCompaction) {
     // Note: For our case, this multimap will essentially contain one value (one TezGroupedSplit) per key 
-    Multimap<Integer, InputSplit> bucketSplitMultiMap = ArrayListMultimap.<Integer, InputSplit> create();
+    Multimap<Integer, InputSplit> bucketSplitMultiMap = ArrayListMultimap.create();
     HiveInputFormat.HiveInputSplit[] splits = new HiveInputFormat.HiveInputSplit[rawSplits.length];
     int i = 0;
     for (InputSplit is : rawSplits) {
-      splits[i++] = (HiveInputFormat.HiveInputSplit) is;
+      HiveInputFormat.HiveInputSplit hiveInputSplit = (HiveInputFormat.HiveInputSplit) is;
+      OrcSplit o1 = (OrcSplit) hiveInputSplit.getInputSplit();
+      try {
+        if (isMinorCompaction) {
+          o1.parse(conf, o1.getRootDir().getParent());
+        } else {
+          o1.parse(conf);
+        }
+      } catch (IOException e) {
+        throw new RuntimeException();
+      }
+      splits[i++] = hiveInputSplit;
     }
-    Arrays.sort(splits, new ComparatorCompactor(conf));
+    Arrays.sort(splits, new ComparatorCompactor());
     TezGroupedSplit tgs = null;
     int previousWriterId = Integer.MIN_VALUE;
     Path rootDir = null;
     for (i = 0; i < splits.length; i++) {
       int writerId = ((OrcSplit) splits[i].getInputSplit()).getBucketId();
-      if (rootDir == null) {
-        rootDir = ((OrcSplit) splits[i].getInputSplit()).getRootDir();
-      } 
-      Path rootDirFromCurrentSplit = ((OrcSplit) splits[i].getInputSplit()).getRootDir();
-      // These splits should belong to the same partition
-      assert rootDir == rootDirFromCurrentSplit;
+      if (!isMinorCompaction) {
+        if (rootDir == null) {
+          rootDir = ((OrcSplit) splits[i].getInputSplit()).getRootDir();
+        }
+        Path rootDirFromCurrentSplit = ((OrcSplit) splits[i].getInputSplit()).getRootDir();
+        // These splits should belong to the same partition
+        assert rootDir.equals(rootDirFromCurrentSplit);
+      }
       if (writerId != previousWriterId) {
         // Create a new grouped split for this writerId
         tgs = new TezGroupedSplit(1, "org.apache.hadoop.hive.ql.io.HiveInputFormat", null, null);
@@ -275,12 +295,8 @@ public class SplitGrouper {
     return bucketSplitMultiMap;
   }
   
-  static class ComparatorCompactor implements Comparator<HiveInputFormat.HiveInputSplit> {
-    private  Configuration conf;
-    private ComparatorCompactor(Configuration conf) {
-      this.conf = conf;
-    }
-    
+  static class ComparatorCompactor implements Comparator<HiveInputFormat.HiveInputSplit>, Serializable {
+
     @Override
     public int compare(HiveInputFormat.HiveInputSplit h1, HiveInputFormat.HiveInputSplit h2) {
       //sort: bucketId,writeId,stmtId,rowIdOffset,splitStart
@@ -289,12 +305,6 @@ public class SplitGrouper {
       }
       OrcSplit o1 = (OrcSplit)h1.getInputSplit();
       OrcSplit o2 = (OrcSplit)h2.getInputSplit();
-      try {
-        o1.parse(conf);
-        o2.parse(conf);
-      } catch(IOException ex) {
-        throw new RuntimeException(ex);
-      }
       // Note: this is the bucket number as seen in the file name.
       // Hive 3.0 encodes a bunch of info in the Acid schema's bucketId attribute.
       // See: {@link org.apache.hadoop.hive.ql.io.BucketCodec.V1} for details.
@@ -328,10 +338,10 @@ public class SplitGrouper {
                                                     Map<Integer, Collection<InputSplit>> bucketSplitMap) {
 
     // mapping of bucket id to size of all splits in bucket in bytes
-    Map<Integer, Long> bucketSizeMap = new HashMap<Integer, Long>();
+    Map<Integer, Long> bucketSizeMap = new HashMap<>();
 
     // mapping of bucket id to number of required tasks to run
-    Map<Integer, Integer> bucketTaskMap = new HashMap<Integer, Integer>();
+    Map<Integer, Integer> bucketTaskMap = new HashMap<>();
 
     // TODO HIVE-12255. Make use of SplitSizeEstimator.
     // The actual task computation needs to be looked at as well.
@@ -345,12 +355,11 @@ public class SplitGrouper {
         // the case of SMB join. So in this case, we can do an early exit by not doing the
         // calculation for bucketSizeMap. Each bucket will assume it can fill availableSlots * waves
         // (preset to 0.5) for SMB join.
-        if (!(s instanceof FileSplit)) {
+        if (!(s instanceof FileSplit fsplit)) {
           bucketTaskMap.put(bucketId, (int) (availableSlots * waves));
           earlyExit = true;
           continue;
         }
-        FileSplit fsplit = (FileSplit) s;
         size += fsplit.getLength();
         totalSize += fsplit.getLength();
       }
@@ -396,7 +405,7 @@ public class SplitGrouper {
   }
 
   private boolean schemaEvolved(InputSplit s, InputSplit prevSplit, boolean groupAcrossFiles,
-                                       MapWork work) throws IOException {
+                                     MapWork work) throws IOException {
     boolean retval = false;
     Path path = ((FileSplit) s).getPath();
     PartitionDesc pd = HiveFileFormatUtils.getFromPathRecursively(
@@ -417,15 +426,13 @@ public class SplitGrouper {
       previousDeserializerClass = prevPD.getDeserializerClassName();
       previousInputFormatClass = prevPD.getInputFileFormatClass();
     }
-
     if ((currentInputFormatClass != previousInputFormatClass)
         || (!currentDeserializerClass.equals(previousDeserializerClass))) {
       retval = true;
     }
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Adding split " + path + " to src new group? " + retval);
-    }
+    LOG.debug("Adding split {} to src new group? {}", path, retval);
+
     return retval;
   }
 

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.translator;
 
@@ -66,7 +67,7 @@ public class PlanModifierUtil {
     ImmutableMap.Builder<Integer, RexNode> inputRefToCallMapBldr = ImmutableMap.builder();
     for (int i = resultSchema.size(); i < rt.getFieldCount(); i++) {
       if (collationInputRefs.contains(i)) {
-        RexNode obyExpr = obChild.getChildExps().get(i);
+        RexNode obyExpr = obChild.getProjects().get(i);
         if (obyExpr instanceof RexCall) {
           LOG.debug("Old RexCall : " + obyExpr);
           obyExpr = adjustOBSchema((RexCall) obyExpr, obChild, resultSchema);
@@ -85,7 +86,7 @@ public class PlanModifierUtil {
     if (replaceProject) {
       // This removes order-by only expressions from the projections.
       HiveProject replacementProjectRel = HiveProject.create(obChild.getInput(), obChild
-          .getChildExps().subList(0, resultSchema.size()), obChild.getRowType().getFieldNames()
+          .getProjects().subList(0, resultSchema.size()), obChild.getRowType().getFieldNames()
           .subList(0, resultSchema.size()));
       obRel.replaceInput(0, replacementProjectRel);
     }
@@ -99,7 +100,7 @@ public class PlanModifierUtil {
     for (int k = 0; k < obyExpr.operands.size(); k++) {
       RexNode rn = obyExpr.operands.get(k);
       for (int j = 0; j < resultSchema.size(); j++) {
-        if( obChild.getChildExps().get(j).toString().equals(rn.toString())) {
+        if( obChild.getProjects().get(j).toString().equals(rn.toString())) {
           a = j;
           break;
         }
@@ -126,7 +127,7 @@ public class PlanModifierUtil {
       errorDesc += "[" + fs.getName() + ":" + fs.getType() + "], ";
     }
     errorDesc += " projection fields: ";
-    for (RexNode exp : topLevelProj.getChildExps()) {
+    for (RexNode exp : topLevelProj.getProjects()) {
       errorDesc += "[" + exp.toString() + ":" + exp.getType() + "], ";
     }
     if (fieldsForOB != 0) {

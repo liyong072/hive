@@ -1,7 +1,9 @@
 PREHOOK: query: DROP TABLE hbase_table_1
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: DROP TABLE hbase_table_1
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE EXTERNAL TABLE hbase_table_1(key int comment 'It is a column key', value string comment 'It is the column string value')
 STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
 WITH SERDEPROPERTIES ("hbase.columns.mapping" = "cf:string")
@@ -26,4 +28,4 @@ key                 	int                 	It is a column key
 value               	string              	It is the column string value
 	 	 
 #### A masked pattern was here ####
-FAILED: SemanticException [Error 10134]: ALTER TABLE can only be used for [ADDPROPS, DROPPROPS, ADDCOLS] to a non-native table  hbase_table_1
+FAILED: SemanticException [Error 10134]: ALTER TABLE can only be used for [ADDPROPS, DROPPROPS, ADDCOLS, EXECUTE] to a non-native table  hbase_table_1

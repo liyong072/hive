@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -95,8 +96,8 @@ public class LateralViewJoinOperator extends Operator<LateralViewJoinDesc> {
   protected void initializeOp(Configuration hconf) throws HiveException {
     super.initializeOp(hconf);
 
-    ArrayList<ObjectInspector> ois = new ArrayList<ObjectInspector>();
-    ArrayList<String> fieldNames = conf.getOutputInternalColNames();
+    List<ObjectInspector> ois = new ArrayList<ObjectInspector>();
+    List<String> fieldNames = conf.getOutputInternalColNames();
 
     // The output of the lateral view join will be the columns from the select
     // parent, followed by the column from the UDTF parent
@@ -118,10 +119,10 @@ public class LateralViewJoinOperator extends Operator<LateralViewJoinDesc> {
   }
 
   // acc is short for accumulator. It's used to build the row before forwarding
-  ArrayList<Object> acc = new ArrayList<Object>();
+  List<Object> acc = new ArrayList<Object>();
   // selectObjs hold the row from the select op, until receiving a row from
   // the udtf op
-  ArrayList<Object> selectObjs = new ArrayList<Object>();
+  List<Object> selectObjs = new ArrayList<Object>();
 
   /**
    * An important assumption for processOp() is that for a given row from the

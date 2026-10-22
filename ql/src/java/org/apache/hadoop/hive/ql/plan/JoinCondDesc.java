@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -72,6 +73,9 @@ public class JoinCondDesc implements Serializable {
       break;
     case LEFTSEMI:
       type = JoinDesc.LEFT_SEMI_JOIN;
+      break;
+    case ANTI:
+      type = JoinDesc.ANTI_JOIN;
       break;
     default:
       assert false;
@@ -140,6 +144,9 @@ public class JoinCondDesc implements Serializable {
     case JoinDesc.LEFT_SEMI_JOIN:
       sb.append("Left Semi Join ");
       break;
+    case JoinDesc.ANTI_JOIN:
+      sb.append("Anti Join ");
+      break;
     default:
       sb.append("Unknown Join ");
       break;
@@ -174,6 +181,9 @@ public class JoinCondDesc implements Serializable {
         break;
       case JoinDesc.LEFT_SEMI_JOIN:
         join.put("type", "Left Semi");
+        break;
+      case JoinDesc.ANTI_JOIN:
+        join.put("type", "Anti");
         break;
       default:
         join.put("type", "Unknown Join");

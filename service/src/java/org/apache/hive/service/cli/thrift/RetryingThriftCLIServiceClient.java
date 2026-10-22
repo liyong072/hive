@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service.cli.thrift;
@@ -24,6 +25,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.net.SocketException;
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 
 import javax.security.sasl.SaslException;
 
+import org.apache.hadoop.hive.common.auth.HiveAuthUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hive.service.auth.HiveAuthFactory;
 import org.apache.hive.service.auth.PlainSaslHelper;
@@ -245,6 +248,25 @@ public class RetryingThriftCLIServiceClient implements InvocationHandler {
     public void setApplicationName(SessionHandle sh, String value) throws HiveSQLException {
       cliService.setApplicationName(sh, value);
     }
+
+    @Override
+    public OperationHandle uploadData(
+        SessionHandle sessionHandle,
+        ByteBuffer values,
+        String tableName,
+        String path) throws HiveSQLException {
+      return cliService.uploadData(sessionHandle, values, tableName, path);
+    }
+
+    @Override
+    public OperationHandle downloadData(
+        SessionHandle sessionHandle,
+        String tableName,
+        String query,
+        String format,
+        Map<String, String> options) throws HiveSQLException {
+      return cliService.downloadData(sessionHandle, tableName, query, format, options);
+    }
   }
 
   protected RetryingThriftCLIServiceClient(HiveConf conf) {
@@ -289,16 +311,13 @@ public class RetryingThriftCLIServiceClient implements InvocationHandler {
 
     String host = conf.getVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_BIND_HOST);
     int port = conf.getIntVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_PORT);
-    LOG.info("Connecting to " + host + ":" + port);
+    int maxThriftMessageSize = (int) conf.getSizeVar(HiveConf.ConfVars.HIVE_THRIFT_CLIENT_MAX_MESSAGE_SIZE);
+    LOG.info("Connecting to {}:{} using a thrift max message of size: {}",
+        host, port, maxThriftMessageSize);
 
-    transport = new TSocket(host, port);
+    transport = HiveAuthUtils.getSocketTransport(host, port, 0, maxThriftMessageSize);
     ((TSocket) transport).setTimeout((int) conf.getTimeVar(HiveConf.ConfVars.SERVER_READ_SOCKET_TIMEOUT,
       TimeUnit.SECONDS) * 1000);
-    try {
-      ((TSocket) transport).getSocket().setKeepAlive(conf.getBoolVar(HiveConf.ConfVars.SERVER_TCP_KEEP_ALIVE));
-    } catch (SocketException e) {
-      LOG.error("Error setting keep alive to " + conf.getBoolVar(HiveConf.ConfVars.SERVER_TCP_KEEP_ALIVE), e);
-    }
 
     String userName = conf.getVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_CLIENT_USER);
     String passwd = conf.getVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_CLIENT_PASSWORD);

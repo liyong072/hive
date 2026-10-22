@@ -9,18 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.util;
 
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 
 import java.io.Serializable;
 import java.util.Arrays;
@@ -37,24 +38,24 @@ public class DAGTraversalTest {
     int count = 0;
 
     @Override
-    public void process(Task<? extends Serializable> task) {
+    public void process(Task<?> task) {
       if (task.getDependentTasks() == null || task.getDependentTasks().isEmpty()) {
         count++;
       }
     }
 
     @Override
-    public boolean skipProcessing(Task<? extends Serializable> task) {
+    public boolean skipProcessing(Task<?> task) {
       return false;
     }
   }
 
   @Test
   public void shouldCountNumberOfLeafNodesCorrectly() {
-    Task<? extends Serializable> taskWith5NodeTree = linearTree(5);
-    Task<? extends Serializable> taskWith1NodeTree = linearTree(1);
-    Task<? extends Serializable> taskWith3NodeTree = linearTree(3);
-    @SuppressWarnings("unchecked") Task<? extends Serializable> rootTask = mock(Task.class);
+    Task<?> taskWith5NodeTree = linearTree(5);
+    Task<?> taskWith1NodeTree = linearTree(1);
+    Task<?> taskWith3NodeTree = linearTree(3);
+    @SuppressWarnings("unchecked") Task<?> rootTask = mock(Task.class);
     when(rootTask.getDependentTasks())
         .thenReturn(Arrays.asList(taskWith1NodeTree, taskWith3NodeTree, taskWith5NodeTree));
 
@@ -63,10 +64,10 @@ public class DAGTraversalTest {
     assertEquals(3, function.count);
   }
 
-  private Task<? extends Serializable> linearTree(int numOfNodes) {
-    Task<? extends Serializable> current = null, head = null;
+  private Task<?> linearTree(int numOfNodes) {
+    Task<?> current = null, head = null;
     for (int i = 0; i < numOfNodes; i++) {
-      @SuppressWarnings("unchecked") Task<? extends Serializable> task = mock(Task.class);
+      @SuppressWarnings("unchecked") Task<?> task = mock(Task.class);
       if (current != null) {
         when(current.getDependentTasks()).thenReturn(Collections.singletonList(task));
       }

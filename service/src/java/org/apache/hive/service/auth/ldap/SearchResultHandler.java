@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.service.auth.ldap;
 
@@ -147,7 +148,7 @@ public final class SearchResultHandler {
    * Implementations of this interface perform the actual work of processing each record,
    * but don't need to worry about exception handling, closing underlying data structures,
    * and combining results from several search requests.
-   * {@see SearchResultHandler}
+   * @see SearchResultHandler
    */
   public interface RecordProcessor {
 

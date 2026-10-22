@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io;
@@ -30,7 +31,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.junit.Test;
 
@@ -171,37 +171,4 @@ public class TestIOContextMap {
       }
     }
   }
-
-  @Test
-    public void testSparkThreadLocal() throws Exception {
-    // Test that input name does not change IOContext returned, and that each thread gets its own.
-    final Configuration conf1 = new Configuration();
-    conf1.set(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE.varname, "spark");
-    final Configuration conf2 = new Configuration(conf1);
-    conf2.set(Utilities.INPUT_NAME, "Other input");
-    final int THREAD_COUNT = 2;
-    ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
-    final CountDownLatch cdlIn = new CountDownLatch(THREAD_COUNT), cdlOut = new CountDownLatch(1);
-    @SuppressWarnings("unchecked")
-    FutureTask<IOContext>[] tasks = new FutureTask[THREAD_COUNT];
-    for (int i = 0; i < tasks.length; ++i) {
-      tasks[i] = new FutureTask<IOContext>(new Callable<IOContext>() {
-        public IOContext call() throws Exception {
-          syncThreadStart(cdlIn, cdlOut);
-          IOContext c1 = IOContextMap.get(conf1), c2 = IOContextMap.get(conf2);
-          assertSame(c1, c2);
-          return c1;
-        }
-      });
-      executor.execute(tasks[i]);
-    }
-
-    cdlIn.await(); // Wait for all threads to be ready.
-    cdlOut.countDown(); // Release them at the same time.
-    Set<IOContext> results = Sets.newIdentityHashSet();
-    for (int i = 0; i < tasks.length; ++i) {
-      assertTrue(results.add(tasks[i].get())); // All the objects must be different.
-    }
-  }
-
 }

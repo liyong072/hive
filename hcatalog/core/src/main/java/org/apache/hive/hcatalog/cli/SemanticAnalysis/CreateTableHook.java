@@ -19,17 +19,16 @@
 package org.apache.hive.hcatalog.cli.SemanticAnalysis;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.ql.ddl.DDLDesc;
-import org.apache.hadoop.hive.ql.ddl.DDLTask2;
-import org.apache.hadoop.hive.ql.ddl.table.CreateTableDesc;
+import org.apache.hadoop.hive.ql.ddl.DDLTask;
+import org.apache.hadoop.hive.ql.ddl.table.create.CreateTableDesc;
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -65,16 +64,13 @@ final class CreateTableHook extends HCatSemanticAnalyzerBase {
     // Analyze and create tbl properties object
     int numCh = ast.getChildCount();
 
-    tableName = BaseSemanticAnalyzer.getUnescapedName((ASTNode) ast
-      .getChild(0));
-    boolean likeTable = false;
+    tableName = BaseSemanticAnalyzer.getUnescapedName((ASTNode) ast.getChild(0));
     StorageFormat format = new StorageFormat(context.getConf());
 
     for (int num = 1; num < numCh; num++) {
       ASTNode child = (ASTNode) ast.getChild(num);
       if (format.fillStorageFormat(child)) {
-        if (org.apache.commons.lang.StringUtils
-            .isNotEmpty(format.getStorageHandler())) {
+        if (StringUtils.isNotEmpty(format.getStorageHandler())) {
             return ast;
         }
         continue;
@@ -87,10 +83,6 @@ final class CreateTableHook extends HCatSemanticAnalyzerBase {
             "Select is not a valid operation.");
 
       case HiveParser.TOK_ALTERTABLE_BUCKETS:
-        break;
-
-      case HiveParser.TOK_LIKETABLE:
-        likeTable = true;
         break;
 
       case HiveParser.TOK_IFNOTEXISTS:
@@ -122,17 +114,12 @@ final class CreateTableHook extends HCatSemanticAnalyzerBase {
       }
     }
 
-    if (!likeTable && (format.getInputFormat() == null || format.getOutputFormat() == null)) {
-      throw new SemanticException(
-        "STORED AS specification is either incomplete or incorrect.");
-    }
-
     return ast;
   }
 
   @Override
   public void postAnalyze(HiveSemanticAnalyzerHookContext context,
-              List<Task<? extends Serializable>> rootTasks)
+              List<Task<?>> rootTasks)
     throws SemanticException {
 
     if (rootTasks.size() == 0) {
@@ -140,10 +127,10 @@ final class CreateTableHook extends HCatSemanticAnalyzerBase {
       return;
     }
     Task<?> t = rootTasks.get(rootTasks.size() - 1);
-    if (!(t instanceof DDLTask2)) {
+    if (!(t instanceof DDLTask)) {
       return;
     }
-    DDLTask2 task = (DDLTask2)t;
+    DDLTask task = (DDLTask)t;
     DDLDesc d = task.getWork().getDDLDesc();
     if (!(d instanceof CreateTableDesc)) {
       return;
@@ -164,7 +151,7 @@ final class CreateTableHook extends HCatSemanticAnalyzerBase {
         HiveStorageHandler storageHandlerInst = HCatUtil
           .getStorageHandler(context.getConf(),
             desc.getStorageHandler(),
-            desc.getSerName(),
+            desc.getSerde(),
             desc.getInputFormat(),
             desc.getOutputFormat());
         //Authorization checks are performed by the storageHandler.getAuthorizationProvider(), if
@@ -175,7 +162,7 @@ final class CreateTableHook extends HCatSemanticAnalyzerBase {
     }
 
     try {
-      Table table = context.getHive().newTable(desc.getTableName());
+      Table table = context.getHive().newTable(desc.getDbTableName());
       if (desc.getLocation() != null) {
         table.setDataLocation(new Path(desc.getLocation()));
       }

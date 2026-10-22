@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -41,6 +42,8 @@ public class CuckooSetBytes {
   private int rehashCount = 0;
   private static final long INT_MASK  = 0x00000000ffffffffL;
   private static final long BYTE_MASK = 0x00000000000000ffL;
+  private int maxLen;
+  private int minLen = Integer.MAX_VALUE;
 
   /**
    * Allocate a new set to hold expectedSize values. Re-allocation to expand
@@ -76,6 +79,9 @@ public class CuckooSetBytes {
    * and ending at start+len is present in the set.
    */
   public boolean lookup(byte[] b, int start, int len) {
+    if (len < minLen || len > maxLen) {
+      return false;
+    }
 
     return entryEqual(t1, h1(b, start, len), b, start, len)
         || entryEqual(t2, h2(b, start, len), b, start, len);
@@ -90,6 +96,8 @@ public class CuckooSetBytes {
     if (lookup(x, 0, x.length)) {
       return;
     }
+    minLen = Math.min(minLen, x.length);
+    maxLen = Math.max(maxLen, x.length);
 
     // Try to insert up to n times. Rehash if that fails.
     for(int i = 0; i != n; i++) {

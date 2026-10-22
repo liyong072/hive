@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.stats;
 
@@ -25,7 +26,6 @@ import java.util.Set;
 
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
-import org.apache.calcite.rel.core.SemiJoin;
 import org.apache.calcite.rel.metadata.ReflectiveRelMetadataProvider;
 import org.apache.calcite.rel.metadata.RelMdSelectivity;
 import org.apache.calcite.rel.metadata.RelMdUtil;
@@ -65,8 +65,12 @@ public class HiveRelMdSelectivity extends RelMdSelectivity {
   }
 
   public Double getSelectivity(Join j, RelMetadataQuery mq, RexNode predicate) {
-    if (j.getJoinType().equals(JoinRelType.INNER)) {
-      return computeInnerJoinSelectivity(j, mq, predicate);
+    if (j.getJoinType().equals(JoinRelType.INNER) || j.isSemiJoin() || j.getJoinType().equals(JoinRelType.ANTI)) {
+      Double selectivity =  computeInnerJoinSelectivity(j, mq, predicate);
+      if (j.getJoinType().equals(JoinRelType.ANTI)) {
+        return 1 - selectivity;
+      }
+      return selectivity;
     } else if (j.getJoinType().equals(JoinRelType.LEFT) ||
             j.getJoinType().equals(JoinRelType.RIGHT)) {
       double left = mq.getRowCount(j.getLeft());
@@ -105,15 +109,27 @@ public class HiveRelMdSelectivity extends RelMdSelectivity {
     // 1. Update Col Stats Map with col stats for columns from left side of
     // Join which are part of join keys
     for (Integer ljk : jpi.getProjsFromLeftPartOfJoinKeysInChildSchema()) {
-      colStatMapBuilder.put(ljk,
-          HiveRelMdDistinctRowCount.getDistinctRowCount(j.getLeft(), mq, ljk));
+      Double ljkDistRowCount =
+          HiveRelMdDistinctRowCount.getDistinctRowCount(j.getLeft(), mq, ljk);
+      if (ljkDistRowCount == null) {
+        // Distinct row count could not be determined,
+        // return default selectivity
+        return 1.0;
+      }
+      colStatMapBuilder.put(ljk, ljkDistRowCount);
     }
 
     // 2. Update Col Stats Map with col stats for columns from right side of
     // Join which are part of join keys
     for (Integer rjk : jpi.getProjsFromRightPartOfJoinKeysInChildSchema()) {
-      colStatMapBuilder.put(rjk + rightOffSet,
-          HiveRelMdDistinctRowCount.getDistinctRowCount(j.getRight(), mq, rjk));
+      Double rjkDistRowCount =
+          HiveRelMdDistinctRowCount.getDistinctRowCount(j.getRight(), mq, rjk);
+      if (rjkDistRowCount == null) {
+        // Distinct row count could not be determined,
+        // return default selectivity
+        return 1.0;
+      }
+      colStatMapBuilder.put(rjk + rightOffSet, rjkDistRowCount);
     }
     colStatMap = colStatMapBuilder.build();
 
@@ -125,21 +141,17 @@ public class HiveRelMdSelectivity extends RelMdSelectivity {
     if (noOfPE > 0) {
       boolean isCorrelatedColumns = j.getCluster().getPlanner().getContext().
           unwrap(HiveConfPlannerContext.class).getIsCorrelatedColumns();
-      if (noOfPE > 1 && isCorrelatedColumns ){
+      if (noOfPE > 1 && isCorrelatedColumns) {
         ndvEstimate = maxNdvForCorrelatedColumns(peLst, colStatMap);
-      }
-      else {
+      } else {
         ndvEstimate = exponentialBackoff(peLst, colStatMap);
       }
 
-      if (j instanceof SemiJoin) {
+      if (j.isSemiJoin() || (j.getJoinType().equals(JoinRelType.ANTI))) {
         ndvEstimate = Math.min(mq.getRowCount(j.getLeft()),
             ndvEstimate);
-      }else if (j instanceof HiveJoin){
-        ndvEstimate = Math.min(mq.getRowCount(j.getLeft())
-            * mq.getRowCount(j.getRight()), ndvEstimate);
       } else {
-        throw new RuntimeException("Unexpected Join type: " + j.getClass().getName());
+        ndvEstimate = Math.min(mq.getRowCount(j.getLeft()) * mq.getRowCount(j.getRight()), ndvEstimate);
       }
     }
 
@@ -204,7 +216,7 @@ public class HiveRelMdSelectivity extends RelMdSelectivity {
   }
 
   /*
-   * a) Order predciates based on ndv in reverse order. b) ndvCrossProduct =
+   * a) Order predicates based on ndv in reverse order. b) ndvCrossProduct =
    * ndv(pe0) * ndv(pe1) ^(1/2) * ndv(pe2) ^(1/4) * ndv(pe3) ^(1/8) ...
    */
   protected double exponentialBackoff(List<JoinLeafPredicateInfo> peLst,

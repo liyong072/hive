@@ -1,0 +1,182 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+package org.apache.hadoop.hive.metastore;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
+import org.apache.hadoop.hive.metastore.handler.BaseHandler;
+import org.apache.hadoop.hive.metastore.txn.TxnStore;
+import org.apache.hadoop.hive.metastore.txn.TxnUtils;
+import org.slf4j.Logger;
+
+/**
+ * When one hms client connects in, we create a handler context for it.
+ * We store session information here.
+ */
+public final class HMSHandlerContext {
+
+  private static final ThreadLocal<HMSHandlerContext> context = ThreadLocal.withInitial(() -> new HMSHandlerContext());
+
+  private RawStore rawStore;
+
+  private TxnStore txnStore;
+
+  // Thread local HMSHandler used during shutdown to notify meta listeners
+  private BaseHandler hmsHandler;
+
+  // Thread local configuration is needed as many threads could make changes
+  // to the conf using the connection hook
+  private Configuration configuration;
+
+  // Thread local Map to keep track of modified meta conf keys
+  private Map<String, String> modifiedConfig = new HashMap<>();
+
+  // This will only be set if the metastore is being accessed from a metastore Thrift server,
+  // not if it is from the CLI. Also, only if the TTransport being used to connect is an
+  // instance of TSocket. This is also not set when kerberos is used.
+  private String ipAddress;
+
+  private Map<String, com.codahale.metrics.Timer.Context> timerContexts = new HashMap<>();
+
+  // Unique ID of current thrift call
+  private CallCtx callCtx;
+
+  public static final class CallCtx {
+    private final String methodName;
+    private long totalTime;
+    private int queryCount;
+    private long maxJdbcTimeMs;
+
+    public CallCtx(String methodName) {
+      this.methodName = methodName;
+    }
+
+    public String methodName() {
+      return methodName;
+    }
+
+    public void recordJdbcExecution(long timeSpentMs) {
+      queryCount++;
+      totalTime += timeSpentMs;
+      maxJdbcTimeMs = Math.max(maxJdbcTimeMs, timeSpentMs);
+    }
+
+    public int getQueryCount() {
+      return queryCount;
+    }
+
+    public long getTotalTime() {
+      return totalTime;
+    }
+
+    public long getMaxJdbcTimeMs() {
+      return maxJdbcTimeMs;
+    }
+
+    public void logJdbcSummary(Logger Log, Configuration configuration) {
+      if (queryCount == 0) {
+        return;
+      }
+      Log.debug("{} jdbc summary: {} queries, {} ms total, {} ms max per query",
+          methodName, queryCount, totalTime, maxJdbcTimeMs);
+      long slowThreshold = MetastoreConf.getTimeVar(configuration,
+          MetastoreConf.ConfVars.METASTORE_JDBC_SLOW_QUERY_THRESHOLD, TimeUnit.MILLISECONDS);
+      if (slowThreshold > 0 && totalTime > slowThreshold) {
+        Log.warn("{} jdbc summary: {} queries, {} ms total, {} ms max per query (no single query exceeded "
+                + "the slow threshold, but aggregate JDBC time is high)",
+            methodName, queryCount, totalTime, maxJdbcTimeMs);
+      }
+    }
+  }
+
+  private HMSHandlerContext() {
+  }
+
+  public static Optional<RawStore> getRawStore() {
+    return Optional.ofNullable(context.get().rawStore);
+  }
+
+  public static Optional<BaseHandler> getHMSHandler() {
+    return Optional.ofNullable(context.get().hmsHandler);
+  }
+
+  public static Optional<String> getIpAddress() {
+    return Optional.ofNullable(context.get().ipAddress);
+  }
+
+  public static Optional<Configuration> getConfiguration() {
+    return Optional.ofNullable(context.get().configuration);
+  }
+
+  public static TxnStore getTxnStore(Configuration conf) {
+    if (context.get().txnStore == null) {
+      setTxnStore(TxnUtils.getTxnStore(conf));
+    }
+    return context.get().txnStore;
+  }
+
+  public static Map<String, String> getModifiedConfig() {
+    return context.get().modifiedConfig;
+  }
+
+  public static Map<String, com.codahale.metrics.Timer.Context> getTimerContexts() {
+    return context.get().timerContexts;
+  }
+
+  public static Optional<CallCtx> getCallCtx() {
+    return Optional.ofNullable(context.get().callCtx);
+  }
+
+  public static void setCallCtx(CallCtx ctx) {
+    context.get().callCtx = ctx;
+  }
+
+  public static void setRawStore(RawStore rawStore) {
+    context.get().rawStore = rawStore;
+  }
+
+  public static void setTxnStore(TxnStore txnStore) {
+    context.get().txnStore = txnStore;
+  }
+
+  public static void setHMSHandler(BaseHandler hmsHandler) {
+    context.get().hmsHandler = hmsHandler;
+  }
+
+  public static void setConfiguration(Configuration conf) {
+    context.get().configuration = conf;
+  }
+
+  public static void setIpAddress(String ipAddress) {
+    context.get().ipAddress = ipAddress;
+  }
+
+  /**
+   * Release the context
+   */
+  public static void clear() {
+    context.remove();
+  }
+
+}

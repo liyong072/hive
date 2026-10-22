@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.jdbc;
@@ -43,8 +44,7 @@ public class HiveDriver implements Driver {
     try {
       java.sql.DriverManager.registerDriver(new HiveDriver());
     } catch (SQLException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
+      throw new RuntimeException("Failed to register driver", e);
     }
   }
 
@@ -67,18 +67,6 @@ public class HiveDriver implements Driver {
    * Property key for the Hive Server2 port.
    */
   private static final String PORT_PROPERTY_KEY = "PORT";
-
-
-  /**
-   *
-   */
-  public HiveDriver() {
-    // TODO Auto-generated constructor stub
-    SecurityManager security = System.getSecurityManager();
-    if (security != null) {
-      security.checkWrite("foobah");
-    }
-  }
 
   /**
    * Checks whether a given url is in a valid format.
@@ -251,7 +239,7 @@ public class HiveDriver implements Driver {
       port = "";
     }
     else if(port.equals("0") || port.equals("-1")){
-      port = Utils.DEFAULT_PORT;
+      port = Utils.getDefaultPort(params);
     }
     String db = params.getDbName();
     urlProps.put(HOST_PROPERTY_KEY, host);

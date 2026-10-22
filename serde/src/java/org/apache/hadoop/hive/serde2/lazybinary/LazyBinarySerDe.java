@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.lazybinary;
@@ -86,12 +87,6 @@ import org.apache.hadoop.io.Writable;
 public class LazyBinarySerDe extends AbstractSerDe {
   public static final Logger LOG = LoggerFactory.getLogger(LazyBinarySerDe.class.getName());
 
-  public LazyBinarySerDe() throws SerDeException {
-  }
-
-  List<String> columnNames;
-  List<TypeInfo> columnTypes;
-
   TypeInfo rowTypeInfo;
   ObjectInspector cachedObjectInspector;
 
@@ -107,41 +102,24 @@ public class LazyBinarySerDe extends AbstractSerDe {
    * Initialize the SerDe with configuration and table information.
    */
   @Override
-  public void initialize(Configuration conf, Properties tbl)
+  public void initialize(Configuration configuration, Properties tableProperties, Properties partitionProperties)
       throws SerDeException {
-    // Get column names and types
-    String columnNameProperty = tbl.getProperty(serdeConstants.LIST_COLUMNS);
-    String columnNameDelimiter = tbl.containsKey(serdeConstants.COLUMN_NAME_DELIMITER) ? tbl
-        .getProperty(serdeConstants.COLUMN_NAME_DELIMITER) : String.valueOf(SerDeUtils.COMMA);
-    String columnTypeProperty = tbl.getProperty(serdeConstants.LIST_COLUMN_TYPES);
-    if (columnNameProperty.length() == 0) {
-      columnNames = new ArrayList<String>();
-    } else {
-      columnNames = Arrays.asList(columnNameProperty.split(columnNameDelimiter));
-    }
-    if (columnTypeProperty.length() == 0) {
-      columnTypes = new ArrayList<TypeInfo>();
-    } else {
-      columnTypes = TypeInfoUtils
-          .getTypeInfosFromTypeString(columnTypeProperty);
-    }
-    assert (columnNames.size() == columnTypes.size());
+    super.initialize(configuration, tableProperties, partitionProperties);
+
     // Create row related objects
-    rowTypeInfo = TypeInfoFactory.getStructTypeInfo(columnNames, columnTypes);
+    rowTypeInfo = TypeInfoFactory.getStructTypeInfo(getColumnNames(), getColumnTypes());
     // Create the object inspector and the lazy binary struct object
     cachedObjectInspector = LazyBinaryUtils
         .getLazyBinaryObjectInspectorFromTypeInfo(rowTypeInfo);
     cachedLazyBinaryStruct = (LazyBinaryStruct) LazyBinaryFactory
         .createLazyBinaryObject(cachedObjectInspector);
     // output debug info
-    LOG.debug("LazyBinarySerDe initialized with: columnNames=" + columnNames
-        + " columnTypes=" + columnTypes);
+    log.debug("LazyBinarySerDe initialized with: columnNames={} columnTypes={}", getColumnNames(), getColumnTypes());
 
     serializedSize = 0;
     stats = new SerDeStats();
     lastOperationSerialize = false;
     lastOperationDeserialize = false;
-
   }
 
   /**
@@ -354,12 +332,13 @@ public class LazyBinarySerDe extends AbstractSerDe {
    * @param dec
    * @param scratchLongs
    * @param scratchBytes
+   * @param scratchLongBytes
    */
   public static void writeToByteStream(
       RandomAccessOutput byteStream,
       HiveDecimal dec,
-      long[] scratchLongs, byte[] scratchBytes) {
-    LazyBinaryUtils.writeVInt(byteStream, dec.scale());
+      long[] scratchLongs, byte[] scratchBytes, byte[] scratchLongBytes) {
+    LazyBinaryUtils.writeVInt(byteStream, dec.scale(), scratchLongBytes);
 
     // Convert decimal into the scratch buffer without allocating a byte[] each time
     // for better performance.
@@ -369,7 +348,7 @@ public class LazyBinarySerDe extends AbstractSerDe {
     if (byteLength == 0) {
       throw new RuntimeException("Decimal to binary conversion failed");
     }
-    LazyBinaryUtils.writeVInt(byteStream, byteLength);
+    LazyBinaryUtils.writeVInt(byteStream, byteLength, scratchLongBytes);
     byteStream.write(scratchBytes, 0, byteLength);
   }
 
@@ -392,6 +371,18 @@ public class LazyBinarySerDe extends AbstractSerDe {
         decWritable.bigIntegerBytes(
             scratchLongs, scratchBytes);
     LazyBinaryUtils.writeVInt(byteStream, byteLength);
+    byteStream.write(scratchBytes, 0, byteLength);
+  }
+
+  public static void writeToByteStream(
+      RandomAccessOutput byteStream,
+      HiveDecimalWritable decWritable,
+      long[] scratchLongs, byte[] scratchBytes, byte[] scratchLongBytes) {
+    LazyBinaryUtils.writeVInt(byteStream, decWritable.scale(), scratchLongBytes);
+    int byteLength =
+        decWritable.bigIntegerBytes(
+            scratchLongs, scratchBytes);
+    LazyBinaryUtils.writeVInt(byteStream, byteLength, scratchLongBytes);
     byteStream.write(scratchBytes, 0, byteLength);
   }
 

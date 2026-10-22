@@ -1,5 +1,4 @@
 set hive.fetch.task.conversion = none;
-set hive.exec.dynamic.partition.mode = nonstrict;
 set hive.strict.checks.cartesian.product=false;
 SET hive.vectorized.execution.enabled=true;
 
@@ -210,6 +209,10 @@ SELECT count(s1.f6), s5.f16.f18.f19
 FROM nested_tbl_1
 GROUP BY s5.f16.f18.f19;
 
+EXPLAIN CBO SELECT count(s1.f6), s5.f16.f18.f19
+FROM nested_tbl_1
+GROUP BY s5.f16.f18.f19;
+
 SELECT count(s1.f6), s5.f16.f18.f19
 FROM nested_tbl_1
 GROUP BY s5.f16.f18.f19;
@@ -231,3 +234,15 @@ GROUP BY s6['key1'].f20.f21.f22;
 SELECT count(s1.f6), s6['key1'].f20.f21.f22
 FROM nested_tbl_1
 GROUP BY s6['key1'].f20.f21.f22;
+
+EXPLAIN VECTORIZATION EXPRESSION
+SELECT s5.f16.f18.f19
+FROM nested_tbl_1;
+
+EXPLAIN CBO
+SELECT s5.f16.f18.f19
+FROM nested_tbl_1;
+
+SELECT s5.f16.f18.f19
+FROM nested_tbl_1;
+

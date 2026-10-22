@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -43,11 +44,15 @@ public class LoadTableDesc extends LoadDesc implements Serializable {
   private int stmtId;
   private Long currentWriteId;
   private boolean isInsertOverwrite;
+  private boolean isDirectInsert;
+
+  private boolean useAppendForLoad;
 
   // TODO: the below seem like they should just be combined into partitionDesc
   private Table mdTable;
   private org.apache.hadoop.hive.ql.plan.TableDesc table;
   private Map<String, String> partitionSpec; // NOTE: this partitionSpec has to be ordered map
+  private String moveTaskId;
 
   public enum LoadFileType {
     /**
@@ -84,6 +89,7 @@ public class LoadTableDesc extends LoadDesc implements Serializable {
     this.currentWriteId = o.currentWriteId;
     this.table = o.table;
     this.partitionSpec = o.partitionSpec;
+    this.isDirectInsert = o.isDirectInsert;
   }
 
   public LoadTableDesc(final Path sourcePath,
@@ -152,6 +158,20 @@ public class LoadTableDesc extends LoadDesc implements Serializable {
     } else {
       init(table, new LinkedHashMap<String, String>(), lft, writeId);
     }
+  }
+
+  public LoadTableDesc(Path path, Table tableHandle, boolean isOverWrite, boolean useAppendForLoad,
+      Map<String, String> partitionSpec) {
+    super(path, AcidUtils.Operation.NOT_ACID);
+    this.mdTable = tableHandle;
+    this.useAppendForLoad = useAppendForLoad;
+    this.loadFileType = isOverWrite ? LoadFileType.REPLACE_ALL : LoadFileType.KEEP_EXISTING;
+    this.table = Utilities.getTableDesc(tableHandle);
+    this.partitionSpec = partitionSpec;
+  }
+
+  public boolean isUseAppendForLoad() {
+    return useAppendForLoad;
   }
 
   private void init(
@@ -235,6 +255,14 @@ public class LoadTableDesc extends LoadDesc implements Serializable {
    this.isInsertOverwrite = v;
   }
 
+  public void setIsDirectInsert(boolean isDirectInsert) {
+    this.isDirectInsert = isDirectInsert;
+  }
+
+  public boolean isDirectInsert() {
+    return this.isDirectInsert;
+  }
+
   /**
    * @return the lbCtx
    */
@@ -271,5 +299,13 @@ public class LoadTableDesc extends LoadDesc implements Serializable {
 
   public void setMdTable(Table mdTable) {
     this.mdTable = mdTable;
+  }
+
+  public String getMoveTaskId() {
+    return moveTaskId;
+  }
+
+  public void setMoveTaskId(String moveTaskId) {
+    this.moveTaskId = moveTaskId;
   }
 }

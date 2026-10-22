@@ -6,12 +6,15 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.llap.io.decode;
 
@@ -33,6 +36,7 @@ import org.apache.hadoop.hive.llap.io.metadata.ConsumerStripeMetadata;
 import org.apache.hadoop.hive.llap.metrics.LlapDaemonIOMetrics;
 import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.ColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.DateColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.Decimal64ColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.DecimalColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
@@ -44,6 +48,7 @@ import org.apache.hadoop.hive.ql.exec.vector.TimestampColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.UnionColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.orc.CompressionCodec;
+import org.apache.orc.OrcProto.CalendarKind;
 import org.apache.orc.impl.PositionProvider;
 import org.apache.hadoop.hive.ql.io.orc.encoded.Consumer;
 import org.apache.hadoop.hive.ql.io.orc.encoded.EncodedTreeReaderFactory;
@@ -56,32 +61,31 @@ import org.apache.orc.TypeDescription;
 import org.apache.orc.impl.SchemaEvolution;
 import org.apache.orc.impl.TreeReaderFactory;
 import org.apache.orc.impl.TreeReaderFactory.StructTreeReader;
-import org.apache.orc.impl.TreeReaderFactory.TreeReader;
 import org.apache.orc.impl.WriterImpl;
 import org.apache.orc.OrcProto;
-
+import org.apache.orc.impl.reader.tree.TypeReader;
 
 public class OrcEncodedDataConsumer
   extends EncodedDataConsumer<OrcBatchKey, OrcEncodedColumnBatch> {
-  private TreeReaderFactory.TreeReader[] columnReaders;
+  private TypeReader[] columnReaders;
   private int previousStripeIndex = -1;
   private ConsumerFileMetadata fileMetadata; // We assume one request is only for one file.
   private CompressionCodec codec;
   private List<ConsumerStripeMetadata> stripes;
-  private final boolean skipCorrupt; // TODO: get rid of this
   private SchemaEvolution evolution;
   private IoTrace trace;
   private final Includes includes;
   private TypeDescription[] batchSchemas;
   private boolean useDecimal64ColumnVectors;
 
-  public OrcEncodedDataConsumer(
-    Consumer<ColumnVectorBatch> consumer, Includes includes, boolean skipCorrupt,
-    QueryFragmentCounters counters, LlapDaemonIOMetrics ioMetrics) {
+  public OrcEncodedDataConsumer(Consumer<ColumnVectorBatch> consumer, Includes includes,
+                                QueryFragmentCounters counters, LlapDaemonIOMetrics ioMetrics) {
     super(consumer, includes.getPhysicalColumnIds().size(), ioMetrics, counters);
     this.includes = includes;
-    // TODO: get rid of this
-    this.skipCorrupt = skipCorrupt;
+    if (includes.isProbeDecodeEnabled()) {
+      LlapIoImpl.LOG.info("OrcEncodedDataConsumer probeDecode is enabled with cacheKey {} colIndex {} and colName {}",
+              this.includes.getProbeCacheKey(), this.includes.getProbeColIdx(), this.includes.getProbeColName());
+    }
   }
 
   public void setUseDecimal64ColumnVectors(final boolean useDecimal64ColumnVectors) {
@@ -150,17 +154,10 @@ public class OrcEncodedDataConsumer
         }
 
         ColumnVectorBatch cvb = cvbPool.take();
+        cvb.filterContext.reset();
         // assert cvb.cols.length == batch.getColumnIxs().length; // Must be constant per split.
         cvb.size = batchSize;
         for (int idx = 0; idx < columnReaders.length; ++idx) {
-          TreeReader reader = columnReaders[idx];
-          if (cvb.cols[idx] == null) {
-            // Orc store rows inside a root struct (hive writes it this way).
-            // When we populate column vectors we skip over the root struct.
-            cvb.cols[idx] = createColumn(batchSchemas[idx], VectorizedRowBatch.DEFAULT_SIZE, useDecimal64ColumnVectors);
-          }
-          trace.logTreeReaderNextVector(idx);
-
           /*
            * Currently, ORC's TreeReaderFactory class does this:
            *
@@ -196,10 +193,9 @@ public class OrcEncodedDataConsumer
            *     it doesn't get confused.
            *
            */
-          ColumnVector cv = cvb.cols[idx];
-          cv.reset();
-          cv.ensureSize(batchSize, false);
-          reader.nextVector(cv, null, batchSize);
+          TypeReader reader = columnReaders[idx];
+          ColumnVector cv = prepareColumnVector(cvb, idx, batchSize);
+          reader.nextVector(cv, null, batchSize, cvb.filterContext, TypeReader.ReadPhase.ALL);
         }
 
         // we are done reading a batch, send it to consumer for processing
@@ -216,13 +212,27 @@ public class OrcEncodedDataConsumer
     }
   }
 
+  private ColumnVector prepareColumnVector(ColumnVectorBatch cvb, int idx, int batchSize) {
+    if (cvb.cols[idx] == null) {
+      // Orc store rows inside a root struct (hive writes it this way).
+      // When we populate column vectors we skip over the root struct.
+      cvb.cols[idx] = createColumn(batchSchemas[idx], VectorizedRowBatch.DEFAULT_SIZE, useDecimal64ColumnVectors);
+    }
+    trace.logTreeReaderNextVector(idx);
+    ColumnVector cv = cvb.cols[idx];
+    cv.reset();
+    cv.ensureSize(batchSize, false);
+    return cv;
+  }
+
   private void createColumnReaders(OrcEncodedColumnBatch batch,
       ConsumerStripeMetadata stripeMetadata, TypeDescription fileSchema) throws IOException {
     TreeReaderFactory.Context context = new TreeReaderFactory.ReaderContext()
-            .setSchemaEvolution(evolution).skipCorrupt(skipCorrupt)
+            .setSchemaEvolution(evolution)
             .writerTimeZone(stripeMetadata.getWriterTimezone())
             .fileFormat(fileMetadata == null ? null : fileMetadata.getFileVersion())
-            .useUTCTimestamp(true);
+            .useUTCTimestamp(true)
+            .setProlepticGregorian(fileMetadata != null && fileMetadata.getCalendar() == CalendarKind.PROLEPTIC_GREGORIAN, true);
     this.batchSchemas = includes.getBatchReaderTypes(fileSchema);
     StructTreeReader treeReader = EncodedTreeReaderFactory.createRootTreeReader(
         batchSchemas, stripeMetadata.getEncodings(), batch, codec, context, useDecimal64ColumnVectors);
@@ -244,8 +254,9 @@ public class OrcEncodedDataConsumer
       case SHORT:
       case INT:
       case LONG:
-      case DATE:
         return new LongColumnVector(batchSize);
+      case DATE:
+        return new DateColumnVector(batchSize);
       case FLOAT:
       case DOUBLE:
         return new DoubleColumnVector(batchSize);
@@ -290,18 +301,18 @@ public class OrcEncodedDataConsumer
     }
   }
 
-  private void positionInStreams(TreeReaderFactory.TreeReader[] columnReaders,
+  private void positionInStreams(TypeReader[] columnReaders,
       OrcBatchKey batchKey, ConsumerStripeMetadata stripeMetadata) throws IOException {
     PositionProvider[] pps = createPositionProviders(columnReaders, batchKey, stripeMetadata);
     if (pps == null) return;
     for (int i = 0; i < columnReaders.length; i++) {
       if (columnReaders[i] == null) continue;
       // TODO: we could/should trace seek destinations; pps needs a "peek" method
-      columnReaders[i].seek(pps);
+      columnReaders[i].seek(pps, TypeReader.ReadPhase.ALL);
     }
   }
 
-  private void repositionInStreams(TreeReaderFactory.TreeReader[] columnReaders,
+  private void repositionInStreams(TypeReader[] columnReaders,
       EncodedColumnBatch<OrcBatchKey> batch, boolean sameStripe,
       ConsumerStripeMetadata stripeMetadata) throws IOException {
     PositionProvider[] pps = createPositionProviders(
@@ -311,7 +322,7 @@ public class OrcEncodedDataConsumer
     }
     if (pps == null) return;
     for (int i = 0; i < columnReaders.length; i++) {
-      TreeReader reader = columnReaders[i];
+      TypeReader reader = columnReaders[i];
       if (reader == null) continue;
       // Note: we assume this never happens for SerDe reader - the batch would never have vectors.
       // That is always true now; but it wasn't some day, the below would throw in getColumnData.
@@ -322,7 +333,7 @@ public class OrcEncodedDataConsumer
         ((EncodedTreeReaderFactory.TimestampStreamReader) reader)
                 .updateTimezone(stripeMetadata.getWriterTimezone());
       }
-      reader.seek(pps);
+      reader.seek(pps, TypeReader.ReadPhase.ALL);
     }
   }
 
@@ -343,7 +354,7 @@ public class OrcEncodedDataConsumer
   }
 
   private PositionProvider[] createPositionProviders(
-      TreeReaderFactory.TreeReader[] columnReaders, OrcBatchKey batchKey,
+      TypeReader[] columnReaders, OrcBatchKey batchKey,
       ConsumerStripeMetadata stripeMetadata) throws IOException {
     if (columnReaders.length == 0) return null;
     PositionProvider[] pps = null;

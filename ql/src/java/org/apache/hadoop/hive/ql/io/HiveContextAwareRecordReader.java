@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io;
@@ -23,11 +24,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.hadoop.hive.ql.io.orc.OrcRawRecordMerger;
+import org.apache.hadoop.mapred.TextInputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.io.HiveIOExceptionHandlerUtil;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.FooterBuffer;
 import org.apache.hadoop.hive.ql.io.IOContext.Comparison;
@@ -54,7 +56,8 @@ import org.apache.hadoop.mapred.RecordReader;
   * a binary search to find the block to begin reading from, and stop reading once it can be
   * determined no other entries will match the filter.
   */
-public abstract class HiveContextAwareRecordReader<K, V> implements RecordReader<K, V> {
+public abstract class HiveContextAwareRecordReader<K extends WritableComparable, V extends Writable>
+    implements RecordReader<K, V> {
 
   private static final Logger LOG = LoggerFactory.getLogger(HiveContextAwareRecordReader.class.getName());
 
@@ -68,7 +71,7 @@ public abstract class HiveContextAwareRecordReader<K, V> implements RecordReader
   private final List<Comparison> stopComparisons = new ArrayList<Comparison>();
   private Map<Path, PartitionDesc> pathToPartitionInfo;
 
-  protected RecordReader recordReader;
+  protected RecordReader<K, V> recordReader;
   protected JobConf jobConf;
   protected boolean isSorted = false;
 
@@ -76,17 +79,17 @@ public abstract class HiveContextAwareRecordReader<K, V> implements RecordReader
     this(null, conf);
   }
 
-  public HiveContextAwareRecordReader(RecordReader recordReader) {
+  public HiveContextAwareRecordReader(RecordReader<K, V> recordReader) {
     this.recordReader = recordReader;
   }
 
-  public HiveContextAwareRecordReader(RecordReader recordReader, JobConf conf)
+  public HiveContextAwareRecordReader(RecordReader<K, V> recordReader, JobConf conf)
       throws IOException {
     this.recordReader = recordReader;
     this.jobConf = conf;
   }
 
-  public void setRecordReader(RecordReader recordReader) {
+  public void setRecordReader(RecordReader<K, V> recordReader) {
     this.recordReader = recordReader;
   }
 
@@ -121,7 +124,16 @@ public abstract class HiveContextAwareRecordReader<K, V> implements RecordReader
         }
         else if(recordReader instanceof AcidInputFormat.AcidRecordReader) {
           //supports AcidInputFormat which do not use the KEY pass ROW__ID info
-          ioCxtRef.setRecordIdentifier(((AcidInputFormat.AcidRecordReader) recordReader).getRecordIdentifier());
+          AcidInputFormat.AcidRecordReader acidRecordReader = (AcidInputFormat.AcidRecordReader) this.recordReader;
+          OrcRawRecordMerger.ReaderKey recordIdentifier = acidRecordReader.getRecordIdentifier();
+          if (recordIdentifier == null) {
+            ioCxtRef.parseRecordIdentifier(jobConf);
+          } else {
+            ioCxtRef.setRecordIdentifier(recordIdentifier);
+          }
+          ioCxtRef.setDeletedRecord(recordIdentifier != null && recordIdentifier.isDeleteEvent());
+        } else {
+          ioCxtRef.parseRecordIdentifier(jobConf);
         }
       }
       return retVal;
@@ -168,6 +180,9 @@ public abstract class HiveContextAwareRecordReader<K, V> implements RecordReader
   private void initIOContext(long startPos, boolean isBlockPointer,
       Path inputPath) {
     ioCxtRef = this.getIOContext();
+    if (recordReader instanceof IOContextAwareRecordReader reader) {
+      reader.setIOContext(ioCxtRef);
+    }
     ioCxtRef.setCurrentBlockStart(startPos);
     ioCxtRef.setBlockPointer(isBlockPointer);
     ioCxtRef.setInputPath(inputPath);
@@ -307,63 +322,60 @@ public abstract class HiveContextAwareRecordReader<K, V> implements RecordReader
       }
     }
 
-    try {
+    /**
+     * When start reading new file, check header, footer rows.
+     * If file contains header, skip header lines before reading the records.
+     * If file contains footer, used a FooterBuffer to remove footer lines
+     * at the end of the table file.
+     **/
+    if (this.ioCxtRef.getCurrentBlockStart() == 0) {
 
-      /**
-       * When start reading new file, check header, footer rows.
-       * If file contains header, skip header lines before reading the records.
-       * If file contains footer, used a FooterBuffer to remove footer lines
-       * at the end of the table file.
-       **/
-      if (this.ioCxtRef.getCurrentBlockStart() == 0) {
-
-        // Check if the table file has header to skip.
-        footerBuffer = null;
-        Path filePath = this.ioCxtRef.getInputPath();
-        PartitionDesc part = null;
-        try {
-          if (pathToPartitionInfo == null) {
-            pathToPartitionInfo = Utilities
-              .getMapWork(jobConf).getPathToPartitionInfo();
-          }
-          part = HiveFileFormatUtils
-              .getFromPathRecursively(pathToPartitionInfo,
-                  filePath, IOPrepareCache.get().getPartitionDescMap());
-        } catch (AssertionError ae) {
-          LOG.info("Cannot get partition description from " + this.ioCxtRef.getInputPath()
-              + "because " + ae.getMessage());
-          part = null;
-        } catch (Exception e) {
-          LOG.info("Cannot get partition description from " + this.ioCxtRef.getInputPath()
-              + "because " + e.getMessage());
-          part = null;
+      // Check if the table file has header to skip.
+      footerBuffer = null;
+      Path filePath = this.ioCxtRef.getInputPath();
+      PartitionDesc part = null;
+      try {
+        if (pathToPartitionInfo == null) {
+          pathToPartitionInfo = Utilities
+            .getMapWork(jobConf).getPathToPartitionInfo();
         }
-        TableDesc table = (part == null) ? null : part.getTableDesc();
-        if (table != null) {
-          headerCount = Utilities.getHeaderCount(table);
-          footerCount = Utilities.getFooterCount(table, jobConf);
-        }
+        part = HiveFileFormatUtils
+            .getFromPathRecursively(pathToPartitionInfo,
+                filePath, IOPrepareCache.get().getPartitionDescMap());
+      } catch (AssertionError ae) {
+        LOG.info("Cannot get partition description from " + this.ioCxtRef.getInputPath()
+            + "because " + ae.getMessage());
+        part = null;
+      } catch (Exception e) {
+        LOG.info("Cannot get partition description from " + this.ioCxtRef.getInputPath()
+            + "because " + e.getMessage());
+        part = null;
+      }
+      TableDesc table = (part == null) ? null : part.getTableDesc();
+      // In TextFormat, skipping is already taken care of as part of SkippingTextInputFormat.
+      // This code will be also called from LLAP when pipeline is non-vectorized and cannot create wrapper.
+      if (table != null && !TextInputFormat.class.isAssignableFrom(part.getInputFileFormatClass())) {
+        headerCount = Utilities.getHeaderCount(table);
+        footerCount = Utilities.getFooterCount(table, jobConf);
+      }
 
-        // If input contains header, skip header.
-        if (!Utilities.skipHeader(recordReader, headerCount, (WritableComparable)key, (Writable)value)) {
+      // If input contains header, skip header.
+      if (!Utilities.skipHeader(recordReader, headerCount, key, value)) {
+        return false;
+      }
+      if (footerCount > 0) {
+        footerBuffer = new FooterBuffer();
+        if (!footerBuffer.initializeBuffer(jobConf, recordReader, footerCount, key, value)) {
           return false;
         }
-        if (footerCount > 0) {
-          footerBuffer = new FooterBuffer();
-          if (!footerBuffer.initializeBuffer(jobConf, recordReader, footerCount, (WritableComparable)key, (Writable)value)) {
-            return false;
-          }
-        }
       }
-      if (footerBuffer == null) {
+    }
+    if (footerBuffer == null) {
 
-        // Table files don't have footer rows.
-        return recordReader.next(key,  value);
-      } else {
-        return footerBuffer.updateBuffer(jobConf, recordReader, (WritableComparable)key, (Writable)value);
-      }
-    } catch (Exception e) {
-      return HiveIOExceptionHandlerUtil.handleRecordReaderNextException(e, jobConf);
+      // Table files don't have footer rows.
+      return recordReader.next(key,  value);
+    } else {
+      return footerBuffer.updateBuffer(jobConf, recordReader, key, value);
     }
   }
 

@@ -9,23 +9,23 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.TimeZone;
+import java.time.ZoneId;
 
-import org.apache.commons.lang.StringUtils;
-import org.apache.hadoop.hive.common.type.Timestamp;
 import org.apache.hadoop.hive.common.type.TimestampTZ;
+import org.apache.hadoop.hive.common.type.TimestampTZUtil;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.exec.Description;
+import org.apache.hadoop.hive.ql.exec.MapredContext;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentLengthException;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedExpressions;
@@ -33,6 +33,7 @@ import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorUDFUnixTimeStampD
 import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorUDFUnixTimeStampString;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorUDFUnixTimeStampTimestamp;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector.Category;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorConverters;
@@ -60,9 +61,8 @@ public class GenericUDFToUnixTimeStamp extends GenericUDF {
   private transient TimestampLocalTZObjectInspector inputTimestampLocalTzOI;
   private transient Converter inputTextConverter;
   private transient Converter patternConverter;
-
-  private transient String lasPattern = "yyyy-MM-dd HH:mm:ss";
-  private transient final SimpleDateFormat formatter = new SimpleDateFormat(lasPattern);
+  private transient InstantFormatter formatter;
+  private transient ZoneId timeZone;
 
   @Override
   public ObjectInspector initialize(ObjectInspector[] arguments) throws UDFArgumentException {
@@ -76,14 +76,13 @@ public class GenericUDFToUnixTimeStamp extends GenericUDF {
           "requires at least one argument");
     }
     for (ObjectInspector argument : arguments) {
-      if (arguments[0].getCategory() != Category.PRIMITIVE) {
+      if (argument.getCategory() != Category.PRIMITIVE) {
         throw new UDFArgumentException(getName().toUpperCase() +
             " only takes string/date/timestamp types, got " + argument.getTypeName());
       }
     }
 
-    formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-
+    HiveConf conf = SessionState.get() == null ? new HiveConf() : SessionState.getSessionConf();
     PrimitiveObjectInspector arg1OI = (PrimitiveObjectInspector) arguments[0];
     switch (arg1OI.getPrimitiveCategory()) {
       case CHAR:
@@ -101,8 +100,10 @@ public class GenericUDFToUnixTimeStamp extends GenericUDF {
           patternConverter = ObjectInspectorConverters.getConverter(arg2OI,
               PrimitiveObjectInspectorFactory.javaStringObjectInspector);
         }
+        if (formatter == null) {
+          formatter = InstantFormatter.ofConfiguration(conf);
+        }
         break;
-
       case DATE:
         inputDateOI = (DateObjectInspector) arguments[0];
         break;
@@ -117,6 +118,18 @@ public class GenericUDFToUnixTimeStamp extends GenericUDF {
             + " takes only string/date/timestamp/timestampwltz types. Got Type:" + arg1OI
             .getPrimitiveCategory().name());
     }
+    if (timeZone == null) {
+      timeZone = conf.getLocalTimeZone();
+    }
+  }
+
+  @Override
+  public void configure(MapredContext context) {
+    if (context != null) {
+      formatter = InstantFormatter.ofConfiguration(context.getJobConf());
+      String timeZoneStr = HiveConf.getVar(context.getJobConf(), HiveConf.ConfVars.HIVE_LOCAL_TIME_ZONE);
+      timeZone = TimestampTZUtil.parseTimeZone(timeZoneStr);
+    }
   }
 
   protected String getName() {
@@ -130,57 +143,43 @@ public class GenericUDFToUnixTimeStamp extends GenericUDF {
     if (arguments[0].get() == null) {
       return null;
     }
-
     if (inputTextConverter != null) {
       String textVal = (String) inputTextConverter.convert(arguments[0].get());
       if (textVal == null) {
         return null;
       }
-      if (patternConverter != null) {
-        if (arguments[1].get() == null) {
-          return null;
-        }
-        String patternVal = (String) patternConverter.convert(arguments[1].get());
-        if (patternVal == null) {
-          return null;
-        }
-        if (!patternVal.equals(lasPattern)) {
-          formatter.applyPattern(patternVal);
-          lasPattern = patternVal;
-        }
-      }
       try {
-        retValue.set(formatter.parse(textVal).getTime() / 1000);
+        final long epochSeconds;
+        if (patternConverter == null) {
+          epochSeconds = formatter.parse(textVal).getEpochSecond();
+        } else {
+          epochSeconds = formatter.parse(textVal, (String) patternConverter.convert(arguments[1].get())).getEpochSecond();
+        }
+        retValue.set(epochSeconds);
         return retValue;
-      } catch (ParseException e) {
+      } catch (RuntimeException e) {
         return null;
       }
     } else if (inputDateOI != null) {
-      retValue.set(inputDateOI.getPrimitiveWritableObject(arguments[0].get())
-                   .getTimeInSeconds());
-      return retValue;
-    } else if (inputTimestampLocalTzOI != null)  {
+      TimestampTZ timestampTZ = TimestampTZUtil.convert(
+          inputDateOI.getPrimitiveJavaObject(arguments[0].get()), timeZone);
+      retValue.set(timestampTZ.getEpochSecond());
+    } else if (inputTimestampOI != null)  {
+      TimestampTZ timestampTZ = TimestampTZUtil.convert(
+          inputTimestampOI.getPrimitiveJavaObject(arguments[0].get()), timeZone);
+      retValue.set(timestampTZ.getEpochSecond());
+    } else {
       TimestampTZ timestampTZ =
           inputTimestampLocalTzOI.getPrimitiveJavaObject(arguments[0].get());
       retValue.set(timestampTZ.getEpochSecond());
-      return retValue;
     }
-    Timestamp timestamp = inputTimestampOI.getPrimitiveJavaObject(arguments[0].get());
-    setValueFromTs(retValue, timestamp);
-    return retValue;
-  }
 
-  protected static void setValueFromTs(LongWritable value, Timestamp timestamp) {
-    value.set(timestamp.toEpochSecond());
+    return retValue;
   }
 
   @Override
   public String getDisplayString(String[] children) {
-    StringBuilder sb = new StringBuilder(32);
-    sb.append(getName());
-    sb.append('(');
-    sb.append(StringUtils.join(children, ','));
-    sb.append(')');
-    return sb.toString();
+    return getStandardDisplayString(getName(),children);
   }
+
 }

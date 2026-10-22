@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.ppd;
@@ -28,11 +29,10 @@ import java.util.Stack;
 
 import org.apache.hadoop.hive.ql.exec.FilterOperator;
 import org.apache.hadoop.hive.ql.exec.GroupByOperator;
-import org.apache.hadoop.hive.ql.exec.OperatorUtils;
+import org.apache.hadoop.hive.ql.exec.LateralViewForwardOperator;
 import org.apache.hadoop.hive.ql.exec.SelectOperator;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDescUtils;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPLessThan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
@@ -45,13 +45,13 @@ import org.apache.hadoop.hive.ql.exec.ReduceSinkOperator;
 import org.apache.hadoop.hive.ql.exec.RowSchema;
 import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.lib.PreOrderOnceWalker;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.optimizer.Transform;
 import org.apache.hadoop.hive.ql.parse.ParseContext;
@@ -69,7 +69,7 @@ import org.apache.hadoop.hive.ql.plan.OperatorDesc;
  */
 public class SyntheticJoinPredicate extends Transform {
 
-  private static transient Logger LOG = LoggerFactory.getLogger(SyntheticJoinPredicate.class.getName());
+  private static Logger LOG = LoggerFactory.getLogger(SyntheticJoinPredicate.class.getName());
 
   @Override
   public ParseContext transform(ParseContext pctx) throws SemanticException {
@@ -80,16 +80,13 @@ public class SyntheticJoinPredicate extends Transform {
     if (queryEngine.equals("tez")
         && pctx.getConf().getBoolVar(ConfVars.TEZ_DYNAMIC_PARTITION_PRUNING)) {
       enabled = true;
-    } else if ((queryEngine.equals("spark")
-        && pctx.getConf().isSparkDPPAny())) {
-      enabled = true;
     }
 
     if (!enabled) {
       return pctx;
     }
 
-    Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
+    Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
     opRules.put(new RuleRegExp("R1", "(" +
         TableScanOperator.getOperatorName() + "%" + ".*" +
         ReduceSinkOperator.getOperatorName() + "%" +
@@ -98,9 +95,13 @@ public class SyntheticJoinPredicate extends Transform {
     // The dispatcher fires the processor corresponding to the closest matching
     // rule and passes the context along
     SyntheticContext context = new SyntheticContext(pctx);
-    Dispatcher disp = new DefaultRuleDispatcher(null, opRules, context);
-    GraphWalker ogw = new PreOrderOnceWalker(disp);
-
+    SemanticDispatcher disp = new DefaultRuleDispatcher(null, opRules, context);
+    PreOrderOnceWalker ogw = new PreOrderOnceWalker(disp);
+    // The PreOrderOnceWalker traversal tries to cover all possible paths from the root to every other node. A plan
+    // graph with lateral view operators has a particular structure that makes the number of paths exponentially big
+    // and the traversal of such graphs prohibitively expensive. For this reason, we exclude lateral view operators
+    // from the traversal and essentially disable the synthetic predicate generation for such branches.
+    ogw.excludeNode(LateralViewForwardOperator.class);
     // Create a list of top op nodes
     List<Node> topNodes = new ArrayList<Node>();
     topNodes.addAll(pctx.getTopOps().values());
@@ -142,7 +143,7 @@ public class SyntheticJoinPredicate extends Transform {
     }
   }
 
-  private static class JoinSynthetic implements NodeProcessor {
+  private static class JoinSynthetic implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
         Object... nodeOutputs) throws SemanticException {
@@ -266,9 +267,7 @@ public class SyntheticJoinPredicate extends Transform {
               ExprNodeGenericFuncDesc.newInstance(FunctionRegistry.getFunctionInfo(getFuncText(funcDesc.getFuncText(), srcPos)).getGenericUDF(), funcArgs);
 
             // TODO : deduplicate the code below.
-            if (LOG.isDebugEnabled()) {
-              LOG.debug(" Non-Equi Join Predicate " + funcExpr);
-            }
+            LOG.debug(" Non-Equi Join Predicate {}", funcExpr);
 
             List<ExprNodeDesc> andArgs = new ArrayList<>();
             if (syntheticExpr != null) {
@@ -341,6 +340,12 @@ public class SyntheticJoinPredicate extends Transform {
           vector.add(right, left);
           break;
         case JoinDesc.LEFT_OUTER_JOIN:
+        case JoinDesc.ANTI_JOIN:
+        //TODO : In case of anti join, bloom filter can be created on left side also ("IN (keylist right table)").
+        // But the filter should be "not-in" ("NOT IN (keylist right table)") as we want to select the records from
+        // left side which are not present in the right side. But it may cause wrong result as
+        // bloom filter may have false positive and thus simply adding not is not correct,
+        // special handling is required for "NOT IN".
           vector.add(right, left);
           break;
         case JoinDesc.RIGHT_OUTER_JOIN:

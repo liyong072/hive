@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
 
@@ -27,18 +28,12 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 public class IfExprNullCondExpr extends IfExprCondExprBase {
   private static final long serialVersionUID = 1L;
 
-  protected final int arg3Column;
-
   public IfExprNullCondExpr(int arg1Column, int arg3Column, int outputColumnNum) {
-    super(arg1Column, outputColumnNum);
-    this.arg3Column = arg3Column;
+    super(arg1Column, arg3Column, outputColumnNum);
   }
 
   public IfExprNullCondExpr() {
     super();
-
-    // Dummy final assignments.
-    arg3Column = -1;
   }
 
   @Override
@@ -75,7 +70,7 @@ public class IfExprNullCondExpr extends IfExprCondExprBase {
     //           work on BytesColumnVector output columns???
     outputColVector.init();
 
-    ColumnVector elseColVector = batch.cols[arg3Column];
+    ColumnVector elseColVector = batch.cols[inputColumnNum[1]];
 
     final int thenCount = thenSelectedCount;
     final int elseCount = elseSelectedCount;
@@ -113,6 +108,6 @@ public class IfExprNullCondExpr extends IfExprCondExprBase {
   @Override
   public String vectorExpressionParameters() {
     // Second input parameter but 3rd column.
-    return getColumnParamString(0, arg1Column) + ", null, " + getColumnParamString(2, arg3Column);
+    return getColumnParamString(0, inputColumnNum[0]) + ", null, " + getColumnParamString(2, inputColumnNum[1]);
   }
 }

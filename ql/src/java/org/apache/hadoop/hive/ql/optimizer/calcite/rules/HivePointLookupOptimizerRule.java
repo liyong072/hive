@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules;
 
@@ -23,14 +24,14 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
@@ -42,23 +43,23 @@ import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.hadoop.hive.ql.optimizer.calcite.HiveCalciteUtil;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveBetween;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveIn;
+import org.apache.hadoop.hive.ql.optimizer.graph.DiGraph;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.LinkedHashMultimap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Multimaps;
 import com.google.common.collect.Sets;
@@ -72,7 +73,7 @@ import com.google.common.collect.Sets;
  * </pre>
  * If c is struct; then c=v1 is a group of anded equations.
  *
- * Similarily
+ * Similarly
  * <pre>
  * v1 &lt;= c1 and c1 &lt;= v2
  * </pre>
@@ -83,7 +84,8 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
   /** Rule adapter to apply the transformation to Filter conditions. */
   public static class FilterCondition extends HivePointLookupOptimizerRule {
     public FilterCondition (int minNumORClauses) {
-      super(operand(Filter.class, any()), minNumORClauses);
+      super(operand(Filter.class, any()), minNumORClauses,
+          "HivePointLookupOptimizerRule(FilterCondition)");
     }
 
     @Override
@@ -107,7 +109,8 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
   /** Rule adapter to apply the transformation to Join conditions. */
   public static class JoinCondition extends HivePointLookupOptimizerRule {
     public JoinCondition (int minNumORClauses) {
-      super(operand(Join.class, any()), minNumORClauses);
+      super(operand(Join.class, any()), minNumORClauses,
+          "HivePointLookupOptimizerRule(JoinCondition)");
     }
 
     @Override
@@ -137,7 +140,8 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
   /** Rule adapter to apply the transformation to Projections. */
   public static class ProjectionExpressions extends HivePointLookupOptimizerRule {
     public ProjectionExpressions(int minNumORClauses) {
-      super(operand(Project.class, any()), minNumORClauses);
+      super(operand(Project.class, any()), minNumORClauses,
+          "HivePointLookupOptimizerRule(ProjectionExpressions)");
     }
 
     @Override
@@ -159,9 +163,8 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
         return;
       }
       Project newProject = project.copy(project.getTraitSet(), project.getInput(), newProjects,
-          project.getRowType(), project.getFlags());
+          project.getRowType());
       call.transformTo(newProject);
-
     }
 
   }
@@ -172,8 +175,8 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
   protected final int minNumORClauses;
 
   protected HivePointLookupOptimizerRule(
-    RelOptRuleOperand operand, int minNumORClauses) {
-    super(operand);
+      RelOptRuleOperand operand, int minNumORClauses, String description) {
+    super(operand, description);
     this.minNumORClauses = minNumORClauses;
   }
 
@@ -187,7 +190,7 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
     newCondition = mergeInClause.apply(newCondition);
 
     // 3. Close BETWEEN expressions if possible
-    RexTranformIntoBetween t = new RexTranformIntoBetween(rexBuilder);
+    RexTransformIntoBetween t = new RexTransformIntoBetween(rexBuilder);
     newCondition = t.apply(newCondition);
     return newCondition;
   }
@@ -196,113 +199,10 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
    * Transforms inequality candidates into [NOT] BETWEEN calls.
    *
    */
-  protected static class RexTranformIntoBetween extends RexShuttle {
+  protected static class RexTransformIntoBetween extends RexShuttle {
     private final RexBuilder rexBuilder;
 
-    static class DiGraph<V, E> {
-      static class Edge<V, E> {
-        final Node<V, E> s;
-        final Node<V, E> t;
-        final E e;
-
-        public Edge(Node<V, E> s, Node<V, E> t, E e) {
-          this.s = s;
-          this.t = t;
-          this.e = e;
-        }
-      }
-
-      static class Node<V, E> {
-        final Set<Edge<V, E>> edges;
-        final V v;
-
-        public Node(V v) {
-          edges = new LinkedHashSet<>();
-          this.v = v;
-        }
-
-        public void addEdge(Edge<V, E> edge) {
-          edges.add(edge);
-        }
-
-        public E removeEdge(V s, V t) {
-          Iterator<Edge<V, E>> it = edges.iterator();
-          while (it.hasNext()) {
-            Edge<V, E> edge = it.next();
-            if (edge.s.v.equals(s) && edge.t.v.equals(t)) {
-              it.remove();
-              return edge.e;
-            }
-          }
-          return null;
-        }
-
-      }
-
-      private final Map<V, Node<V, E>> nodes;
-
-      public DiGraph() {
-        nodes = new LinkedHashMap<>();
-      }
-
-      public void putEdgeValue(V s, V t, E e) {
-        Node<V, E> nodeS = nodeOf(s);
-        Node<V, E> nodeT = nodeOf(t);
-        Edge<V, E> edge = new Edge<V, E>(nodeS, nodeT, e);
-        nodeS.addEdge(edge);
-        nodeT.addEdge(edge);
-      }
-
-      private Node<V, E> nodeOf(V s) {
-        Node<V, E> node = nodes.get(s);
-        if (node == null) {
-          nodes.put(s, node = new Node<V, E>(s));
-        }
-        return node;
-      }
-
-      public Set<V> nodes() {
-        return nodes.keySet();
-      }
-
-      public Set<V> predecessors(V n) {
-        Set<V> ret = new LinkedHashSet<>();
-        Node<V, E> node = nodes.get(n);
-        if (node == null) {
-          return ret;
-        }
-
-        for (Edge<V, E> edge : node.edges) {
-          if (edge.t.v.equals(n)) {
-            ret.add(edge.s.v);
-          }
-        }
-        return ret;
-      }
-
-      public Set<V> successors(V n) {
-        Set<V> ret = new LinkedHashSet<>();
-        Node<V, E> node = nodes.get(n);
-        if (node == null) {
-          return ret;
-        }
-
-        for (Edge<V, E> edge : node.edges) {
-          if (edge.s.v.equals(n)) {
-            ret.add(edge.t.v);
-          }
-        }
-        return ret;
-      }
-
-      public E removeEdge(V s, V t) {
-        nodeOf(s).removeEdge(s, t);
-        return nodeOf(t).removeEdge(s, t);
-      }
-
-    }
-
-    RexTranformIntoBetween(RexBuilder rexBuilder) {
+    RexTransformIntoBetween(RexBuilder rexBuilder) {
       this.rexBuilder = rexBuilder;
     }
 
@@ -313,9 +213,9 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
         RexCall call = (RexCall) node;
         switch (call.getKind()) {
         case AND:
-          return processComparisions(call, SqlKind.LESS_THAN_OR_EQUAL, false);
+          return processComparisons(call, SqlKind.LESS_THAN_OR_EQUAL, false);
         case OR:
-          return processComparisions(call, SqlKind.GREATER_THAN, true);
+          return processComparisons(call, SqlKind.GREATER_THAN, true);
         default:
           break;
         }
@@ -339,9 +239,9 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
       }
     }
 
-    private RexNode processComparisions(RexCall call, SqlKind forwardEdge, boolean invert) {
+    private RexNode processComparisons(RexCall call, SqlKind forwardEdge, boolean invert) {
       DiGraph<RexNodeRef, RexCall> g =
-          buildComparisionGraph(call.getOperands(), forwardEdge);
+          buildComparisonGraph(call.getOperands(), forwardEdge);
       Map<RexNode, BetweenCandidate> replacedNodes = new IdentityHashMap<>();
       for (RexNodeRef n : g.nodes()) {
         Set<RexNodeRef> pred = g.predecessors(n);
@@ -387,11 +287,11 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
     }
 
     /**
-     * Builds a graph of the given comparision type.
+     * Builds a graph of the given comparison type.
      *
-     * The graph edges are annotated with the RexNodes representing the comparision.
+     * The graph edges are annotated with the RexNodes representing the comparison.
      */
-    private DiGraph<RexNodeRef, RexCall> buildComparisionGraph(List<RexNode> operands, SqlKind cmpForward) {
+    private DiGraph<RexNodeRef, RexCall> buildComparisonGraph(List<RexNode> operands, SqlKind cmpForward) {
       DiGraph<RexNodeRef, RexCall> g = new DiGraph<>();
       for (RexNode node : operands) {
         if(!(node instanceof RexCall) ) {
@@ -420,8 +320,8 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
   static class RexNodeRef {
 
     public static Comparator<RexNodeRef> COMPARATOR =
-        (RexNodeRef o1, RexNodeRef o2) -> o1.node.toString().compareTo(o2.node.toString());
-    private RexNode node;
+        Comparator.comparing((RexNodeRef o) -> o.node.toString());
+    private final RexNode node;
 
     public RexNodeRef(RexNode node) {
       this.node = node;
@@ -452,6 +352,64 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
   }
 
   /**
+   * Represents a constraint.
+   *
+   * Example: a=1
+   * substr(a,1,2) = concat('asd','xxx')
+   */
+  static class Constraint {
+
+    private final RexNode exprNode;
+    private final RexNode constNode;
+
+    public Constraint(RexNode exprNode, RexNode constNode) {
+      this.exprNode = exprNode;
+      this.constNode = constNode;
+    }
+
+    /**
+     * Interprets argument as a constraint; if not possible returns null.
+     */
+    public static Constraint of(RexNode n) {
+      if (!(n instanceof RexCall)) {
+        return null;
+      }
+      RexCall call = (RexCall) n;
+      if (call.getOperator().getKind() != SqlKind.EQUALS) {
+        return null;
+      }
+      RexNode opA = call.operands.get(0);
+      RexNode opB = call.operands.get(1);
+      if (RexUtil.isNull(opA) || RexUtil.isNull(opB)) {
+        // dont try to compare nulls
+        return null;
+      }
+      if (isConstExpr(opA) && isColumnExpr(opB)) {
+        return new Constraint(opB, opA);
+      }
+      if (isColumnExpr(opA) && isConstExpr(opB)) {
+        return new Constraint(opA, opB);
+      }
+      return null;
+    }
+
+    private static boolean isColumnExpr(RexNode node) {
+      return !node.getType().isStruct() && !HiveCalciteUtil.getInputRefs(node).isEmpty()
+          && HiveCalciteUtil.isDeterministic(node);
+    }
+
+    private static boolean isConstExpr(RexNode node) {
+      return !node.getType().isStruct() && HiveCalciteUtil.getInputRefs(node).isEmpty()
+          && HiveCalciteUtil.isDeterministic(node);
+    }
+
+    public RexNodeRef getKey() {
+      return new RexNodeRef(exprNode);
+    }
+
+  }
+
+  /**
    * Transforms OR clauses into IN clauses, when possible.
    */
   protected static class RexTransformIntoInClause extends RexShuttle {
@@ -468,8 +426,7 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
       RexNode node = super.visitCall(inputCall);
       if (node instanceof RexCall) {
         RexCall call = (RexCall) node;
-        switch (call.getKind()) {
-        case OR:
+        if (call.getKind() == SqlKind.OR) {
           try {
             RexNode newNode = transformIntoInClauseCondition(rexBuilder,
                 call, minNumORClauses);
@@ -480,69 +437,9 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
             LOG.error("Exception in HivePointLookupOptimizerRule", e);
             return call;
           }
-        default:
-          break;
         }
       }
       return node;
-    }
-
-    /**
-     * Represents a contraint.
-     *
-     * Example: a=1
-     * substr(a,1,2) = concat('asd','xxx')
-     */
-    static class Constraint {
-
-      private RexNode exprNode;
-      private RexNode constNode;
-
-      public Constraint(RexNode exprNode, RexNode constNode) {
-        this.exprNode = constNode;
-        this.constNode = exprNode;
-      }
-
-      /**
-       * Interprets argument as a constraint; if not possible returns null.
-       */
-      public static Constraint of(RexNode n) {
-        if (!(n instanceof RexCall)) {
-          return null;
-        }
-        RexCall call = (RexCall) n;
-        if (call.getOperator().getKind() != SqlKind.EQUALS) {
-          return null;
-        }
-        RexNode opA = call.operands.get(0);
-        RexNode opB = call.operands.get(1);
-        if (RexUtil.isNull(opA) || RexUtil.isNull(opB)) {
-          // dont try to compare nulls
-          return null;
-        }
-        if (isConstExpr(opA) && isColumnExpr(opB)) {
-          return new Constraint(opB, opA);
-        }
-        if (isColumnExpr(opA) && isConstExpr(opB)) {
-          return new Constraint(opA, opB);
-        }
-        return null;
-      }
-
-      private static boolean isColumnExpr(RexNode node) {
-        return !node.getType().isStruct() && HiveCalciteUtil.getInputRefs(node).size() > 0
-            && HiveCalciteUtil.isDeterministic(node);
-      }
-
-      private static boolean isConstExpr(RexNode node) {
-        return !node.getType().isStruct() && HiveCalciteUtil.getInputRefs(node).size() == 0
-            && HiveCalciteUtil.isDeterministic(node);
-      }
-
-      public RexNodeRef getKey() {
-        return new RexNodeRef(constNode);
-      }
-
     }
 
     /**
@@ -557,16 +454,8 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
      *
      */
     static class ConstraintGroup {
-      public static final Function<ConstraintGroup, Set<RexNodeRef>> KEY_FUNCTION =
-          new Function<ConstraintGroup, Set<RexNodeRef>>() {
-
-            @Override
-            public Set<RexNodeRef> apply(ConstraintGroup cg) {
-              return cg.key;
-            }
-          };
-      private Map<RexNodeRef, Constraint> constraints = new HashMap<>();
-      private RexNode originalRexNode;
+      private final Map<RexNodeRef, Constraint> constraints = new HashMap<>();
+      private final RexNode originalRexNode;
       private final Set<RexNodeRef> key;
 
       public ConstraintGroup(RexNode rexNode) {
@@ -599,7 +488,7 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
           if (constraint == null) {
             throw new SemanticException("Unable to find constraint which was earlier added.");
           }
-          ret.add(constraint.exprNode);
+          ret.add(constraint.constNode);
         }
         return ret;
       }
@@ -622,11 +511,11 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
       }
 
       Multimap<Set<RexNodeRef>, ConstraintGroup> assignmentGroups =
-          Multimaps.index(allNodes, ConstraintGroup.KEY_FUNCTION);
+          Multimaps.index(allNodes, cg -> cg.key);
 
       for (Entry<Set<RexNodeRef>, Collection<ConstraintGroup>> sa : assignmentGroups.asMap().entrySet()) {
         // skip opaque
-        if (sa.getKey().size() == 0) {
+        if (sa.getKey().isEmpty()) {
           continue;
         }
         // not enough equalities should not be handled
@@ -656,12 +545,11 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
 
     private RexNode buildInFor(Set<RexNodeRef> set, Collection<ConstraintGroup> value) throws SemanticException {
 
-      List<RexNodeRef> columns = new ArrayList<>();
-      columns.addAll(set);
+      List<RexNodeRef> columns = new ArrayList<>(set);
       columns.sort(RexNodeRef.COMPARATOR);
       List<RexNode >operands = new ArrayList<>();
 
-      List<RexNode> columnNodes = columns.stream().map(n -> n.getRexNode()).collect(Collectors.toList());
+      List<RexNode> columnNodes = columns.stream().map(RexNodeRef::getRexNode).collect(Collectors.toList());
       operands.add(useStructIfNeeded(columnNodes));
       for (ConstraintGroup node : value) {
         List<RexNode> values = node.getValuesInOrder(columns);
@@ -693,96 +581,226 @@ public abstract class HivePointLookupOptimizerRule extends RelOptRule {
     }
 
     @Override public RexNode visitCall(RexCall call) {
-      RexNode node;
-      final List<RexNode> operands;
-      final List<RexNode> newOperands;
-      Map<String,RexNode> stringToExpr = Maps.newHashMap();
-      Multimap<String,String> inLHSExprToRHSExprs = LinkedHashMultimap.create();
       switch (call.getKind()) {
         case AND:
-          // IN clauses need to be combined by keeping only common elements
-          operands = Lists.newArrayList(RexUtil.flattenAnd(call.getOperands()));
-          for (int i = 0; i < operands.size(); i++) {
-            RexNode operand = operands.get(i);
-            if (operand.getKind() == SqlKind.IN) {
-              RexCall inCall = (RexCall) operand;
-              if (!HiveCalciteUtil.isDeterministic(inCall.getOperands().get(0))) {
-                continue;
-              }
-              String ref = inCall.getOperands().get(0).toString();
-              stringToExpr.put(ref, inCall.getOperands().get(0));
-              if (inLHSExprToRHSExprs.containsKey(ref)) {
-                Set<String> expressions = Sets.newHashSet();
-                for (int j = 1; j < inCall.getOperands().size(); j++) {
-                  String expr = inCall.getOperands().get(j).toString();
-                  expressions.add(expr);
-                  stringToExpr.put(expr, inCall.getOperands().get(j));
-                }
-                inLHSExprToRHSExprs.get(ref).retainAll(expressions);
-              } else {
-                for (int j = 1; j < inCall.getOperands().size(); j++) {
-                  String expr = inCall.getOperands().get(j).toString();
-                  inLHSExprToRHSExprs.put(ref, expr);
-                  stringToExpr.put(expr, inCall.getOperands().get(j));
-                }
-              }
-              operands.remove(i);
-              --i;
-            }
-          }
-          // Create IN clauses
-          newOperands = createInClauses(rexBuilder, stringToExpr, inLHSExprToRHSExprs);
-          newOperands.addAll(operands);
-          // Return node
-          node = RexUtil.composeConjunction(rexBuilder, newOperands, false);
-          break;
+          return handleAND(rexBuilder, call);
         case OR:
-          // IN clauses need to be combined by keeping all elements
-          operands = Lists.newArrayList(RexUtil.flattenOr(call.getOperands()));
-          for (int i = 0; i < operands.size(); i++) {
-            RexNode operand = operands.get(i);
-            if (operand.getKind() == SqlKind.IN) {
-              RexCall inCall = (RexCall) operand;
-              if (!HiveCalciteUtil.isDeterministic(inCall.getOperands().get(0))) {
-                continue;
-              }
-              String ref = inCall.getOperands().get(0).toString();
-              stringToExpr.put(ref, inCall.getOperands().get(0));
-              for (int j = 1; j < inCall.getOperands().size(); j++) {
-                String expr = inCall.getOperands().get(j).toString();
-                inLHSExprToRHSExprs.put(ref, expr);
-                stringToExpr.put(expr, inCall.getOperands().get(j));
-              }
-              operands.remove(i);
-              --i;
-            }
-          }
-          // Create IN clauses
-          newOperands = createInClauses(rexBuilder, stringToExpr, inLHSExprToRHSExprs);
-          newOperands.addAll(operands);
-          // Return node
-          node = RexUtil.composeDisjunction(rexBuilder, newOperands, false);
-          break;
+          return handleOR(rexBuilder, call);
         default:
           return super.visitCall(call);
       }
-      return node;
     }
 
-    private static List<RexNode> createInClauses(RexBuilder rexBuilder, Map<String, RexNode> stringToExpr,
-            Multimap<String, String> inLHSExprToRHSExprs) {
-      List<RexNode> newExpressions = Lists.newArrayList();
-      for (Entry<String,Collection<String>> entry : inLHSExprToRHSExprs.asMap().entrySet()) {
-        String ref = entry.getKey();
-        Collection<String> exprs = entry.getValue();
-        if (exprs.isEmpty()) {
-          newExpressions.add(rexBuilder.makeLiteral(false));
-        } else {
-          List<RexNode> newOperands = new ArrayList<RexNode>(exprs.size() + 1);
-          newOperands.add(stringToExpr.get(ref));
-          for (String expr : exprs) {
-            newOperands.add(stringToExpr.get(expr));
+    private static RexNode handleAND(RexBuilder rexBuilder, RexCall call) {
+      // Visited nodes
+      final Set<RexNode> visitedRefs = new LinkedHashSet<>();
+      // IN clauses need to be combined by keeping only common elements
+      final Multimap<RexNode,SimilarRexNodeElement> inLHSExprToRHSExprs = LinkedHashMultimap.create();
+      // We will use this set to keep those expressions that may evaluate
+      // into a null value.
+      final Multimap<RexNode,RexNode> inLHSExprToRHSNullableExprs = LinkedHashMultimap.create();
+      final List<RexNode> operands = new ArrayList<>(RexUtil.flattenAnd(call.getOperands()));
+      final List<RexNode> newOperands = new ArrayList<>(operands.size());
+      int inExpressionCount = 0;
+      int eqExpressionCount = 0;
+      for (RexNode operand : operands) {
+        if (operand instanceof RexCall inCall && HiveIn.INSTANCE.equals(inCall.op)) {
+          RexNode ref = inCall.getOperands().getFirst();
+          if (HiveCalciteUtil.isDeterministic(ref)) {
+            visitedRefs.add(ref);
+            if (ref.getType().isNullable()) {
+              inLHSExprToRHSNullableExprs.put(ref, ref);
+            }
+            if (inLHSExprToRHSExprs.containsKey(ref)) {
+              Set<SimilarRexNodeElement> expressions = Sets.newHashSet();
+              for (int j = 1; j < inCall.getOperands().size(); j++) {
+                RexNode constNode = inCall.getOperands().get(j);
+                expressions.add(new SimilarRexNodeElement(constNode));
+                if (constNode.getType().isNullable()) {
+                  inLHSExprToRHSNullableExprs.put(ref, constNode);
+                }
+              }
+              Collection<SimilarRexNodeElement> knownConstants = inLHSExprToRHSExprs.get(ref);
+              if (!shareSameType(knownConstants, expressions)) {
+                return call;
+              }
+              knownConstants.retainAll(expressions);
+            } else {
+              for (int j = 1; j < inCall.getOperands().size(); j++) {
+                RexNode constNode = inCall.getOperands().get(j);
+                inLHSExprToRHSExprs.put(ref, new SimilarRexNodeElement(constNode));
+                if (constNode.getType().isNullable()) {
+                  inLHSExprToRHSNullableExprs.put(ref, constNode);
+                }
+              }
+            }
+            ++inExpressionCount;
+            continue;
           }
+        } else if (operand.getKind() == SqlKind.EQUALS) {
+          Constraint c = Constraint.of(operand);
+          if (c != null && HiveCalciteUtil.isDeterministic(c.exprNode)) {
+            visitedRefs.add(c.exprNode);
+            if (c.exprNode.getType().isNullable()) {
+              inLHSExprToRHSNullableExprs.put(c.exprNode, c.exprNode);
+            }
+            if (c.constNode.getType().isNullable()) {
+              inLHSExprToRHSNullableExprs.put(c.exprNode, c.constNode);
+            }
+            if (inLHSExprToRHSExprs.containsKey(c.exprNode)) {
+              Collection<SimilarRexNodeElement> knownConstants = inLHSExprToRHSExprs.get(c.exprNode);
+              Collection<SimilarRexNodeElement> nextConstant = Collections.singleton(new SimilarRexNodeElement(c.constNode));
+              if (!shareSameType(knownConstants, nextConstant)) {
+                return call;
+              }
+              knownConstants.retainAll(nextConstant);
+            } else {
+              inLHSExprToRHSExprs.put(c.exprNode, new SimilarRexNodeElement(c.constNode));
+            }
+            ++eqExpressionCount;
+            continue;
+          }
+        }
+        newOperands.add(operand);
+      }
+      if (inExpressionCount + eqExpressionCount == inLHSExprToRHSExprs.keySet().size()) {
+        // No IN and Equality expressions can be merged, bail out
+        return call;
+      }
+      // Create IN clauses
+      newOperands.addAll(createInClauses(rexBuilder, visitedRefs, inLHSExprToRHSExprs, inLHSExprToRHSNullableExprs));
+      // Return node
+      return RexUtil.composeConjunction(rexBuilder, newOperands, false);
+    }
+
+    protected static class SimilarRexNodeElement {
+      private final RexNode rexNode;
+
+      protected SimilarRexNodeElement(RexNode rexNode) {
+        this.rexNode = rexNode;
+      }
+
+      public RexNode getRexNode() {
+        return rexNode;
+      }
+
+      @Override
+      public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        SimilarRexNodeElement that = (SimilarRexNodeElement) o;
+        return equalsWithSimilarType(rexNode, that.rexNode);
+      }
+
+      private static boolean equalsWithSimilarType(RexNode rexNode1, RexNode rexNode2) {
+        if (!(rexNode1 instanceof RexLiteral) || !(rexNode2 instanceof RexLiteral)) {
+          return rexNode1.equals(rexNode2);
+        }
+
+        RexLiteral rexLiteral1 = (RexLiteral) rexNode1;
+        RexLiteral rexLiteral2 = (RexLiteral) rexNode2;
+
+        if (rexLiteral1.getValue() == null && rexLiteral2.getValue() == null) {
+          return true;
+        }
+
+        return rexLiteral1.getValue() != null && rexLiteral1.getValue().compareTo(rexLiteral2.getValue()) == 0 &&
+                rexLiteral1.getType().getSqlTypeName().equals(rexLiteral2.getType().getSqlTypeName());
+      }
+
+      @Override
+      public int hashCode() {
+        if (rexNode instanceof RexLiteral) {
+          RexLiteral rexLiteral = (RexLiteral) rexNode;
+          return Objects.hash(rexLiteral.getValue(), rexLiteral.getType().getSqlTypeName());
+        }
+        return Objects.hash(rexNode);
+      }
+    }
+
+    /**
+     * Check if the type of nodes in the two collections is homogeneous within the collections
+     * and identical between them.
+     * @param nodes1 the first collection of nodes
+     * @param nodes2 the second collection of nodes
+     * @return true if nodes in both collections is unique and identical, false otherwise
+     */
+    private static boolean shareSameType(
+            Collection<SimilarRexNodeElement> nodes1, Collection<SimilarRexNodeElement> nodes2) {
+      return Stream.of(nodes1, nodes2).flatMap(Collection::stream)
+          .map(n -> n.getRexNode().getType().getSqlTypeName())
+          .distinct()
+          .count() == 1;
+    }
+
+    private static RexNode handleOR(RexBuilder rexBuilder, RexCall call) {
+      // IN clauses need to be combined by keeping all elements
+      final List<RexNode> operands = new ArrayList<>(RexUtil.flattenOr(call.getOperands()));
+      final List<RexNode> newOperands = new ArrayList<>(operands.size());
+      final Multimap<RexNode, SimilarRexNodeElement> inLHSExprToRHSExprs = LinkedHashMultimap.create();
+      int inExpressionCount = 0;
+      for (RexNode operand : operands) {
+        if (operand instanceof RexCall inCall && HiveIn.INSTANCE.equals(inCall.op)) {
+          RexNode ref = inCall.getOperands().getFirst();
+          if (HiveCalciteUtil.isDeterministic(ref)) {
+            for (int j = 1; j < inCall.getOperands().size(); j++) {
+              inLHSExprToRHSExprs.put(ref, new SimilarRexNodeElement(inCall.getOperands().get(j)));
+            }
+            ++inExpressionCount;
+            continue;
+          }
+        }
+        newOperands.add(operand);
+      }
+      if (inExpressionCount == inLHSExprToRHSExprs.keySet().size()) {
+        // No IN expressions can be merged, bail out
+        return call;
+      }
+      // Create IN clauses (fourth parameter is not needed since no expressions were removed)
+      newOperands.addAll(createInClauses(rexBuilder, inLHSExprToRHSExprs.keySet(), inLHSExprToRHSExprs, null));
+      // Return node
+      RexNode result = RexUtil.composeDisjunction(rexBuilder, newOperands, false);
+      if (!result.getType().equals(call.getType())) {
+        return rexBuilder.makeCast(call.getType(), result, true);
+      }
+      return result;
+    }
+
+    private static RexNode createResultFromEmptySet(RexBuilder rexBuilder,
+        RexNode ref, Multimap<RexNode, RexNode> inLHSExprToRHSNullableExprs) {
+      if (inLHSExprToRHSNullableExprs.containsKey(ref)) {
+        // We handle possible null values in the expressions.
+        List<RexNode> nullableExprs =
+            inLHSExprToRHSNullableExprs.get(ref)
+                .stream()
+                .map(n -> rexBuilder.makeCall(SqlStdOperatorTable.IS_NULL, ImmutableList.of(n)))
+                .collect(Collectors.toList());
+        return RexUtil.composeConjunction(rexBuilder,
+            ImmutableList.of(
+                RexUtil.composeDisjunction(rexBuilder, nullableExprs, false),
+                rexBuilder.makeNullLiteral(rexBuilder.getTypeFactory().createSqlType(SqlTypeName.BOOLEAN))),
+            false);
+      }
+      return rexBuilder.makeLiteral(false);
+    }
+
+    private static List<RexNode> createInClauses(RexBuilder rexBuilder, Set<RexNode> visitedRefs,
+        Multimap<RexNode, SimilarRexNodeElement> inLHSExprToRHSExprs, Multimap<RexNode,RexNode> inLHSExprToRHSNullableExprs) {
+      final List<RexNode> newExpressions = new ArrayList<>(visitedRefs.size());
+      for (RexNode ref : visitedRefs) {
+        Collection<SimilarRexNodeElement> exprs = inLHSExprToRHSExprs.get(ref);
+        if (exprs.isEmpty()) {
+          // Note that Multimap does not keep a key if all its values are removed.
+          newExpressions.add(createResultFromEmptySet(rexBuilder, ref, inLHSExprToRHSNullableExprs));
+        } else if (exprs.size() == 1) {
+          List<RexNode> newOperands = new ArrayList<>(2);
+          newOperands.add(ref);
+          newOperands.add(exprs.iterator().next().getRexNode());
+          newExpressions.add(rexBuilder.makeCall(SqlStdOperatorTable.EQUALS, newOperands));
+        } else {
+          List<RexNode> newOperands = new ArrayList<>(exprs.size() + 1);
+          newOperands.add(ref);
+          newOperands.addAll(exprs.stream().map(SimilarRexNodeElement::getRexNode).collect(Collectors.toList()));
           newExpressions.add(rexBuilder.makeCall(HiveIn.INSTANCE, newOperands));
         }
       }

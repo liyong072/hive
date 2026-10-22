@@ -1,7 +1,9 @@
 PREHOOK: query: drop table convert_mm
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: drop table convert_mm
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: create table convert_mm(key int, id int) tblproperties("transactional"="true", "transactional_properties"="insert_only")
 PREHOOK: type: CREATETABLE
 PREHOOK: Output: database:default
@@ -14,4 +16,4 @@ PREHOOK: query: alter table convert_mm unset tblproperties('transactional_proper
 PREHOOK: type: ALTERTABLE_PROPERTIES
 PREHOOK: Input: default@convert_mm
 PREHOOK: Output: default@convert_mm
-FAILED: Execution Error, return code 1 from org.apache.hadoop.hive.ql.exec.DDLTask. Cannot convert an ACID table to non-ACID
+FAILED: Execution Error, return code 40000 from org.apache.hadoop.hive.ql.ddl.DDLTask. Cannot convert an ACID table to non-ACID

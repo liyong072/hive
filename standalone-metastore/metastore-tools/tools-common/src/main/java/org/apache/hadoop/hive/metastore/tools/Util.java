@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.tools;
@@ -21,12 +22,21 @@ package org.apache.hadoop.hive.metastore.tools;
 import com.google.common.base.Joiner;
 import com.google.common.net.HostAndPort;
 import org.apache.hadoop.hive.metastore.TableType;
+import org.apache.hadoop.hive.metastore.api.ColumnStatistics;
+import org.apache.hadoop.hive.metastore.api.ColumnStatisticsData;
+import org.apache.hadoop.hive.metastore.api.ColumnStatisticsDesc;
+import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
+import org.apache.hadoop.hive.metastore.api.DataOperationType;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.LockComponent;
+import org.apache.hadoop.hive.metastore.api.LockLevel;
+import org.apache.hadoop.hive.metastore.api.LockType;
 import org.apache.hadoop.hive.metastore.api.Partition;
 import org.apache.hadoop.hive.metastore.api.PrincipalType;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
+import org.apache.hadoop.hive.metastore.api.StringColumnStatsData;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.thrift.TException;
 import org.jetbrains.annotations.NotNull;
@@ -232,6 +242,7 @@ public final class Util {
     private TableBuilder() {
       dbName = null;
       tableName = null;
+      parameters.putIfAbsent("transactional", "true");
     }
 
     TableBuilder(String dbName, String tableName) {
@@ -383,6 +394,104 @@ public final class Util {
     }
   }
 
+  public static class LockComponentBuilder {
+    private LockComponent component;
+    private boolean tableNameSet;
+    private boolean partNameSet;
+
+    public LockComponentBuilder() {
+      component = new LockComponent();
+      tableNameSet = partNameSet = false;
+    }
+
+    /**
+     * Set the lock to be exclusive.
+     * @return reference to this builder
+     */
+    public LockComponentBuilder setExclusive() {
+      component.setType(LockType.EXCLUSIVE);
+      return this;
+    }
+
+    /**
+     * Set the lock to be semi-shared.
+     * @return reference to this builder
+     */
+    public LockComponentBuilder setSemiShared() {
+      component.setType(LockType.SHARED_WRITE);
+      return this;
+    }
+
+    /**
+     * Set the lock to be shared.
+     * @return reference to this builder
+     */
+    public LockComponentBuilder setShared() {
+      component.setType(LockType.SHARED_READ);
+      return this;
+    }
+
+    /**
+     * Set the database name.
+     * @param dbName database name
+     * @return reference to this builder
+     */
+    public LockComponentBuilder setDbName(String dbName) {
+      component.setDbname(dbName);
+      return this;
+    }
+
+    public LockComponentBuilder setCatName(String catName) {
+      component.setCatName(catName);
+      return this;
+    }
+
+    public LockComponentBuilder setIsTransactional(boolean t) {
+      component.setIsTransactional(t);
+      return this;
+    }
+
+    public LockComponentBuilder setOperationType(DataOperationType dop) {
+      component.setOperationType(dop);
+      return this;
+    }
+
+    /**
+     * Set the table name.
+     * @param tableName table name
+     * @return reference to this builder
+     */
+    public LockComponentBuilder setTableName(String tableName) {
+      component.setTablename(tableName);
+      tableNameSet = true;
+      return this;
+    }
+
+    /**
+     * Set the partition name.
+     * @param partitionName partition name
+     * @return reference to this builder
+     */
+    public LockComponentBuilder setPartitionName(String partitionName) {
+      component.setPartitionname(partitionName);
+      partNameSet = true;
+      return this;
+    }
+
+    public LockComponent build() {
+      LockLevel level = LockLevel.DB;
+      if (tableNameSet) level = LockLevel.TABLE;
+      if (partNameSet) level = LockLevel.PARTITION;
+      component.setLevel(level);
+      return component;
+    }
+
+    public LockComponent setLock(LockType type) {
+      component.setType(type);
+      return component;
+    }
+  }
+
   /**
    * Create table schema from parameters.
    *
@@ -451,9 +560,9 @@ public final class Util {
     HostAndPort hp = HostAndPort.fromString(host)
             .withDefaultPort(port);
 
-    LOG.info("Connecting to {}:{}", hp.getHostText(), hp.getPort());
+    LOG.info("Connecting to {}:{}", hp.getHost(), hp.getPort());
 
-    return new URI(THRIFT_SCHEMA, null, hp.getHostText(), hp.getPort(),
+    return new URI(THRIFT_SCHEMA, null, hp.getHost(), hp.getPort(),
             null, null, null);
   }
 
@@ -493,6 +602,26 @@ public final class Util {
   }
 
   /**
+   * Create multiple partition objects with list of partition values.
+   *
+   * @param table
+   * @param parameters
+   * @param values list of partition values
+   * @return list of created partitions
+   */
+  static List<Partition> createManyPartitions(@NotNull Table table,
+                                              @Nullable Map<String, String> parameters,
+                                              @NotNull List<List<String>> values) {
+    return values.stream()
+        .map(vals ->
+            new PartitionBuilder(table)
+                .withParameters(parameters)
+                .withValues(vals)
+                .build())
+        .collect(Collectors.toList());
+  }
+
+  /**
    * Add many partitions in one HMS call
    *
    * @param client      HMS Client
@@ -513,6 +642,24 @@ public final class Util {
     return null;
   }
 
+  static Object updateManyPartitionsStats(@NotNull HMSClient client,
+                                         @NotNull String dbName,
+                                         @NotNull String tableName,
+                                         @NotNull List<String> partNames) throws TException {
+    List<ColumnStatisticsObj> statsObj = new ArrayList<>();
+    ColumnStatisticsData statsData = new ColumnStatisticsData(
+        ColumnStatisticsData._Fields.STRING_STATS, new StringColumnStatsData(100, 10.1, 20, 30));
+    statsObj.add(new ColumnStatisticsObj("id", "int", statsData));
+    ColumnStatisticsDesc partDesc = new ColumnStatisticsDesc(false, dbName, tableName);
+    for (String partName : partNames) {
+      partDesc.setPartName(partName);
+      ColumnStatistics partColStat = new ColumnStatistics(partDesc, statsObj);
+      partColStat.setEngine("hive");
+      client.updatePartitionColumnStats(partColStat);
+    }
+    return null;
+  }
+
   static List<String> generatePartitionNames(@NotNull String prefix, int npartitions) {
     return IntStream.range(0, npartitions).mapToObj(i -> prefix + i).collect(Collectors.toList());
   }
@@ -525,6 +672,26 @@ public final class Util {
                                            int npartitions) {
     throwingSupplierWrapper(() ->
             addManyPartitions(client, dbName, tableName, parameters, arguments, npartitions));
+  }
+
+  static void addManyPartitionsNoException(@NotNull HMSClient client,
+                                           @NotNull String dbName,
+                                           @NotNull String tableName,
+                                           @Nullable Map<String, String> parameters,
+                                           List<List<String>> values) {
+    throwingSupplierWrapper(() -> {
+      Table table = client.getTable(dbName, tableName);
+      client.addPartitions(createManyPartitions(table, parameters, values));
+      return null;
+    });
+  }
+
+  static void updateManyPartitionsStatsNoException(@NotNull HMSClient client,
+                                                   @NotNull String dbName,
+                                                   @NotNull String tableName,
+                                                   @NotNull List<String> partNames) {
+    throwingSupplierWrapper(() ->
+            updateManyPartitionsStats(client, dbName, tableName, partNames));
   }
 
   /**

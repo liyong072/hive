@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.streaming;
@@ -92,7 +93,7 @@ public class StrictRegexWriter extends AbstractRecordWriter {
         tableProps.setProperty("columns.comments", Joiner.on('\0').join(comments));
       }
       RegexSerDe serde = new RegexSerDe();
-      SerDeUtils.initializeSerDe(serde, conf, tableProps, null);
+      serde.initialize(conf, tableProps, null);
       this.serde = serde;
       return serde;
     } catch (SerDeException e) {

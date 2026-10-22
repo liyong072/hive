@@ -9,24 +9,29 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse.repl;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.hadoop.hive.common.DataCopyStatistics;
 import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.FileUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.ReplChangeManager;
 import org.apache.hadoop.hive.ql.ErrorMsg;
+import org.apache.hadoop.hive.ql.exec.util.Retryable;
+import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.metadata.HiveFatalException;
 import org.apache.hadoop.hive.shims.ShimLoader;
 import org.apache.hadoop.hive.shims.Utils;
@@ -34,7 +39,6 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.security.auth.login.LoginException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
@@ -43,6 +47,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Arrays;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class CopyUtils {
@@ -55,57 +64,187 @@ public class CopyUtils {
   private final HiveConf hiveConf;
   private final long maxCopyFileSize;
   private final long maxNumberOfFiles;
-  private final boolean hiveInTest;
+  private final boolean hiveInReplTest;
   private final String copyAsUser;
   private FileSystem destinationFs;
+  private final int maxParallelCopyTask;
+
+  private AtomicLong totalBytesCopied = new AtomicLong(0);
+  @VisibleForTesting
+  public static Callable<Boolean> testCallable;
+
+  private List<Class<? extends Exception>> failOnParentExceptionList = Arrays.asList(org.apache.hadoop.fs.PathIOException.class,
+          org.apache.hadoop.fs.UnsupportedFileSystemException.class,
+          org.apache.hadoop.fs.InvalidPathException.class,
+          org.apache.hadoop.fs.InvalidRequestException.class,
+          org.apache.hadoop.fs.FileAlreadyExistsException.class,
+          org.apache.hadoop.fs.ChecksumException.class,
+          org.apache.hadoop.fs.ParentNotDirectoryException.class,
+          org.apache.hadoop.hdfs.protocol.QuotaExceededException.class,
+          FileNotFoundException.class);
 
   public CopyUtils(String distCpDoAsUser, HiveConf hiveConf, FileSystem destinationFs) {
     this.hiveConf = hiveConf;
     maxNumberOfFiles = hiveConf.getLongVar(HiveConf.ConfVars.HIVE_EXEC_COPYFILE_MAXNUMFILES);
     maxCopyFileSize = hiveConf.getLongVar(HiveConf.ConfVars.HIVE_EXEC_COPYFILE_MAXSIZE);
-    hiveInTest = hiveConf.getBoolVar(HiveConf.ConfVars.HIVE_IN_TEST);
+    hiveInReplTest = hiveConf.getBoolVar(HiveConf.ConfVars.HIVE_IN_TEST_REPL);
+    maxParallelCopyTask = hiveConf.getIntVar(HiveConf.ConfVars.REPL_PARALLEL_COPY_TASKS);
     this.copyAsUser = distCpDoAsUser;
     this.destinationFs = destinationFs;
+  }
+
+  private void incrementTotalBytesCopied(long bytesCopied) {
+    totalBytesCopied.addAndGet(bytesCopied);
+  }
+
+  public long getTotalBytesCopied() {
+    return totalBytesCopied.get();
+  }
+
+  private <T> T retryableFxn(Callable<T> callable) throws IOException {
+    Retryable retryable = Retryable.builder()
+            .withHiveConf(hiveConf)
+            .withRetryOnException(IOException.class).withFailOnParentExceptionList(failOnParentExceptionList).build();
+    try {
+      return retryable.executeCallable(() -> callable.call());
+    } catch (Exception e) {
+      if (failOnParentExceptionList.stream().anyMatch(k -> k.isAssignableFrom(e.getClass()))) {
+        throw new IOException(e);
+      }
+      throw new IOException(ErrorMsg.REPL_FILE_SYSTEM_OPERATION_RETRY.getMsg(), e);
+    }
+  }
+
+  @VisibleForTesting
+  String checkSumFor(Path srcFile, FileSystem fs) throws IOException {
+    return retryableFxn(() ->  ReplChangeManager.checksumFor(srcFile, fs));
+  }
+
+  @VisibleForTesting
+  void copyFilesBetweenFS(FileSystem srcFS, Path[] paths, FileSystem dstFS,
+                          Path dst, boolean deleteSource, boolean overwrite,
+                          DataCopyStatistics copyStatistics) throws IOException {
+    retryableFxn(() -> {
+      boolean preserveXAttrs = FileUtils.shouldPreserveXAttrs(hiveConf, srcFS, dstFS, paths[0]);
+      FileUtils.copy(srcFS, paths, dstFS, dst, deleteSource, overwrite, preserveXAttrs, hiveConf,
+          copyStatistics);
+      return null;
+    });
+  }
+
+  @VisibleForTesting
+  boolean exists(FileSystem fs, Path path) throws IOException {
+    return retryableFxn(() -> fs.exists(path));
+  }
+
+  @VisibleForTesting
+  boolean delete(FileSystem fs, Path path, boolean recursive) throws IOException {
+    return retryableFxn(() -> fs.delete(path, recursive));
+  }
+
+  @VisibleForTesting
+  boolean mkdirs(FileSystem fs, Path path) throws IOException {
+    return retryableFxn(() -> fs.mkdirs(path));
+  }
+
+  @VisibleForTesting
+  boolean rename(FileSystem fs, Path srcPath, Path dstPath) throws IOException {
+    return retryableFxn(() -> fs.rename(srcPath, dstPath));
+  }
+
+  @VisibleForTesting
+  ContentSummary getContentSummary(FileSystem fs, Path f) throws IOException {
+    return retryableFxn(() -> fs.getContentSummary(f));
   }
 
   // Used by replication, copy files from source to destination. It is possible source file is
   // changed/removed during copy, so double check the checksum after copy,
   // if not match, copy again from cm
-  public void copyAndVerify(Path destRoot,
-                    List<ReplChangeManager.FileInfo> srcFiles) throws IOException, LoginException, HiveFatalException {
-    Map<FileSystem, Map< Path, List<ReplChangeManager.FileInfo>>> map = fsToFileMap(srcFiles, destRoot);
+  public void copyAndVerify(Path destRoot, List<ReplChangeManager.FileInfo> srcFiles, Path origSrcPath,
+                            boolean readSrcAsFilesList, boolean overwrite)
+          throws IOException, HiveFatalException {
     UserGroupInformation proxyUser = getProxyUser();
+    if (CollectionUtils.isEmpty(srcFiles)) {
+      throw new IOException(ErrorMsg.REPL_INVALID_ARGUMENTS.format("SrcFiles can not be empty during copy operation."));
+    }
+    FileSystem sourceFs = srcFiles.get(0).getSrcFs();
+    boolean useRegularCopy = regularCopy(sourceFs, srcFiles);
+    ExecutorService executorService = null;
     try {
-      for (Map.Entry<FileSystem, Map<Path, List<ReplChangeManager.FileInfo>>> entry : map.entrySet()) {
-        Map<Path, List<ReplChangeManager.FileInfo>> destMap = entry.getValue();
-        for (Map.Entry<Path, List<ReplChangeManager.FileInfo>> destMapEntry : destMap.entrySet()) {
-          Path destination = destMapEntry.getKey();
-          List<ReplChangeManager.FileInfo> fileInfoList = destMapEntry.getValue();
-          // Get the file system again from cache. There is a chance that the file system stored in the map is closed.
-          // For instance, doCopyRetry closes the file system in case of i/o exceptions.
-          FileSystem sourceFs = fileInfoList.get(0).getSourcePath().getFileSystem(hiveConf);
-          boolean useRegularCopy = regularCopy(sourceFs, fileInfoList);
-
-          if (!destinationFs.exists(destination)
-                  && !FileUtils.mkdir(destinationFs, destination, hiveConf)) {
-            LOG.error("Failed to create destination directory: " + destination);
-            throw new IOException("Destination directory creation failed");
+      if (useRegularCopy || readSrcAsFilesList) {
+        // Layout of data files may differ based on the type of tables.
+        Map<FileSystem, Map< Path, List<ReplChangeManager.FileInfo>>> map = fsToFileMap(srcFiles, destRoot);
+        for (Map.Entry<FileSystem, Map<Path, List<ReplChangeManager.FileInfo>>> entry : map.entrySet()) {
+          Map<Path, List<ReplChangeManager.FileInfo>> destMap = entry.getValue();
+          if (destMap.size() > 1) {
+            //Multiple files, do copy in parallel
+            if (executorService == null) {
+              executorService = getExecutorService();
+            }
+            List<Callable<Void>> copyList = new ArrayList<>();
+            for (Map.Entry<Path, List<ReplChangeManager.FileInfo>> destMapEntry : destMap.entrySet()) {
+              copyList.add(() -> {
+                DataCopyStatistics copyStatistics = new DataCopyStatistics();
+                doCopy(destMapEntry, proxyUser, regularCopy(sourceFs, destMapEntry.getValue()), overwrite, copyStatistics);
+                incrementTotalBytesCopied(copyStatistics.getBytesCopied());
+                return null;
+              });
+            }
+            executorService.invokeAll(copyList);
+          } else {
+            //Since just a single file, just do a copy in the same thread
+            for (Map.Entry<Path, List<ReplChangeManager.FileInfo>> destMapEntry : destMap.entrySet()) {
+              DataCopyStatistics copyStatistics = new DataCopyStatistics();
+              doCopy(destMapEntry, proxyUser, regularCopy(sourceFs, destMapEntry.getValue()), overwrite, copyStatistics);
+              incrementTotalBytesCopied(copyStatistics.getBytesCopied());
+            }
           }
 
-          // Copy files with retry logic on failure or source file is dropped or changed.
-          doCopyRetry(sourceFs, fileInfoList, destination, proxyUser, useRegularCopy);
         }
+      } else {
+        // When distCp is to be used and the srcFiles doesn't contain subDirs (readSrcAsFilesList=false),
+        // original from path should be used during distCp, as distCp copies dirItems of srcPath,
+        // not the srcPath folder itself.
+        srcFiles.clear();
+        srcFiles.add(new ReplChangeManager.FileInfo(sourceFs, origSrcPath, null));
+        DataCopyStatistics copyStatistics = new DataCopyStatistics();
+        doCopyRetry(sourceFs, srcFiles, destRoot, proxyUser, useRegularCopy, overwrite, copyStatistics);
+        incrementTotalBytesCopied(copyStatistics.getBytesCopied());
       }
+    } catch (InterruptedException e) {
+      LOG.error("Failed to copy ", e);
+      throw new IOException(ErrorMsg.REPL_FILE_SYSTEM_OPERATION_RETRY.getMsg());
     } finally {
-      if (proxyUser != null) {
-        FileSystem.closeAllForUGI(proxyUser);
+      if (executorService != null) {
+        executorService.shutdown();
       }
     }
   }
 
+  @VisibleForTesting
+  ExecutorService getExecutorService() {
+    return Executors.newFixedThreadPool(maxParallelCopyTask);
+  }
+
+  @VisibleForTesting
+  void doCopy(Map.Entry<Path, List<ReplChangeManager.FileInfo>> destMapEntry, UserGroupInformation proxyUser,
+                      boolean useRegularCopy, boolean overwrite, DataCopyStatistics copyStatistics) throws IOException, HiveFatalException {
+    Path destination = destMapEntry.getKey();
+    List<ReplChangeManager.FileInfo> fileInfoList = destMapEntry.getValue();
+    // Get the file system again from cache. There is a chance that the file system stored in the map is closed.
+    // For instance, doCopyRetry closes the file system in case of i/o exceptions.
+    FileSystem sourceFsOfFileInfo = fileInfoList.get(0).getSourcePath().getFileSystem(hiveConf);
+    if (!exists(destinationFs, destination) && !mkdirs(destinationFs, destination)) {
+      LOG.error("Failed to create destination directory: " + destination);
+      throw new IOException("Destination directory creation failed");
+    }
+    // Copy files with retry logic on failure or source file is dropped or changed.
+    doCopyRetry(sourceFsOfFileInfo, fileInfoList, destination, proxyUser, useRegularCopy, overwrite, copyStatistics);
+  }
+
   private void doCopyRetry(FileSystem sourceFs, List<ReplChangeManager.FileInfo> srcFileList,
                            Path destination, UserGroupInformation proxyUser,
-                           boolean useRegularCopy) throws IOException, LoginException, HiveFatalException {
+                           boolean useRegularCopy, boolean overwrite, DataCopyStatistics copyStatistics) throws IOException, HiveFatalException {
     int repeat = 0;
     boolean isCopyError = false;
     List<Path> pathList = Lists.transform(srcFileList, ReplChangeManager.FileInfo::getEffectivePath);
@@ -124,7 +263,7 @@ public class CopyUtils {
 
         // if exception happens during doCopyOnce, then need to call getFilesToRetry with copy error as true in retry.
         isCopyError = true;
-        doCopyOnce(sourceFs, pathList, destination, useRegularCopy, proxyUser);
+        doCopyOnce(sourceFs, pathList, destination, useRegularCopy, proxyUser, overwrite, copyStatistics);
 
         // if exception happens after doCopyOnce, then need to call getFilesToRetry with copy error as false in retry.
         isCopyError = false;
@@ -132,11 +271,14 @@ public class CopyUtils {
         // If copy fails, fall through the retry logic
         LOG.info("file operation failed", e);
 
-        if (repeat >= (MAX_IO_RETRY - 1)) {
-          //no need to wait in the last iteration
+        //Don't retry in the following cases :
+        //1. This is last attempt of retry.
+        //2. Execution already hit the exception which should not be retried.
+        //3. Retry is already exhausted by FS operations.
+        if (repeat >= (MAX_IO_RETRY - 1) || failOnParentExceptionList.stream().anyMatch(k -> k.isAssignableFrom(e.getClass()))
+                || ErrorMsg.REPL_FILE_SYSTEM_OPERATION_RETRY.getMsg().equals(e.getMessage())) {
           break;
         }
-
         if (!(e instanceof FileNotFoundException)) {
           int sleepTime = FileUtils.getSleepTime(repeat);
           LOG.info("Sleep for " + sleepTime + " milliseconds before retry " + (repeat+1));
@@ -147,11 +289,6 @@ public class CopyUtils {
           }
 
           // looks like some network outrage, reset the file system object and retry.
-          if (proxyUser == null) {
-            FileSystem.closeAllForUGI(Utils.getUGI());
-          } else {
-            FileSystem.closeAllForUGI(proxyUser);
-          }
           sourceFs = pathList.get(0).getFileSystem(hiveConf);
           destinationFs = destination.getFileSystem(hiveConf);
         }
@@ -182,11 +319,11 @@ public class CopyUtils {
       }
       Path srcPath = srcFile.getEffectivePath();
       Path destPath = new Path(destination, srcPath.getName());
-      if (destinationFs.exists(destPath)) {
+      if (exists(destinationFs, destination)) {
         // If destination file is present and checksum of source mismatch, then retry copy.
         if (isSourceFileMismatch(sourceFs, srcFile)) {
           // Delete the incorrectly copied file and retry with CM path
-          destinationFs.delete(destPath, true);
+          delete(destinationFs, destPath, true);
           srcFile.setIsUseSourcePath(false);
         } else {
           // If the retry logic is reached after copy error, then include the copied file as well.
@@ -212,7 +349,7 @@ public class CopyUtils {
         throw new HiveFatalException(ErrorMsg.REPL_FILE_MISSING_FROM_SRC_AND_CM_PATH.getMsg());
       }
 
-      if (!srcFile.isUseSourcePath() && !sourceFs.exists(srcFile.getCmPath())) {
+      if (!srcFile.isUseSourcePath() && !exists(sourceFs, srcFile.getCmPath())) {
         // CM path itself is missing, cannot recover from this error
         LOG.error("File Copy Failed. Both source and CM files are missing from source. "
                 + "Missing Source File: " + srcFile.getSourcePath() + ", CM File: " + srcFile.getCmPath() + ". "
@@ -226,20 +363,56 @@ public class CopyUtils {
     return pathList;
   }
 
+  /* If a file is copied from CM path, then need to rename them using original source file name
+  This is needed to avoid having duplicate files in target if same event is applied twice
+  where the first event refers to source path and  second event refers to CM path */
+
+  public void renameFileCopiedFromCmPath(Path toPath, FileSystem dstFs, List<ReplChangeManager.FileInfo> srcFiles)
+          throws IOException {
+    for (ReplChangeManager.FileInfo srcFile : srcFiles) {
+      if (srcFile.isUseSourcePath()) {
+        continue;
+      }
+      String destFileName = srcFile.getCmPath().getName();
+      Path destRoot = CopyUtils.getCopyDestination(srcFile, toPath);
+      Path destFile = new Path(destRoot, destFileName);
+      if (exists(dstFs, destFile)) {
+        String destFileWithSourceName = srcFile.getSourcePath().getName();
+        Path newDestFile = new Path(destRoot, destFileWithSourceName);
+
+        // if the new file exist then delete it before renaming, to avoid rename failure. If the copy is done
+        // directly to table path (bypassing staging directory) then there might be some stale files from previous
+        // incomplete/failed load. No need of recycle as this is a case of stale file.
+        try {
+          delete(dstFs, newDestFile, true);
+          LOG.debug(" file " + newDestFile + " is deleted before renaming");
+        } catch (FileNotFoundException e) {
+          // no problem
+        }
+
+        boolean result = rename(dstFs, destFile, newDestFile);
+        if (!result) {
+          throw new IllegalStateException(
+                  "could not rename " + destFile.getName() + " to " + newDestFile.getName());
+        }
+      }
+    }
+  }
+
   // Check if the source file unmodified even after copy to see if we copied the right file
   private boolean isSourceFileMismatch(FileSystem sourceFs, ReplChangeManager.FileInfo srcFile) throws IOException {
+    runTestOnlyExecutions();
     // If source is already CM path, the checksum will be always matching
     if (srcFile.isUseSourcePath()) {
       String sourceChecksumString = srcFile.getCheckSum();
       if (sourceChecksumString != null) {
         String verifySourceChecksumString;
         try {
-          verifySourceChecksumString
-                  = ReplChangeManager.checksumFor(srcFile.getSourcePath(), sourceFs);
+          verifySourceChecksumString = checkSumFor(srcFile.getSourcePath(), sourceFs);
         } catch (IOException e) {
           LOG.info("Unable to calculate checksum for source file: " + srcFile.getSourcePath(), e);
 
-          if (!sourceFs.exists(srcFile.getSourcePath())) {
+          if (!exists(sourceFs, srcFile.getSourcePath())) {
             // if source file is missing, then return true, so that cm path will be used for copy.
             return true;
           }
@@ -253,54 +426,45 @@ public class CopyUtils {
     return false;
   }
 
-  private UserGroupInformation getProxyUser() throws LoginException, IOException {
+  @VisibleForTesting
+  private void runTestOnlyExecutions() throws IOException {
+    if (testCallable != null) {
+      // testCallable will be not-null only in cases of execution through test code.
+      try {
+        testCallable.call();
+      } catch (Exception e) {
+        throw new IOException(e);
+      }
+    }
+  }
+
+  private UserGroupInformation getProxyUser() throws IOException {
     if (copyAsUser == null) {
       return null;
     }
-    UserGroupInformation proxyUser = null;
-    int currentRetry = 0;
-    while (currentRetry <= MAX_IO_RETRY) {
-      try {
-        UserGroupInformation ugi = Utils.getUGI();
-        String currentUser = ugi.getShortUserName();
-        if (!currentUser.equals(copyAsUser)) {
-          proxyUser = UserGroupInformation.createProxyUser(
-                  copyAsUser, UserGroupInformation.getLoginUser());
-        }
-        return proxyUser;
-      } catch (IOException e) {
-        currentRetry++;
-        if (currentRetry <= MAX_IO_RETRY) {
-          LOG.warn("Unable to get UGI info", e);
-        } else {
-          LOG.error("Unable to get UGI info", e);
-          throw new IOException(ErrorMsg.REPL_FILE_SYSTEM_OPERATION_RETRY.getMsg());
-        }
-        int sleepTime = FileUtils.getSleepTime(currentRetry);
-        LOG.info("Sleep for " + sleepTime + " milliseconds before retry " + (currentRetry));
-        try {
-          Thread.sleep(sleepTime);
-        } catch (InterruptedException timerEx) {
-          LOG.info("Sleep interrupted", timerEx.getMessage());
-        }
+    return retryableFxn(() -> {
+      String currentUser = Utils.getUGI().getShortUserName();
+      if (!currentUser.equals(copyAsUser)) {
+        return UserGroupInformation.createProxyUser(copyAsUser, UserGroupInformation.getLoginUser());
       }
-    }
-    return null;
+      return null;
+    });
   }
 
   // Copy without retry
   private void doCopyOnce(FileSystem sourceFs, List<Path> srcList,
                           Path destination,
-                          boolean useRegularCopy, UserGroupInformation proxyUser) throws IOException {
+                          boolean useRegularCopy, UserGroupInformation proxyUser,
+                          boolean overwrite, DataCopyStatistics copyStatistics) throws IOException {
     if (useRegularCopy) {
-      doRegularCopyOnce(sourceFs, srcList, destination, proxyUser);
+      doRegularCopyOnce(sourceFs, srcList, destination, proxyUser, overwrite, copyStatistics);
     } else {
-      doDistCpCopyOnce(sourceFs, srcList, destination, proxyUser);
+      doDistCpCopyOnce(sourceFs, srcList, destination, proxyUser, copyStatistics);
     }
   }
 
   private void doDistCpCopyOnce(FileSystem sourceFs, List<Path> srcList, Path destination,
-                                UserGroupInformation proxyUser) throws IOException {
+                                UserGroupInformation proxyUser, DataCopyStatistics copyStatistics) throws IOException {
     if (hiveConf.getBoolVar(HiveConf.ConfVars.REPL_ADD_RAW_RESERVED_NAMESPACE)) {
       srcList = srcList.stream().map(path -> {
         URI uri = path.toUri();
@@ -323,10 +487,18 @@ public class CopyUtils {
       LOG.error("Distcp failed to copy files: " + srcList + " to destination: " + destination);
       throw new IOException("Distcp operation failed.");
     }
+    // increment bytes copied counter by the file length in each path of filesystem
+    if (sourceFs.getUri().getScheme().equals("hdfs")) {
+      for (Path path : srcList) {
+        ContentSummary srcContentSummary = sourceFs.getContentSummary(path);
+        copyStatistics.incrementBytesCopiedCounter(srcContentSummary.getLength());
+      }
+    }
+    LOG.info("CopyUtils copied {} number of bytes by using distcp", copyStatistics.getBytesCopied());
   }
 
   private void doRegularCopyOnce(FileSystem sourceFs, List<Path> srcList,
-      Path destination, UserGroupInformation proxyUser) throws IOException {
+      Path destination, UserGroupInformation proxyUser, boolean overWrite, DataCopyStatistics copyStatistics) throws IOException {
   /*
     even for regular copy we have to use the same user permissions that distCp will use since
     hive-server user might be different that the super user required to copy relevant files.
@@ -336,35 +508,44 @@ public class CopyUtils {
       final Path finalDestination = destination;
       try {
         proxyUser.doAs((PrivilegedExceptionAction<Boolean>) () -> {
-          FileUtil
-              .copy(sourceFs, paths, destinationFs, finalDestination, false, true, hiveConf);
+          //Destination should be empty
+          if (overWrite) {
+            deleteSubDirs(destinationFs, destination);
+          }
+          copyFilesBetweenFS(sourceFs, paths, destinationFs, finalDestination, false, true, copyStatistics);
           return true;
         });
       } catch (InterruptedException e) {
         throw new IOException(e);
       }
     } else {
-      FileUtil.copy(sourceFs, paths, destinationFs, destination, false, true, hiveConf);
+      //Destination should be empty
+      if (overWrite) {
+        deleteSubDirs(destinationFs, destination);
+      }
+      copyFilesBetweenFS(sourceFs, paths, destinationFs, destination, false, true, copyStatistics);
     }
   }
 
-  public void doCopy(Path destination, List<Path> srcPaths) throws IOException, LoginException {
+  private void deleteSubDirs(FileSystem fs, Path path) throws IOException {
+    //Delete the root path instead of doing a listing
+    //This is more optimised
+    delete(fs, path, true);
+    //Recreate just the Root folder
+    mkdirs(fs, path);
+  }
+
+  public void doCopy(Path destination, List<Path> srcPaths) throws IOException {
     Map<FileSystem, List<Path>> map = fsToPathMap(srcPaths);
 
     UserGroupInformation proxyUser = getProxyUser();
-    try {
-      for (Map.Entry<FileSystem, List<Path>> entry : map.entrySet()) {
-        final FileSystem sourceFs = entry.getKey();
-        List<ReplChangeManager.FileInfo> fileList = Lists.transform(entry.getValue(),
-           path -> new ReplChangeManager.FileInfo(sourceFs, path, null));
-        doCopyOnce(sourceFs, entry.getValue(),
-                destination,
-                regularCopy(sourceFs, fileList), proxyUser);
-      }
-    } finally {
-      if (proxyUser != null) {
-        FileSystem.closeAllForUGI(proxyUser);
-      }
+    for (Map.Entry<FileSystem, List<Path>> entry : map.entrySet()) {
+      final FileSystem sourceFs = entry.getKey();
+      List<ReplChangeManager.FileInfo> fileList = Lists.transform(entry.getValue(),
+              path -> new ReplChangeManager.FileInfo(sourceFs, path, null));
+      doCopyOnce(sourceFs, entry.getValue(),
+              destination,
+              regularCopy(sourceFs, fileList), proxyUser, false, new DataCopyStatistics());
     }
   }
 
@@ -377,7 +558,7 @@ public class CopyUtils {
   */
   boolean regularCopy(FileSystem sourceFs, List<ReplChangeManager.FileInfo> fileList)
       throws IOException {
-    if (hiveInTest) {
+    if (hiveInReplTest) {
       return true;
     }
     if (isLocal(sourceFs) || isLocal(destinationFs)) {
@@ -393,11 +574,11 @@ public class CopyUtils {
     for (ReplChangeManager.FileInfo fileInfo : fileList) {
       ContentSummary contentSummary = null;
       try {
-        contentSummary = sourceFs.getContentSummary(fileInfo.getEffectivePath());
+        contentSummary = getContentSummary(sourceFs, fileInfo.getEffectivePath());
       } catch (IOException e) {
         // In replication, if source file does not exist, try cmroot
         if (fileInfo.isUseSourcePath() && fileInfo.getCmPath() != null) {
-          contentSummary = sourceFs.getContentSummary(fileInfo.getCmPath());
+          contentSummary = getContentSummary(sourceFs, fileInfo.getCmPath());
           fileInfo.setIsUseSourcePath(false);
         }
       }
@@ -463,6 +644,16 @@ public class CopyUtils {
     String[] subDirs = fileInfo.getSubDir().split(Path.SEPARATOR);
     Path destination = destRoot;
     for (String subDir: subDirs) {
+      if (subDir.startsWith(AcidUtils.BASE_PREFIX)) {
+        AcidUtils.ParsedBaseLight pb = AcidUtils.ParsedBase.parseBase(new Path(subDir));
+        subDir = pb.getVisibilityTxnId() > 0 ? AcidUtils.baseDir(pb.getWriteId()) : subDir;
+      } else if (subDir.startsWith(AcidUtils.DELTA_PREFIX)) {
+        AcidUtils.ParsedDeltaLight pdl = AcidUtils.ParsedDeltaLight.parse(new Path(subDir));
+        subDir = pdl.getVisibilityTxnId() > 0 ? AcidUtils.deltaSubdir(pdl.getMinWriteId(), pdl.getMaxWriteId()) : subDir;
+      } else if (subDir.startsWith(AcidUtils.DELETE_DELTA_PREFIX)) {
+        AcidUtils.ParsedDeltaLight pdl = AcidUtils.ParsedDeltaLight.parse(new Path(subDir));
+        subDir = pdl.getVisibilityTxnId() > 0 ? AcidUtils.deleteDeltaSubdir(pdl.getMinWriteId(), pdl.getMaxWriteId()) : subDir;
+      }
       destination = new Path(destination, subDir);
     }
     return destination;

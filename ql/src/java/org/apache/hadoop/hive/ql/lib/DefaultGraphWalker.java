@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.lib;
@@ -36,7 +37,7 @@ import org.apache.hadoop.hive.ql.parse.SemanticException;
  * (dispatchedList) and a list of operators that are discovered but not yet
  * dispatched
  */
-public class DefaultGraphWalker implements GraphWalker {
+public class DefaultGraphWalker implements SemanticGraphWalker {
 
   /**
    * opStack keeps the nodes that have been visited, but have not been
@@ -55,7 +56,7 @@ public class DefaultGraphWalker implements GraphWalker {
    */
   protected final List<Node> toWalk = new ArrayList<Node>();
   protected final IdentityHashMap<Node, Object> retMap = new  IdentityHashMap<Node, Object>();
-  protected final Dispatcher dispatcher;
+  protected final SemanticDispatcher dispatcher;
 
   /**
    * Constructor.
@@ -63,7 +64,7 @@ public class DefaultGraphWalker implements GraphWalker {
    * @param disp
    *          dispatcher to call for each op encountered
    */
-  public DefaultGraphWalker(Dispatcher disp) {
+  public DefaultGraphWalker(SemanticDispatcher disp) {
     dispatcher = disp;
     opStack = new Stack<Node>();
     opQueue = new LinkedList<Node>();
@@ -164,9 +165,20 @@ public class DefaultGraphWalker implements GraphWalker {
 
       // Add a single child and restart the loop
       for (Node childNode : node.getChildren()) {
-        if (!getDispatchedList().contains(childNode)) {
-          opStack.push(childNode);
+        // skip if already dispatched
+        if (getDispatchedList().contains(childNode)) {
+          continue;
+        }
+
+        boolean hasChildren = childNode.getChildren() != null;
+        opStack.push(childNode);
+        if (hasChildren) {
+          // exit loop to process child's children
           break;
+        } else { // no children - safe to dispatch in-line
+          dispatch(childNode, opStack);
+          opQueue.add(childNode);
+          opStack.pop();
         }
       }
     } // end while

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules;
 
@@ -82,7 +83,7 @@ public class HiveRelColumnsAlignment implements ReflectiveVisitor {
 
   /**
    * Execute the logic in this class. In particular, make a top-down traversal of the tree
-   * and annotate and recreate appropiate operators.
+   * and annotate and recreate appropriate operators.
    */
   public RelNode align(RelNode root) {
     final RelNode newRoot = dispatchAlign(root, ImmutableList.<RelFieldCollation>of());
@@ -222,7 +223,7 @@ public class HiveRelColumnsAlignment implements ReflectiveVisitor {
   public RelNode align(Project rel, List<RelFieldCollation> collations) {
     // 1) We extract the collations indices
     boolean containsWindowing = false;
-    for (RexNode childExp : rel.getChildExps()) {
+    for (RexNode childExp : rel.getProjects()) {
       if (childExp instanceof RexOver) {
         // TODO: support propagation for partitioning/ordering in windowing
         containsWindowing = true;
@@ -232,7 +233,7 @@ public class HiveRelColumnsAlignment implements ReflectiveVisitor {
     ImmutableList.Builder<RelFieldCollation> propagateCollations = ImmutableList.builder();
     if (!containsWindowing) {
       for (RelFieldCollation c : collations) {
-        RexNode rexNode = rel.getChildExps().get(c.getFieldIndex());
+        RexNode rexNode = rel.getProjects().get(c.getFieldIndex());
         if (rexNode instanceof RexInputRef) {
           int newIdx = ((RexInputRef) rexNode).getIndex();
           propagateCollations.add(c.copy((newIdx)));

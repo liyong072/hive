@@ -9,23 +9,32 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf;
 
-import junit.framework.TestCase;
+
 
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertEquals;
+import org.junit.Test;
 
-public class TestUDFCrc32 extends TestCase {
+/**
+ * TestUDFCrc32.
+ */
+public class TestUDFCrc32 {
 
+  @Test
   public void testCrc32Str() throws HiveException {
     UDFCrc32 udf = new UDFCrc32();
 
@@ -38,6 +47,7 @@ public class TestUDFCrc32 extends TestCase {
     runAndVerifyStr(null, null, udf);
   }
 
+  @Test
   public void testCrc32Bin() throws HiveException {
     UDFCrc32 udf = new UDFCrc32();
 

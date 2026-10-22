@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf;
@@ -30,6 +31,7 @@ import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorUDFYearTimestamp;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
 import org.apache.hadoop.hive.ql.udf.generic.NDV;
+import org.apache.hadoop.hive.ql.util.DateTimeMath;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorConverters;
 import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
@@ -37,7 +39,6 @@ import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectIn
 import org.apache.hadoop.io.IntWritable;
 
 import java.util.Calendar;
-import java.util.TimeZone;
 
 /**
  * UDFYear.
@@ -60,7 +61,7 @@ public class UDFYear extends GenericUDF {
   private transient PrimitiveObjectInspector.PrimitiveCategory[] inputTypes = new PrimitiveObjectInspector.PrimitiveCategory[1];
   private final IntWritable output = new IntWritable();
 
-  private final Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+  private final Calendar calendar = DateTimeMath.getProlepticGregorianCalendarUTC();
 
 
   @Override
@@ -113,7 +114,7 @@ public class UDFYear extends GenericUDF {
       case TIMESTAMP:
       case TIMESTAMPLOCALTZ:
       case VOID:
-        Date date = getDateValue(arguments, 0, inputTypes, converters);
+        Date date = getDateValue(arguments, 0, converters);
         if (date == null) {
           return null;
         }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.tez;
@@ -85,9 +86,7 @@ public class LlapObjectCache implements org.apache.hadoop.hive.ql.exec.ObjectCac
     try {
       value = (T) registry.getIfPresent(key);
       if (value != null) {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Found " + key + " in cache");
-        }
+        LOG.debug("Found {} in cache", key);
         return value;
       }
 
@@ -107,9 +106,7 @@ public class LlapObjectCache implements org.apache.hadoop.hive.ql.exec.ObjectCac
       try {
         value = (T) registry.getIfPresent(key);
         if (value != null) {
-          if (LOG.isDebugEnabled()) {
-            LOG.debug("Found " + key + " in cache");
-          }
+          LOG.debug("Found {} in cache", key);
           return value;
         }
       } finally {
@@ -124,10 +121,7 @@ public class LlapObjectCache implements org.apache.hadoop.hive.ql.exec.ObjectCac
 
       lock.lock();
       try {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Caching new object for key: " + key);
-        }
-
+        LOG.debug("Caching new object for key: {}", key);
         registry.put(key, value);
         locks.remove(key);
       } finally {
@@ -151,9 +145,7 @@ public class LlapObjectCache implements org.apache.hadoop.hive.ql.exec.ObjectCac
 
   @Override
   public void remove(String key) {
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Removing key: " + key);
-    }
+    LOG.debug("Removing key: {}", key);
     registry.invalidate(key);
   }
 }

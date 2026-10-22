@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.lazybinary;
 
@@ -50,8 +51,8 @@ public abstract class LazyBinaryNonPrimitive<OI extends ObjectInspector>
     if (null == bytes) {
       throw new RuntimeException("bytes cannot be null!");
     }
-    if (length <= 0) {
-      throw new RuntimeException("length should be positive!");
+    if (length < 0) {
+      throw new RuntimeException("length should be non-negative!");
     }
     this.bytes = bytes;
     this.start = start;

@@ -9,16 +9,23 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite;
 
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.rel.type.RelDataTypeFactoryImpl;
 import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.type.SqlTypeUtil;
+
+import static org.apache.hadoop.hive.ql.udf.generic.GenericUDAFSum.SUM_RESULT_PRECISION_INCREASE;
 
 public class HiveTypeSystemImpl extends RelDataTypeSystemImpl {
   // TODO: This should come from type system; Currently there is no definition
@@ -37,12 +44,19 @@ public class HiveTypeSystemImpl extends RelDataTypeSystemImpl {
   private static final int MAX_BINARY_PRECISION      = Integer.MAX_VALUE;
   private static final int MAX_TIMESTAMP_PRECISION   = 9;
   private static final int MAX_TIMESTAMP_WITH_LOCAL_TIME_ZONE_PRECISION = 15; // Up to nanos
+  private static final int DEFAULT_TINYINT_PRECISION  = 3;
+  private static final int DEFAULT_SMALLINT_PRECISION = 5;
+  private static final int DEFAULT_INTEGER_PRECISION  = 10;
+  private static final int DEFAULT_BIGINT_PRECISION   = 19;
+  private static final int DEFAULT_FLOAT_PRECISION    = 7;
+  private static final int DEFAULT_DOUBLE_PRECISION   = 15;
+
 
   @Override
   public int getMaxScale(SqlTypeName typeName) {
     switch (typeName) {
     case DECIMAL:
-      return getMaxNumericScale();
+      return MAX_DECIMAL_SCALE;
     case INTERVAL_YEAR:
     case INTERVAL_MONTH:
     case INTERVAL_YEAR_MONTH:
@@ -69,6 +83,7 @@ public class HiveTypeSystemImpl extends RelDataTypeSystemImpl {
     // Binary doesn't need any sizes; Decimal has the default of 10.
     case BINARY:
     case VARBINARY:
+      return RelDataType.PRECISION_NOT_SPECIFIED;
     case TIME:
     case TIMESTAMP:
     case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
@@ -93,6 +108,18 @@ public class HiveTypeSystemImpl extends RelDataTypeSystemImpl {
     case INTERVAL_MINUTE_SECOND:
     case INTERVAL_SECOND:
       return SqlTypeName.DEFAULT_INTERVAL_START_PRECISION;
+    case TINYINT:
+      return DEFAULT_TINYINT_PRECISION;
+    case SMALLINT:
+      return DEFAULT_SMALLINT_PRECISION;
+    case INTEGER:
+      return DEFAULT_INTEGER_PRECISION;
+    case BIGINT:
+      return DEFAULT_BIGINT_PRECISION;
+    case FLOAT:
+      return DEFAULT_FLOAT_PRECISION;
+    case DOUBLE:
+      return DEFAULT_DOUBLE_PRECISION;
     default:
       return -1;
     }
@@ -102,7 +129,7 @@ public class HiveTypeSystemImpl extends RelDataTypeSystemImpl {
   public int getMaxPrecision(SqlTypeName typeName) {
     switch (typeName) {
     case DECIMAL:
-      return getMaxNumericPrecision();
+      return MAX_DECIMAL_PRECISION;
     case VARCHAR:
     case CHAR:
       return MAX_CHAR_PRECISION;
@@ -129,23 +156,65 @@ public class HiveTypeSystemImpl extends RelDataTypeSystemImpl {
     case INTERVAL_SECOND:
       return SqlTypeName.MAX_INTERVAL_START_PRECISION;
     default:
-      return -1;
+      return getDefaultPrecision(typeName);
     }
-  }
-
-  @Override
-  public int getMaxNumericScale() {
-    return MAX_DECIMAL_SCALE;
-  }
-
-  @Override
-  public int getMaxNumericPrecision() {
-    return MAX_DECIMAL_PRECISION;
   }
 
   @Override
   public boolean isSchemaCaseSensitive() {
     return false;
+  }
+
+  @Override
+  public RelDataType deriveSumType(RelDataTypeFactory typeFactory,
+      RelDataType argumentType) {
+    switch (argumentType.getSqlTypeName()) {
+      case DECIMAL:
+        // In Hive, SUM aggregate on decimal column will add 10 to compute
+        // the output precision; see
+        // GenericUDAFSum.GenericUDAFSumHiveDecimal#getOutputDecimalTypeInfoForSum
+        return typeFactory.createTypeWithNullability(
+            typeFactory.createSqlType(
+                SqlTypeName.DECIMAL,
+                Math.min(MAX_DECIMAL_PRECISION, argumentType.getPrecision() + SUM_RESULT_PRECISION_INCREASE),
+                argumentType.getScale()), argumentType.isNullable());
+    }
+    return argumentType;
+  }
+
+  /**
+   * Overridden because CALCITE-6464 changed the default behavior to match MS-SQL-Server-style algorithm,
+   * which can cause a drop in the scale computation, hence a precision loss in certain cases.
+   * We override this method to keep the "old behavior" (pre-CALCITE-6464); an alternative could be not
+   * overridding it (and keep the new Calcite default MS-SQL-style decimal-divide semantics), but that
+   * would lead to "regressions" (precision loss) and would require test adjustments.
+   */
+  @Override
+  public RelDataType deriveDecimalDivideType(RelDataTypeFactory typeFactory,
+      RelDataType type1, RelDataType type2) {
+    if (SqlTypeUtil.isExactNumeric(type1) && SqlTypeUtil.isExactNumeric(type2) &&
+        (SqlTypeUtil.isDecimal(type1) || SqlTypeUtil.isDecimal(type2))) {
+      // Java numeric will always have invalid precision/scale,
+      // use its default decimal precision/scale instead.
+      type1 = RelDataTypeFactoryImpl.isJavaType(type1) ? typeFactory.decimalOf(type1) : type1;
+      type2 = RelDataTypeFactoryImpl.isJavaType(type2) ? typeFactory.decimalOf(type2) : type2;
+      int p1 = type1.getPrecision();
+      int p2 = type2.getPrecision();
+      int s1 = type1.getScale();
+      int s2 = type2.getScale();
+
+      final int maxNumericPrecision = getMaxNumericPrecision();
+      int dout = Math.min(p1 - s1 + s2, maxNumericPrecision);
+      int scale = Math.max(6, s1 + p2 + 1);
+      scale = Math.min(scale, maxNumericPrecision - dout);
+      scale = Math.min(scale, getMaxNumericScale());
+
+      int precision = dout + scale;
+      assert precision <= maxNumericPrecision;
+      assert precision > 0;
+      return typeFactory.createSqlType(SqlTypeName.DECIMAL, precision, scale);
+    }
+    return null;
   }
 
 }

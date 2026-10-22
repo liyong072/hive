@@ -9,21 +9,43 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse;
 
-import org.apache.hadoop.hive.ql.parse.WarehouseInstance;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.LocatedFileStatus;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.RemoteIterator;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.ql.exec.repl.DirCopyWork;
+import org.apache.hadoop.hive.ql.exec.repl.util.ReplUtils;
+import org.junit.Assert;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 
 /**
  * ReplicationTestUtils - static helper functions for replication test
  */
 public class ReplicationTestUtils {
+  private static final Logger LOG = LoggerFactory.getLogger(ReplicationTestUtils.class);
 
   public enum OperationType {
     REPL_TEST_ACID_INSERT, REPL_TEST_ACID_INSERT_SELECT, REPL_TEST_ACID_CTAS,
@@ -133,7 +155,7 @@ public class ReplicationTestUtils {
   public static void appendCreateAsSelect(WarehouseInstance primary, String primaryDbName, String primaryDbNameExtra,
                                     String tableName, String tableNameMM,
                                     List<String> selectStmtList, List<String[]> expectedValues) throws Throwable {
-     String tableNameCTAS = tableName + "_CTAS";
+    String tableNameCTAS = tableName + "_CTAS";
     String tableNameCTASMM = tableName + "_CTASMM";
 
     insertRecords(primary, primaryDbName, primaryDbNameExtra,
@@ -252,12 +274,12 @@ public class ReplicationTestUtils {
                                                               String primaryDbName, String replicatedDbName,
                                                               List<String> selectStmtList,
                                                   List<String[]> expectedValues, String lastReplId) throws Throwable {
-    WarehouseInstance.Tuple incrementalDump = primary.dump(primaryDbName, lastReplId);
-    replica.loadWithoutExplain(replicatedDbName, incrementalDump.dumpLocation)
+    WarehouseInstance.Tuple incrementalDump = primary.dump(primaryDbName);
+    replica.loadWithoutExplain(replicatedDbName, primaryDbName)
             .run("REPL STATUS " + replicatedDbName).verifyResult(incrementalDump.lastReplicationId);
     verifyResultsInReplica(replica, replicatedDbName, selectStmtList, expectedValues);
 
-    replica.loadWithoutExplain(replicatedDbName, incrementalDump.dumpLocation)
+    replica.loadWithoutExplain(replicatedDbName, primaryDbName)
             .run("REPL STATUS " + replicatedDbName).verifyResult(incrementalDump.lastReplicationId);
     verifyResultsInReplica(replica, replicatedDbName, selectStmtList, expectedValues);
     return incrementalDump;
@@ -305,7 +327,7 @@ public class ReplicationTestUtils {
             .run(txnStrCommit);
   }
 
-  private static void insertIntoDB(WarehouseInstance primary, String dbName, String tableName,
+  public static void insertIntoDB(WarehouseInstance primary, String dbName, String tableName,
                                    String tableProperty, String storageType, String[] resultArray)
           throws Throwable {
     insertIntoDB(primary, dbName, tableName, tableProperty, storageType, resultArray, false);
@@ -388,8 +410,10 @@ public class ReplicationTestUtils {
         .run("import table " + tableNameOp + "_nopart from " + exportPathNoPart);
         break;
       case REPL_TEST_ACID_CTAS:
-        primary.run("create table " + tableNameOp + " as select * from " + tableName)
-                .run("create table " + tableNameOp + "_nopart as select * from " + tableName + "_nopart");
+        primary.run("create table " + tableNameOp + " partitioned by (load_date) " + tableStorage
+                            + " tblproperties (" + tableProperty + ") as select * from " + tableName)
+                .run("create table " + tableNameOp + "_nopart " + tableStorage
+                            + " tblproperties (" + tableProperty + ") as select * from " + tableName + "_nopart");
         break;
       case REPL_TEST_ACID_INSERT_LOADLOCAL:
         // For simplicity setting key and value as same value
@@ -485,5 +509,97 @@ public class ReplicationTestUtils {
         .run("select last_update_user from " + tableName + " order by last_update_user")
         .verifyResults(new String[] {"creation", "creation", "creation", "creation", "creation",
                 "creation", "creation", "merge_update", "merge_insert", "merge_insert"});
+  }
+
+  public static List<String> includeExternalTableClause(boolean enable) {
+    List<String> withClause = new ArrayList<>();
+    withClause.add("'" + HiveConf.ConfVars.REPL_INCLUDE_EXTERNAL_TABLES.varname + "'='" + enable + "'");
+    withClause.add("'distcp.options.pugpb'=''");
+    return withClause;
+  }
+
+  public static List<String> externalTableWithClause(List<String> externalTableBasePathWithClause, Boolean bootstrap,
+                                                     Boolean includeExtTbl) {
+    List<String> withClause = new ArrayList<>(externalTableBasePathWithClause);
+    if (bootstrap != null) {
+      withClause.add("'" + HiveConf.ConfVars.REPL_BOOTSTRAP_EXTERNAL_TABLES + "'='" + Boolean.toString(bootstrap)
+              + "'");
+    }
+    if (includeExtTbl != null) {
+      withClause.add("'" + HiveConf.ConfVars.REPL_INCLUDE_EXTERNAL_TABLES + "'='" + Boolean.toString(includeExtTbl)
+              + "'");
+    }
+    return withClause;
+  }
+
+  public static void assertFalseExternalFileList(WarehouseInstance warehouseInstance,
+                                                 String dumpLocation) throws IOException {
+    DistributedFileSystem fileSystem = warehouseInstance.miniDFSCluster.getFileSystem();
+    Path hivePath = new Path(dumpLocation, ReplUtils.REPL_HIVE_BASE_DIR);
+    Path externalTblFileList = new Path(hivePath, EximUtil.FILE_LIST_EXTERNAL);
+    Assert.assertFalse(fileSystem.exists(externalTblFileList));
+  }
+
+  public static void assertExternalFileList(List<String> expected, String dumplocation,
+                                            WarehouseInstance warehouseInstance) throws IOException {
+    Path hivePath = new Path(dumplocation, ReplUtils.REPL_HIVE_BASE_DIR);
+    Path externalTableFileList = new Path(hivePath, EximUtil.FILE_LIST_EXTERNAL);
+    DistributedFileSystem fileSystem = warehouseInstance.miniDFSCluster.getFileSystem();
+    Assert.assertTrue(fileSystem.exists(externalTableFileList));
+    InputStream inputStream = fileSystem.open(externalTableFileList);
+    BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+    Set<String> tableNames = new HashSet<>();
+    for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+      String[] components = line.split(DirCopyWork.URI_SEPARATOR);
+      Assert.assertEquals("The file should have sourcelocation#targetlocation#tblName#copymode", 5,
+          components.length);
+      tableNames.add(components[2]);
+      Assert.assertTrue(components[0].length() > 0);
+      Assert.assertTrue(components[1].length() > 0);
+      Assert.assertTrue(components[2].length() > 0);
+      Assert.assertTrue(components[3].length() > 0);
+    }
+    Assert.assertTrue(tableNames.containsAll(expected));
+    reader.close();
+  }
+
+  public static void findTxnsFromDump(WarehouseInstance.Tuple tuple, HiveConf conf,
+                                      List<Path> openTxns, List<Path> commitTxns, List<Path> abortTxns) throws IOException {
+    Path dumpRoot = new Path(tuple.dumpLocation);
+    FileSystem fs = FileSystem.get(dumpRoot.toUri(), conf);
+
+    LOG.info("Scanning for event files: " + dumpRoot.toString());
+    RemoteIterator<LocatedFileStatus> files = fs.listFiles(dumpRoot, true);
+    while(files.hasNext()) {
+      LocatedFileStatus status = files.next();
+
+      if (!status.getPath().getName().equals("_dumpmetadata")) {
+        continue;
+      }
+
+      String event = getEvent(fs, status.getPath());
+      if (event.equals("EVENT_OPEN_TXN")) {
+        openTxns.add(status.getPath());
+      } else if (event.equals("EVENT_COMMIT_TXN")) {
+        commitTxns.add(status.getPath());
+      } else if (event.equals("EVENT_ABORT_TXN")) {
+        abortTxns.add(status.getPath());
+      }
+    }
+  }
+
+  private static String getEvent(FileSystem fs, Path path) throws IOException {
+    try (FSDataInputStream fdis = fs.open(path);
+         BufferedReader br = new BufferedReader(new InputStreamReader(fdis))) {
+      // Assumes event is at least on first line.
+      String line = br.readLine();
+      Assert.assertNotNull(line);
+      // Assumes event is present.
+      int index = line.indexOf("\t");
+      Assert.assertNotEquals(-1, index);
+      String event = line.substring(0, index);
+      LOG.info("Reading event file: " + path.toString() + " : " + event + ", raw: " + line);
+      return event;
+    }
   }
 }

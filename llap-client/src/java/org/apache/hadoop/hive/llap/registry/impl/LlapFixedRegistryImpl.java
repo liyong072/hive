@@ -1,15 +1,20 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.llap.registry.impl;
 
@@ -29,10 +34,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.llap.LlapUtil;
 import org.apache.hadoop.hive.llap.registry.LlapServiceInstance;
 import org.apache.hadoop.hive.llap.registry.LlapServiceInstanceSet;
 import org.apache.hadoop.hive.llap.registry.ServiceRegistry;
@@ -45,7 +53,7 @@ import org.apache.hadoop.yarn.api.records.Resource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class LlapFixedRegistryImpl implements ServiceRegistry {
+public class LlapFixedRegistryImpl implements ServiceRegistry<LlapServiceInstance> {
 
   private static final Logger LOG = LoggerFactory.getLogger(LlapFixedRegistryImpl.class);
 
@@ -57,7 +65,9 @@ public class LlapFixedRegistryImpl implements ServiceRegistry {
   private final int shuffle;
   private final int mngPort;
   private final int webPort;
+  private Configuration conf;
   private final int outputFormatPort;
+  private final int externalClientsRpcPort;
   private final String webScheme;
   private final String[] hosts;
   private final int memory;
@@ -73,9 +83,10 @@ public class LlapFixedRegistryImpl implements ServiceRegistry {
     this.resolveHosts = conf.getBoolean(FIXED_REGISTRY_RESOLVE_HOST_NAMES, true);
     this.mngPort = HiveConf.getIntVar(conf, ConfVars.LLAP_MANAGEMENT_RPC_PORT);
     this.outputFormatPort = HiveConf.getIntVar(conf, ConfVars.LLAP_DAEMON_OUTPUT_SERVICE_PORT);
-
+    this.externalClientsRpcPort = HiveConf.getIntVar(conf, ConfVars.LLAP_EXTERNAL_CLIENT_CLOUD_RPC_PORT);
 
     this.webPort = HiveConf.getIntVar(conf, ConfVars.LLAP_DAEMON_WEB_PORT);
+    this.conf = conf;
     boolean isSsl = HiveConf.getBoolVar(conf, ConfVars.LLAP_DAEMON_WEB_SSL);
     this.webScheme = isSsl ? "https" : "http";
 
@@ -112,12 +123,21 @@ public class LlapFixedRegistryImpl implements ServiceRegistry {
     // nothing to unregister
   }
 
+  @Override
+  public void updateRegistration(Iterable<Map.Entry<String, String>> attributes) throws IOException {
+    throw new UnsupportedOperationException();
+  }
+
   public static String getWorkerIdentity(String host) {
     // trigger clean errors for anyone who mixes up identity with hosts
     return "host-" + host;
   }
 
-  private final class FixedServiceInstance implements LlapServiceInstance {
+  /**
+   * A single instance in an Llap Service.
+   */
+  @VisibleForTesting
+  public final class FixedServiceInstance implements LlapServiceInstance {
 
     private final String host;
     private final String serviceAddress;
@@ -180,6 +200,18 @@ public class LlapFixedRegistryImpl implements ServiceRegistry {
     }
 
     @Override
+    public String getExternalHostname() {
+      ensureCloudEnv(LlapFixedRegistryImpl.this.conf);
+      return LlapUtil.getPublicHostname();
+    }
+
+    @Override
+    public int getExternalClientsRpcPort() {
+      ensureCloudEnv(LlapFixedRegistryImpl.this.conf);
+      return LlapFixedRegistryImpl.this.externalClientsRpcPort;
+    }
+
+    @Override
     public String getServicesAddress() {
       return serviceAddress;
     }
@@ -230,7 +262,7 @@ public class LlapFixedRegistryImpl implements ServiceRegistry {
       Collections.sort(list, new Comparator<LlapServiceInstance>() {
         @Override
         public int compare(LlapServiceInstance o1, LlapServiceInstance o2) {
-          return o2.getWorkerIdentity().compareTo(o2.getWorkerIdentity());
+          return o1.getWorkerIdentity().compareTo(o2.getWorkerIdentity());
         }
       });
       return list;

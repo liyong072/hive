@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -67,6 +68,13 @@ public class KeyWrapperFactory {
   class ListKeyWrapper extends KeyWrapper {
     int hashcode = -1;
     Object[] keys;
+    // true means this instance is a copy of another ListKeyWrapper instance. It was created using the copyKey() and the
+    //   keys array contains StandardObjects created by ObjectInspectorUtils.copyToStandardObject()
+    //   currentStructEqualComparer should be used for equality check
+    // false means this instance was created by the KeyWrapperFactory.getKeyWrapper() method.
+    //   newKeyStructEqualComparer should be used for equality check
+    private final boolean isCopy;
+
     @Override
     public String toString() {
       return "ListKeyWrapper [keys=" + Arrays.toString(keys) + "]";
@@ -86,6 +94,7 @@ public class KeyWrapperFactory {
       this.hashcode = hashcode;
       keys = copiedKeys;
       setEqualComparer(isCopy);
+      this.isCopy = isCopy;
     }
 
     private void setEqualComparer(boolean copy) {
@@ -148,6 +157,11 @@ public class KeyWrapperFactory {
     @Override
     public Object[] getKeyArray() {
       return keys;
+    }
+
+    @Override
+    public boolean isCopy() {
+      return isCopy;
     }
 
     private Object[] deepCopyElements(Object[] keys,
@@ -256,6 +270,11 @@ public class KeyWrapperFactory {
     public Object[] getKeyArray() {
       singleEleArray[0] = key;
       return singleEleArray;
+    }
+
+    @Override
+    public boolean isCopy() {
+      return isCopy;
     }
   }
 }

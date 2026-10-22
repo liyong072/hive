@@ -9,18 +9,21 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.cache;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 
+import org.apache.hadoop.hive.llap.ProactiveEviction;
 import org.apache.hadoop.hive.llap.io.api.impl.LlapIoImpl;
 import org.apache.hadoop.hive.llap.metrics.LlapDaemonCacheMetrics;
 
@@ -64,6 +67,15 @@ public class LowLevelCacheMemoryManager implements MemoryManager {
     if (result) return;
     // Can only happen if there's no evictor, or if thread is interrupted.
     throw new ReserveFailedException(isStopped);
+  }
+
+  @Override public long evictMemory(long memoryToEvict) {
+    if (evictor == null) {
+      return 0;
+    }
+    long evicted = evictor.evictSomeBlocks(memoryToEvict);
+    releaseMemory(evicted);
+    return evicted;
   }
 
   @VisibleForTesting
@@ -153,5 +165,18 @@ public class LowLevelCacheMemoryManager implements MemoryManager {
     } while (!usedMemory.compareAndSet(usedMem, usedMem - evicted));
     metrics.incrCacheCapacityUsed(-evicted);
     return evicted;
+  }
+
+  public void notifyProactiveEvictionMark() {
+    if (evictor != null) {
+      if (evictor instanceof ProactiveEvictingCachePolicy) {
+        ((ProactiveEvictingCachePolicy) evictor).notifyProactiveEvictionMark();
+      }
+    }
+  }
+
+  @VisibleForTesting
+  public long getCurrentUsedSize() {
+    return usedMemory.get();
   }
 }

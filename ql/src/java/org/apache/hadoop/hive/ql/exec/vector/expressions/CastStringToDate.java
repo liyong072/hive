@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -36,20 +37,12 @@ import java.util.Arrays;
 public class CastStringToDate extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private final int inputColumn;
-
-  private transient final DateParser dateParser = new DateParser();
-
   public CastStringToDate() {
     super();
-
-    // Dummy final assignments.
-    inputColumn = -1;
   }
 
   public CastStringToDate(int inputColumn, int outputColumnNum) {
-    super(outputColumnNum);
-    this.inputColumn = inputColumn;
+    super(inputColumn, outputColumnNum);
   }
 
   @Override
@@ -59,7 +52,7 @@ public class CastStringToDate extends VectorExpression {
       super.evaluateChildren(batch);
     }
 
-    BytesColumnVector inV = (BytesColumnVector) batch.cols[inputColumn];
+    BytesColumnVector inV = (BytesColumnVector) batch.cols[inputColumnNum[0]];
     int[] sel = batch.selected;
     int n = batch.size;
     LongColumnVector outputColVector = (LongColumnVector) batch.cols[outputColumnNum];
@@ -151,14 +144,17 @@ public class CastStringToDate extends VectorExpression {
     }
   }
 
-  private void evaluate(LongColumnVector outputColVector, BytesColumnVector inV, int i) {
+  protected void evaluate(LongColumnVector outputColVector, BytesColumnVector inV, int i) {
     String dateString = new String(inV.vector[i], inV.start[i], inV.length[i], StandardCharsets.UTF_8);
-    Date hDate = new Date();
-    if (dateParser.parseDate(dateString, hDate)) {
+    Date hDate = DateParser.parseDate(dateString);
+    if (hDate != null) {
       outputColVector.vector[i] = DateWritableV2.dateToDays(hDate);
       return;
     }
+    setNull(outputColVector, i);
+  }
 
+  protected void setNull(LongColumnVector outputColVector, int i) {
     outputColVector.vector[i] = 1;
     outputColVector.isNull[i] = true;
     outputColVector.noNulls = false;
@@ -166,7 +162,7 @@ public class CastStringToDate extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return getColumnParamString(0, inputColumn);
+    return getColumnParamString(0, inputColumnNum[0]);
   }
 
   @Override

@@ -20,7 +20,7 @@ package org.apache.hive.hcatalog.data.schema;
 
 import java.io.Serializable;
 
-import org.apache.commons.lang.builder.ToStringBuilder;
+import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.hadoop.hive.common.classification.InterfaceAudience;
 import org.apache.hadoop.hive.common.classification.InterfaceStability;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -264,7 +264,7 @@ similarly for mapKeyType/mapKeyTypeInfo */
   public HCatFieldSchema(String fieldName, Type type, Type mapKeyType, HCatSchema mapValueSchema, String comment) throws HCatException {
     assertTypeInCategory(type, Category.MAP, fieldName);
     //Hive only supports primitive map keys: 
-    //https://cwiki.apache.org/confluence/display/Hive/LanguageManual+Types#LanguageManualTypes-ComplexTypes
+    // https://hive.apache.org/docs/latest/language/languagemanual-types/#complex-types
     assertTypeInCategory(mapKeyType, Category.PRIMITIVE, fieldName);
     this.fieldName = fieldName;
     this.type = Type.MAP;

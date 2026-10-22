@@ -6,15 +6,22 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.jdbc;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.net.URL;
@@ -22,20 +29,16 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.HashSet;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hive.jdbc.miniHS2.MiniHS2;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-
 import org.junit.Test;
-
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 public class TestRestrictedList {
   private static MiniHS2 miniHS2 = null;
@@ -46,16 +49,14 @@ public class TestRestrictedList {
 
   @BeforeClass
   public static void startServices() throws Exception {
-    Class.forName(MiniHS2.getJdbcDriverName());
-
     oldHiveSiteURL = HiveConf.getHiveSiteLocation();
     oldHiveMetastoreSiteURL = HiveConf.getMetastoreSiteLocation();
     String confDir = "../../data/conf/rlist/";
     HiveConf.setHiveSiteLocation(
         new URL("file://" + new File(confDir).toURI().getPath() + "/hive-site.xml"));
     System.out.println("Setting hive-site: " + HiveConf.getHiveSiteLocation());
-    HiveConf.setHivemetastoreSiteUrl(
-        new URL("file://" + new File(confDir).toURI().getPath() + "/hivemetastore-site.xml"));
+    HiveConf.setMetastoreSiteLocation(
+        new URL("file://" + new File(confDir).toURI().getPath() + "/metastore-site.xml"));
     System.out.println("Setting hive-site: " + HiveConf.getHiveSiteLocation());
 
     hiveConf = new HiveConf();
@@ -64,7 +65,9 @@ public class TestRestrictedList {
     hiveConf.setBoolVar(ConfVars.HIVE_SUPPORT_CONCURRENCY, false);
 
     miniHS2 = new MiniHS2.Builder().withMiniMR().withRemoteMetastore().withConf(hiveConf).build();
-    miniHS2.start(new HashMap<String, String>());
+    Map<String, String> confOverlay = new HashMap<>();
+    confOverlay.put(ConfVars.HIVE_SCHEDULED_QUERIES_EXECUTOR_ENABLED.varname, "false");
+    miniHS2.start(confOverlay);
 
     // Add the parameter here if it cannot change at runtime
     addToExpectedRestrictedMap("hive.conf.restricted.list");
@@ -74,6 +77,7 @@ public class TestRestrictedList {
     addToExpectedRestrictedMap("hive.security.metastore.authenticator.manager");
     addToExpectedRestrictedMap("hive.users.in.admin.role");
     addToExpectedRestrictedMap("hive.server2.xsrf.filter.enabled");
+    addToExpectedRestrictedMap("hive.server2.csrf.filter.enabled");
     addToExpectedRestrictedMap("hive.security.authorization.enabled");
     addToExpectedRestrictedMap("hive.distcp.privileged.doAs");
     addToExpectedRestrictedMap("hive.server2.authentication.ldap.baseDN");
@@ -87,28 +91,30 @@ public class TestRestrictedList {
     addToExpectedRestrictedMap("hive.server2.authentication.ldap.userMembershipKey");
     addToExpectedRestrictedMap("hive.server2.authentication.ldap.groupClassKey");
     addToExpectedRestrictedMap("hive.server2.authentication.ldap.customLDAPQuery");
-    addToExpectedRestrictedMap("hive.spark.client.channel.log.level");
-    addToExpectedRestrictedMap("hive.spark.client.secret.bits");
-    addToExpectedRestrictedMap("hive.spark.client.rpc.server.address");
-    addToExpectedRestrictedMap("hive.spark.client.rpc.server.port");
-    addToExpectedRestrictedMap("hive.spark.client.rpc.sasl.mechanisms");
-    addToExpectedRestrictedMap("bonecp.test");
-    addToExpectedRestrictedMap("hive.druid.broker.address.default");
-    addToExpectedRestrictedMap("hive.druid.coordinator.address.default");
+    addToExpectedRestrictedMap("hive.server2.service.users");
+    addToExpectedRestrictedMap("hive.server2.graceful.stop.timeout");
+    addToExpectedRestrictedMap("hive.query.max.length");
     addToExpectedRestrictedMap("hikaricp.test");
     addToExpectedRestrictedMap("hadoop.bin.path");
     addToExpectedRestrictedMap("yarn.bin.path");
-    addToExpectedRestrictedMap("hive.spark.client.connect.timeout");
-    addToExpectedRestrictedMap("hive.spark.client.server.connect.timeout");
-    addToExpectedRestrictedMap("hive.spark.client.rpc.max.size");
-    addToExpectedRestrictedMap("hive.spark.client.rpc.threads");
     addToExpectedRestrictedMap("_hive.local.session.path");
     addToExpectedRestrictedMap("_hive.tmp_table_space");
     addToExpectedRestrictedMap("_hive.hdfs.session.path");
-    addToExpectedRestrictedMap("hive.spark.client.rpc.server.address");
-    addToExpectedRestrictedMap("spark.home");
     addToExpectedRestrictedMap("hive.privilege.synchronizer.interval");
     addToExpectedRestrictedMap("hive.driver.parallel.compilation.global.limit");
+    addToExpectedRestrictedMap("hive.zookeeper.ssl.keystore.location");
+    addToExpectedRestrictedMap("hive.zookeeper.ssl.keystore.password");
+    addToExpectedRestrictedMap("hive.zookeeper.ssl.keystore.type");
+    addToExpectedRestrictedMap("hive.zookeeper.ssl.truststore.location");
+    addToExpectedRestrictedMap("hive.zookeeper.ssl.truststore.password");
+    addToExpectedRestrictedMap("hive.zookeeper.ssl.truststore.type");
+    addToExpectedRestrictedMap("hive.iceberg.allow.datafiles.in.table.location.only");
+    addToExpectedRestrictedMap("hive.hook.proto.base-directory");
+    addToExpectedRestrictedMap("hive.rewrite.data.policy");
+    addToExpectedRestrictedMap("hive.query.history.enabled");
+    addToExpectedRestrictedMap("hive.llap.cluster.routing.rules");
+
+    checkRestrictedListMatch();
   }
 
   @AfterClass
@@ -116,7 +122,7 @@ public class TestRestrictedList {
     if (miniHS2 != null && miniHS2.isStarted()) {
       miniHS2.stop();
     }
-    HiveConf.setHivemetastoreSiteUrl(oldHiveMetastoreSiteURL);
+    HiveConf.setMetastoreSiteLocation(oldHiveMetastoreSiteURL);
     HiveConf.setHiveSiteLocation(oldHiveSiteURL);
   }
 
@@ -124,8 +130,6 @@ public class TestRestrictedList {
   public void testRestrictedList() throws Exception {
     assertTrue("Test setup failed. MiniHS2 is not initialized",
         miniHS2 != null && miniHS2.isStarted());
-
-    checkRestrictedListMatch();
 
     try (Connection hs2Conn = DriverManager.getConnection(miniHS2.getJdbcURL(), "hive", "hive");
          Statement stmt = hs2Conn.createStatement();) {
@@ -146,8 +150,18 @@ public class TestRestrictedList {
     }
   }
 
+  @Test
+  public void testNotInRestrictedList() throws Exception {
+    assertFalse("Config hive.create.as.acid should not in RestrictedList",
+        expectedRestrictedMap.containsKey("hive.create.as.acid"));
+    assertFalse("Config hive.create.as.insert.only should not in RestrictedList",
+        expectedRestrictedMap.containsKey("hive.create.as.insert.only"));
+    assertFalse("Config hive.create.as.external.legacy should not in RestrictedList",
+        expectedRestrictedMap.containsKey("hive.create.as.external.legacy"));
+  }
+
   // This test will make sure that every entry in hive.conf.restricted.list, has a test here
-  private void checkRestrictedListMatch(){
+  private static void checkRestrictedListMatch(){
     HiveConf.ConfVars restrictedConfVar = HiveConf.getConfVars("hive.conf.restricted.list");
     String definedRestrictedListString = HiveConf.getVar(hiveConf, restrictedConfVar);
     Set<String> definedRestrictedSet = new HashSet<String>();

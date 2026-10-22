@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.security;
@@ -22,17 +23,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-import junit.framework.TestCase;
-
 import org.apache.hadoop.hive.cli.CliSessionState;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.MetaStoreTestUtils;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.Partition;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.Table;
-import org.apache.hadoop.hive.metastore.security.HadoopThriftAuthBridge;
 import org.apache.hadoop.hive.ql.DriverFactory;
 import org.apache.hadoop.hive.ql.IDriver;
 import org.apache.hadoop.hive.ql.security.DummyHiveMetastoreAuthorizationProvider.AuthCallContext;
@@ -40,20 +39,24 @@ import org.apache.hadoop.hive.ql.security.authorization.AuthorizationPreEventLis
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.junit.Assert;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import org.junit.Before;
+import org.junit.After;
+import org.junit.Test;
+
 /**
  * TestAuthorizationPreEventListener. Test case for
  * {@link org.apache.hadoop.hive.ql.security.authorization.AuthorizationPreEventListener} and
  * {@link org.apache.hadoop.hive.metastore.MetaStorePreEventListener}
  */
-public class TestAuthorizationPreEventListener extends TestCase {
+public class TestAuthorizationPreEventListener {
   private HiveConf clientHiveConf;
   private HiveMetaStoreClient msc;
   private IDriver driver;
 
-  @Override
-  protected void setUp() throws Exception {
-
-    super.setUp();
+  @Before
+  public void setUp() throws Exception {
 
     System.setProperty(HiveConf.ConfVars.METASTORE_PRE_EVENT_LISTENERS.varname,
         AuthorizationPreEventListener.class.getName());
@@ -64,14 +67,14 @@ public class TestAuthorizationPreEventListener extends TestCase {
 
     int port = MetaStoreTestUtils.startMetaStoreWithRetry();
 
-    clientHiveConf = new HiveConf(this.getClass());
+    clientHiveConf = new HiveConfForTest(this.getClass());
 
-    clientHiveConf.setVar(HiveConf.ConfVars.METASTOREURIS, "thrift://localhost:" + port);
-    clientHiveConf.setIntVar(HiveConf.ConfVars.METASTORETHRIFTCONNECTIONRETRIES, 3);
+    clientHiveConf.setVar(HiveConf.ConfVars.METASTORE_URIS, "thrift://localhost:" + port);
+    clientHiveConf.setIntVar(HiveConf.ConfVars.METASTORE_THRIFT_CONNECTION_RETRIES, 3);
     clientHiveConf.set(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname, "false");
 
-    clientHiveConf.set(HiveConf.ConfVars.PREEXECHOOKS.varname, "");
-    clientHiveConf.set(HiveConf.ConfVars.POSTEXECHOOKS.varname, "");
+    clientHiveConf.set(HiveConf.ConfVars.PRE_EXEC_HOOKS.varname, "");
+    clientHiveConf.set(HiveConf.ConfVars.POST_EXEC_HOOKS.varname, "");
 
 
     SessionState.start(new CliSessionState(clientHiveConf));
@@ -79,9 +82,8 @@ public class TestAuthorizationPreEventListener extends TestCase {
     driver = DriverFactory.newDriver(clientHiveConf);
   }
 
-  @Override
-  protected void tearDown() throws Exception {
-    super.tearDown();
+  @After
+  public void tearDown() throws Exception {
   }
 
   private void validateCreateDb(Database expectedDb, Database actualDb) {
@@ -164,6 +166,7 @@ public class TestAuthorizationPreEventListener extends TestCase {
     assertEquals(expectedDb, actualDb);
   }
 
+  @Test
   public void testListener() throws Exception {
     String dbName = "hive3705";
     String tblName = "tmptbl";
@@ -238,6 +241,8 @@ public class TestAuthorizationPreEventListener extends TestCase {
 
 
     driver.run(String.format("alter table %s rename to %s", tblName, renamed));
+    // remove the last auth call, which is for the get_partitions_req
+    authCalls.remove(authCalls.size() - 1);
     listSize = authCalls.size();
 
     Table renamedTableFromEvent = (

@@ -9,17 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
 
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.hadoop.hive.ql.metadata.Partition;
@@ -30,36 +32,35 @@ import org.apache.hadoop.hive.ql.metadata.Table;
  */
 public class PrunedPartitionList {
 
-  /** Key to identify this partition list. */
-  private final String ppListKey;
-
   /** Source table. */
   private final Table source;
 
-  /** Partitions that either satisfy the partition criteria, or may satisfy it. */
-  private Set<Partition> partitions;
+  /** Key to identify this partition list. */
+  private final String ppListKey;
 
-  /** partition columns referred by pruner expr */
-  private List<String> referred;
+  /** Partitions that either satisfy the partition criteria, or may satisfy it. */
+  private final Set<Partition> partitions;
+
+  /**
+   * Partition columns referred by the pruner expr; empty when no partition predicate narrowed the list,
+   * or when the predicate was constant false - the list is empty in that case as well.
+   */
+  private final List<String> referred;
 
   /** Whether there are partitions in the list that may or may not satisfy the criteria. */
-  private boolean hasUnknowns;
+  private final boolean hasUnknowns;
 
   public PrunedPartitionList(Table source, Set<Partition> partitions,
       List<String> referred, boolean hasUnknowns) {
-    this.source = source;
-    this.ppListKey = null;
-    this.referred = referred;
-    this.partitions = partitions;
-    this.hasUnknowns = hasUnknowns;
+    this(source, null, partitions, referred, hasUnknowns);
   }
 
   public PrunedPartitionList(Table source, String key, Set<Partition> partitions,
       List<String> referred, boolean hasUnknowns) {
-    this.source = source;
+    this.source = Objects.requireNonNull(source);
     this.ppListKey = key;
-    this.referred = referred;
-    this.partitions = partitions;
+    this.referred = Objects.requireNonNull(referred);
+    this.partitions = Objects.requireNonNull(partitions);
     this.hasUnknowns = hasUnknowns;
   }
 
@@ -75,7 +76,7 @@ public class PrunedPartitionList {
    * @return partitions
    */
   public Set<Partition> getPartitions() {
-    return partitions;
+    return Collections.unmodifiableSet(partitions);
   }
 
 
@@ -83,7 +84,7 @@ public class PrunedPartitionList {
    * @return all partitions.
    */
   public List<Partition> getNotDeniedPartns() {
-    return new ArrayList<Partition>(partitions);
+    return List.copyOf(partitions);
   }
 
   /**
@@ -94,6 +95,6 @@ public class PrunedPartitionList {
   }
 
   public List<String> getReferredPartCols() {
-    return referred;
+    return Collections.unmodifiableList(referred);
   }
 }

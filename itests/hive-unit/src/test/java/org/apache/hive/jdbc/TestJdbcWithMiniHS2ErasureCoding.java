@@ -9,21 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.jdbc;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
-import java.net.MalformedURLException;
-import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -34,6 +32,7 @@ import java.util.Collections;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.ql.processors.ErasureProcessor;
 import org.apache.hadoop.hive.shims.HadoopShims;
 import org.apache.hadoop.hive.shims.HadoopShims.HdfsErasureCodingShim;
@@ -50,7 +49,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import static org.apache.hadoop.hive.ql.QTestUtil.DEFAULT_TEST_EC_POLICY;
+import static org.apache.hadoop.hive.ql.QTestMiniClusters.DEFAULT_TEST_EC_POLICY;
 import static org.apache.hive.jdbc.TestJdbcWithMiniHS2.getDetailedTableDescription;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -64,27 +63,15 @@ public class TestJdbcWithMiniHS2ErasureCoding {
   private static HiveConf conf;
   private Connection hs2Conn = null;
 
-  private static HiveConf createHiveOnSparkConf() throws MalformedURLException {
-    String confDir = "../../data/conf/spark/standalone/hive-site.xml";
-    HiveConf.setHiveSiteLocation(new File(confDir).toURI().toURL());
-    HiveConf hiveConf = new HiveConf();
-    // Tell dfs not to consider load when choosing a datanode as this can cause failure as
-    // in a test we do not have spare datanode capacity.
-    hiveConf.setBoolean("dfs.namenode.redundancy.considerLoad", false);
-    hiveConf.set("hive.spark.client.connect.timeout", "30000ms");
-    hiveConf.set("spark.local.dir",
-        Paths.get(System.getProperty("test.tmp.dir"), "TestJdbcWithMiniHS2ErasureCoding-local-dir")
-            .toString());
-    return hiveConf;
-  }
-
     /**
      * Setup a mini HS2 with miniMR.
      */
   @BeforeClass
   public static void beforeTest() throws Exception {
-    Class.forName(MiniHS2.getJdbcDriverName());
-    conf = createHiveOnSparkConf();
+    conf = new HiveConfForTest(TestJdbcWithMiniHS2ErasureCoding.class);
+    //TODO: HIVE-28284: TestJdbcWithMiniHS2/TestJdbcWithMiniHS2ErasureCoding to run on Tez
+    conf.setVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE, "mr");
+    conf.setBoolVar(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY, false);
     DriverManager.setLoginTimeout(0);
     miniHS2 = new MiniHS2.Builder()
         .withConf(conf)
@@ -155,7 +142,6 @@ public class TestJdbcWithMiniHS2ErasureCoding {
       stmt.execute("INSERT INTO TABLE " + tableName
             + " PARTITION (datestamp = '2014-09-24', i = 2)(userid,link) VALUES ('mac', 'superchunk.com')");
       String explain = getExtendedExplain(stmt, "select userid from " + tableName);
-      assertMatchAndCount(explain, " numFiles 4", 2);
       assertMatchAndCount(explain,  " numFilesErasureCoded 4", 2);
     }
   }

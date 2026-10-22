@@ -9,17 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
 
 import java.io.Serializable;
 
+import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.calcite.rel.RelNode;
 
@@ -32,24 +34,20 @@ import org.apache.calcite.rel.RelNode;
 public class ExprNodeSubQueryDesc extends ExprNodeDesc implements Serializable {
   private static final long serialVersionUID = 1L;
 
-  public static enum SubqueryType{
-    IN,
-    EXISTS,
-    SCALAR
-  };
-
   /**
    * RexNode corresponding to subquery.
    */
   private RelNode rexSubQuery;
   private ExprNodeDesc subQueryLhs;
   private SubqueryType type;
+  private ASTNode comparisonOp;
 
   public ExprNodeSubQueryDesc(TypeInfo typeInfo, RelNode subQuery, SubqueryType type) {
     super(typeInfo);
     this.rexSubQuery = subQuery;
     this.subQueryLhs = null;
     this.type = type;
+    this.comparisonOp = null;
   }
   public ExprNodeSubQueryDesc(TypeInfo typeInfo, RelNode subQuery,
                               SubqueryType type, ExprNodeDesc lhs) {
@@ -57,8 +55,18 @@ public class ExprNodeSubQueryDesc extends ExprNodeDesc implements Serializable {
     this.rexSubQuery = subQuery;
     this.subQueryLhs = lhs;
     this.type = type;
-
+    this.comparisonOp = null;
   }
+  public ExprNodeSubQueryDesc(TypeInfo typeInfo, RelNode subQuery,
+                              SubqueryType type, ExprNodeDesc lhs, ASTNode comparisonOp) {
+    super(typeInfo);
+    this.rexSubQuery = subQuery;
+    this.subQueryLhs = lhs;
+    this.type = type;
+    this.comparisonOp = comparisonOp;
+  }
+
+  public ASTNode getComparisonOp() {return this.comparisonOp; }
 
   public SubqueryType getType() {
     return type;

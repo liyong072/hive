@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf;
@@ -158,8 +159,7 @@ public class UDAFPercentile extends UDAF {
         if (percentile < 0.0 || percentile > 1.0) {
           throw new RuntimeException("Percentile value must be within the range of 0 to 1.");
         }
-        state.percentiles = new ArrayList<DoubleWritable>(1);
-        state.percentiles.add(new DoubleWritable(percentile.doubleValue()));
+        state.percentiles = Collections.singletonList(new DoubleWritable(percentile.doubleValue()));
       }
       if (o != null) {
         increment(state, o, 1);
@@ -177,7 +177,7 @@ public class UDAFPercentile extends UDAF {
       }
 
       if (state.percentiles == null) {
-        state.percentiles = new ArrayList<DoubleWritable>(other.percentiles);
+        state.percentiles = new ArrayList<>(other.percentiles);
       }
 
       for (Map.Entry<LongWritable, LongWritable> e: other.counts.entrySet()) {
@@ -248,10 +248,10 @@ public class UDAFPercentile extends UDAF {
               throw new RuntimeException("Percentile value must be within the range of 0 to 1.");
             }
           }
-          state.percentiles = new ArrayList<DoubleWritable>(percentiles);
+          state.percentiles = new ArrayList<>(percentiles);
         }
         else {
-          state.percentiles = new ArrayList<DoubleWritable>();
+          state.percentiles = Collections.emptyList();
         }
       }
       if (o != null) {
@@ -270,7 +270,7 @@ public class UDAFPercentile extends UDAF {
       }
 
       if (state.percentiles == null) {
-        state.percentiles = new ArrayList<DoubleWritable>(other.percentiles);
+        state.percentiles = new ArrayList<>(other.percentiles);
       }
 
       for (Map.Entry<LongWritable, LongWritable> e: other.counts.entrySet()) {

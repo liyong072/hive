@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.io;
 
@@ -35,6 +36,15 @@ public class HiveVarcharWritable extends HiveBaseCharWritable
     set(hcw);
   }
 
+  public HiveVarcharWritable(byte[] bytes, int maxLength) {
+    set(bytes, maxLength);
+  }
+
+  public void set(byte[]  bytes, int maxLength) {
+    value.set(bytes);
+    enforceMaxLength(maxLength);
+  }
+
   public void set(HiveVarchar val) {
     set(val.getValue());
   }
@@ -45,6 +55,7 @@ public class HiveVarcharWritable extends HiveBaseCharWritable
 
   public void set(HiveVarcharWritable val) {
     value.set(val.value);
+    charLength = val.charLength;
   }
 
   public void set(HiveVarcharWritable val, int maxLength) {
@@ -57,6 +68,7 @@ public class HiveVarcharWritable extends HiveBaseCharWritable
 
   public void set(String val, int maxLength) {
     value.set(HiveBaseChar.enforceMaxLength(val, maxLength));
+    charLength = maxLength;
   }
 
   public HiveVarchar getHiveVarchar() {

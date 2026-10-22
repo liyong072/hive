@@ -9,13 +9,13 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.apache.hadoop.hive.ql.exec.vector.ptf;
 
 import org.apache.hadoop.hive.common.type.HiveDecimal;
@@ -25,6 +25,7 @@ import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorExpression;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.ptf.WindowFrameDef;
+import org.apache.hadoop.hive.ql.udf.ptf.Range;
 import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable;
 
 import com.google.common.base.Preconditions;
@@ -32,10 +33,8 @@ import com.google.common.base.Preconditions;
 /**
  * This class evaluates HiveDecimal sum() for a PTF group.
  */
-public class VectorPTFEvaluatorDecimalSum extends VectorPTFEvaluatorBase {
+public class VectorPTFEvaluatorDecimalSum extends VectorPTFEvaluatorAbstractSum<HiveDecimalWritable> {
 
-  protected boolean isGroupResultNull;
-  protected HiveDecimalWritable sum;
   protected HiveDecimalWritable temp;
 
   public VectorPTFEvaluatorDecimalSum(WindowFrameDef windowFrameDef, VectorExpression inputVecExpr,
@@ -50,7 +49,6 @@ public class VectorPTFEvaluatorDecimalSum extends VectorPTFEvaluatorBase {
   public void evaluateGroupBatch(VectorizedRowBatch batch)
       throws HiveException {
 
-    evaluateInputExpr(batch);
 
     // Sum all non-null decimal column values; maintain isGroupResultNull.
 
@@ -116,29 +114,38 @@ public class VectorPTFEvaluatorDecimalSum extends VectorPTFEvaluatorBase {
   }
 
   @Override
-  public boolean streamsResult() {
-    // We must evaluate whole group before producing a result.
-    return false;
-  }
-
-  @Override
-  public boolean isGroupResultNull() {
-    return isGroupResultNull;
-  }
-
-  @Override
   public Type getResultColumnVectorType() {
     return Type.DECIMAL;
   }
 
   @Override
-  public HiveDecimalWritable getDecimalGroupResult() {
-    return sum;
+  protected HiveDecimalWritable computeValue(HiveDecimalWritable number) {
+    return VectorPTFEvaluatorHelper.computeValue(number);
+  }
+
+  @Override
+  public HiveDecimalWritable plus(HiveDecimalWritable t1, HiveDecimalWritable t2) {
+    return VectorPTFEvaluatorHelper.plus(t1, t2);
+  }
+
+  @Override
+  public HiveDecimalWritable minus(HiveDecimalWritable t1, HiveDecimalWritable t2) {
+    return VectorPTFEvaluatorHelper.minus(t1, t2);
+  }
+
+  @Override
+  public void onResultCalculated(Object result, Range range) {
+    if (previousSum != null) {
+      previousSum.set((HiveDecimalWritable) result);
+    } else {
+      previousSum = new HiveDecimalWritable((HiveDecimalWritable) result);
+    }
+    this.previousRange = range;
   }
 
   @Override
   public void resetEvaluator() {
     isGroupResultNull = true;
-    sum.set(HiveDecimal.ZERO);;
+    sum.set(HiveDecimal.ZERO);
   }
 }

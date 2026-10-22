@@ -2,12 +2,10 @@ set hive.mapred.mode=nonstrict;
 set hive.stats.autogather=false;
 set hive.optimize.union.remove=true;
 
-set hive.merge.sparkfiles=true;
 set hive.merge.mapfiles=true;
 set hive.merge.mapredfiles=true;
 set hive.merge.smallfiles.avgsize=1;
 
-set hive.exec.dynamic.partition.mode=nonstrict;
 set hive.exec.dynamic.partition=true;
 
 -- SORT_QUERY_RESULTS

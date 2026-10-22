@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.load.message;
 
@@ -21,12 +22,10 @@ import org.apache.hadoop.hive.metastore.api.ColumnStatistics;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsDesc;
 import org.apache.hadoop.hive.metastore.messaging.UpdatePartitionColumnStatMessage;
 import org.apache.hadoop.hive.ql.exec.Task;
-import org.apache.hadoop.hive.ql.exec.TaskFactory;
+import org.apache.hadoop.hive.ql.exec.repl.util.ReplUtils;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
-import org.apache.hadoop.hive.ql.plan.ColumnStatsUpdateWork;
 
 import java.io.Serializable;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -35,23 +34,31 @@ import java.util.List;
  */
 public class UpdatePartColStatHandler extends AbstractMessageHandler {
   @Override
-  public List<Task<? extends Serializable>> handle(Context context)
+  public List<Task<?>> handle(Context context)
       throws SemanticException {
     UpdatePartitionColumnStatMessage upcsm =
             deserializer.getUpdatePartitionColumnStatMessage(context.dmd.getPayload());
 
     // Update tablename and database name in the statistics object
     ColumnStatistics colStats = upcsm.getColumnStatistics();
-    ColumnStatisticsDesc colStatsDesc = colStats.getStatsDesc();
-    if (!context.isTableNameEmpty()) {
-      colStatsDesc.setTableName(context.tableName);
+    // In older version of hive, engine might not have set.
+    if (colStats.getEngine() == null) {
+      colStats.setEngine(org.apache.hadoop.hive.conf.Constants.HIVE_ENGINE);
     }
+    ColumnStatisticsDesc colStatsDesc = colStats.getStatsDesc();
     if (!context.isDbNameEmpty()) {
       colStatsDesc.setDbName(context.dbName);
-      updatedMetadata.set(context.dmd.getEventTo().toString(), context.dbName, context.tableName,
+      updatedMetadata.set(context.dmd.getEventTo().toString(), context.dbName, colStatsDesc.getTableName(),
                   null);
     }
-    return Collections.singletonList(TaskFactory.get(new ColumnStatsUpdateWork(colStats),
-            context.hiveConf));
+
+    try {
+      return ReplUtils.addTasksForLoadingColStats(colStats, context.hiveConf, updatedMetadata,
+                                                  upcsm.getTableObject(), upcsm.getWriteId(),
+                                                  context.getDumpDirectory(),
+                                                  context.getMetricCollector());
+    } catch(Exception e) {
+      throw new SemanticException(e);
+    }
   }
 }

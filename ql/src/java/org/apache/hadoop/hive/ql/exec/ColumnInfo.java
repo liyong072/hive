@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -59,14 +60,28 @@ public class ColumnInfo implements Serializable {
 
   private boolean isHiddenVirtualCol;
 
+  /**
+   * Deliberately excluded from equals/hashCode/isSameColumnForRR: a marked and an unmarked
+   * copy of a column are still the same column for RowResolver purposes (HIVE-29580).
+   */
+  private boolean ambiguousName;
+
   private String typeName;
 
+  private final boolean nullable;
+
   public ColumnInfo() {
+    nullable = true;
   }
 
   public ColumnInfo(String internalName, TypeInfo type, String tabAlias,
       boolean isVirtualCol) {
     this(internalName, type, tabAlias, isVirtualCol, false);
+  }
+
+  public ColumnInfo(String internalName, TypeInfo type, boolean nullable, String tabAlias,
+      boolean isVirtualCol) {
+    this(internalName, type, nullable, tabAlias, isVirtualCol, false);
   }
 
   public ColumnInfo(String internalName, Class type, String tabAlias,
@@ -80,6 +95,17 @@ public class ColumnInfo implements Serializable {
       boolean isVirtualCol, boolean isHiddenVirtualCol) {
     this(internalName,
          TypeInfoUtils.getStandardWritableObjectInspectorFromTypeInfo(type),
+         true,
+         tabAlias,
+         isVirtualCol,
+         isHiddenVirtualCol);
+  }
+
+  public ColumnInfo(String internalName, TypeInfo type, boolean nullable, String tabAlias,
+      boolean isVirtualCol, boolean isHiddenVirtualCol) {
+    this(internalName,
+         TypeInfoUtils.getStandardWritableObjectInspectorFromTypeInfo(type),
+         nullable,
          tabAlias,
          isVirtualCol,
          isHiddenVirtualCol);
@@ -87,16 +113,18 @@ public class ColumnInfo implements Serializable {
 
   public ColumnInfo(String internalName, ObjectInspector objectInspector,
       String tabAlias, boolean isVirtualCol) {
-    this(internalName, objectInspector, tabAlias, isVirtualCol, false);
+    this(internalName, objectInspector, true, tabAlias, isVirtualCol, false);
   }
 
-  public ColumnInfo(String internalName, ObjectInspector objectInspector,
+  public ColumnInfo(String internalName, ObjectInspector objectInspector, boolean nullable,
       String tabAlias, boolean isVirtualCol, boolean isHiddenVirtualCol) {
     this.internalName = internalName;
     this.objectInspector = objectInspector;
     this.tabAlias = tabAlias;
     this.isVirtualCol = isVirtualCol;
     this.isHiddenVirtualCol = isHiddenVirtualCol;
+    this.nullable = nullable;
+    
     setTypeName(getType().getTypeName());
   }
 
@@ -107,7 +135,22 @@ public class ColumnInfo implements Serializable {
     this.tabAlias = columnInfo.getTabAlias();
     this.isVirtualCol = columnInfo.getIsVirtualCol();
     this.isHiddenVirtualCol = columnInfo.isHiddenVirtualCol();
+    this.nullable = columnInfo.nullable;
+    this.ambiguousName = columnInfo.ambiguousName;
     this.setType(columnInfo.getType());
+  }
+
+  /**
+   * True when this column's alias collided with another column's at a subquery/CTE boundary:
+   * the column stays usable positionally (star expansion, count(*)) but a user-written by-name
+   * reference is ambiguous and must be rejected.
+   */
+  public boolean hasAmbiguousName() {
+    return ambiguousName;
+  }
+
+  public void setAmbiguousName(boolean ambiguousName) {
+    this.ambiguousName = ambiguousName;
   }
 
   public String getTypeName() {
@@ -253,5 +296,9 @@ public class ColumnInfo implements Serializable {
 
   public void setObjectinspector(ObjectInspector writableObjectInspector) {
     this.objectInspector = writableObjectInspector;
+  }
+
+  public boolean isNullable() {
+    return nullable;
   }
 }

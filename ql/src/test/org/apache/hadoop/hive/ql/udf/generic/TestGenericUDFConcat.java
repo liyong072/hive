@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
@@ -21,14 +22,16 @@ package org.apache.hadoop.hive.ql.udf.generic;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
-import org.apache.hadoop.hive.ql.parse.TypeCheckProcFactory;
+import org.apache.hadoop.hive.ql.parse.type.ExprNodeTypeCheck;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.testutil.BaseScalarUdfTest;
 import org.apache.hadoop.hive.ql.testutil.DataBuilder;
 import org.apache.hadoop.hive.ql.testutil.OperatorTestUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.InspectableObject;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
+
+import org.junit.Test;
+import static org.junit.Assert.*;
 
 public class TestGenericUDFConcat extends BaseScalarUdfTest {
 
@@ -59,14 +62,20 @@ public class TestGenericUDFConcat extends BaseScalarUdfTest {
   }
 
   @Override
-  public List<ExprNodeDesc> getExpressionList() throws UDFArgumentException {
+  public List<ExprNodeDesc> getExpressionList() throws Exception {
     ExprNodeDesc expr1 = OperatorTestUtils.getStringColumn("a");
     ExprNodeDesc expr2 = OperatorTestUtils.getStringColumn("b");
-    ExprNodeDesc exprDesc2 = TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc("concat", expr1, expr2);
+    ExprNodeDesc exprDesc2 = ExprNodeTypeCheck.getExprNodeDefaultExprProcessor()
+        .getFuncExprNodeDesc("concat", expr1, expr2);
     List<ExprNodeDesc> earr = new ArrayList<ExprNodeDesc>();
     earr.add(expr1);
     earr.add(exprDesc2);
     return earr;
+  }
+
+  @Test
+  public void testDummy() {
+    assertTrue(true);
   }
 
 }

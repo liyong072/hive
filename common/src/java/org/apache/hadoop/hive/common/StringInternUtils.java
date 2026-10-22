@@ -1,15 +1,20 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common;
@@ -63,23 +68,32 @@ public class StringInternUtils {
     schemeSpecificPartField.setAccessible(true);
   }
 
+  /**
+   * This method interns all the URI strings in place.
+   * Goes over the URI strings, checks if each string element is already interned,
+   * and if not it replaces each element with the interned copy.
+   * Eventually returns the same URI.
+   *
+   * @param uri
+   * @return
+   */
   public static URI internStringsInUri(URI uri) {
     if (uri == null) return null;
     try {
       String string = (String) stringField.get(uri);
-      if (string != null) stringField.set(uri, string.intern());
+      if (string != null && string != string.intern()) stringField.set(uri, string.intern());
       String scheme = (String) schemeField.get(uri);
-      if (scheme != null) schemeField.set(uri, scheme.intern());
+      if (scheme != null && scheme != scheme.intern()) schemeField.set(uri, scheme.intern());
       String authority = (String) authorityField.get(uri);
-      if (authority != null) authorityField.set(uri, authority.intern());
+      if (authority != null && authority != authority.intern()) authorityField.set(uri, authority.intern());
       String host = (String) hostField.get(uri);
-      if (host != null) hostField.set(uri, host.intern());
+      if (host != null && host != host.intern()) hostField.set(uri, host.intern());
       String path = (String) pathField.get(uri);
-      if (path != null) pathField.set(uri, path.intern());
+      if (path != null && path != path.intern()) pathField.set(uri, path.intern());
       String fragment = (String) fragmentField.get(uri);
-      if (fragment != null) fragmentField.set(uri, fragment.intern());
-      String schemeSpecificPart = (String) schemeSpecificPartField.get(uri);
-      if (schemeSpecificPart != null) schemeSpecificPartField.set(uri, schemeSpecificPart.intern());
+      if (fragment != null && fragment != fragment.intern()) fragmentField.set(uri, fragment.intern());
+      String schemeSPart = (String) schemeSpecificPartField.get(uri);
+      if (schemeSPart != null && schemeSPart != schemeSPart.intern()) schemeSpecificPartField.set(uri, schemeSPart.intern());
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
@@ -102,8 +116,9 @@ public class StringInternUtils {
 
   /**
    * This method interns all the strings in the given list in place. That is,
-   * it iterates over the list, replaces each element with the interned copy
-   * and eventually returns the same list.
+   * it iterates over the list, checks if each string element is already interned,
+   * and if not it replaces each element with the interned copy.
+   * Eventually returns the same list.
    *
    * Note that the provided List implementation should return an iterator
    * (via list.listIterator()) method, and that iterator should implement
@@ -116,7 +131,11 @@ public class StringInternUtils {
       try {
         ListIterator<String> it = list.listIterator();
         while (it.hasNext()) {
-          it.set(it.next().intern());
+          String curr = it.next();
+          // Intern values only when they are not part of the String pool already
+          if (curr != curr.intern()) {
+            it.set(curr.intern());
+          }
         }
       } catch (UnsupportedOperationException e) { } // set() not implemented - ignore
     }
@@ -126,7 +145,8 @@ public class StringInternUtils {
   /** Interns all the strings in the given array in place, returning the same array */
   public static String[] internStringsInArray(String[] strings) {
     for (int i = 0; i < strings.length; i++) {
-      if (strings[i] != null) {
+      // Intern values only when they are not part of the String pool already
+      if (strings[i] != null && strings[i] != strings[i].intern()) {
         strings[i] = strings[i].intern();
       }
     }
@@ -135,10 +155,11 @@ public class StringInternUtils {
 
   public static <K> Map<K, String> internValuesInMap(Map<K, String> map) {
     if (map != null) {
-      for (K key : map.keySet()) {
-        String value = map.get(key);
-        if (value != null) {
-          map.put(key, value.intern());
+      for (Map.Entry<K, String> entry : map.entrySet()) {
+        String value = entry.getValue();
+        // Intern values only when they are not part of the String pool already
+        if (value != null && value != value.intern()) {
+          map.put(entry.getKey(), value.intern());
         }
       }
     }

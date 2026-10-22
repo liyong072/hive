@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer;
@@ -23,16 +24,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 
+import org.apache.hadoop.hive.ql.QueryProperties.QueryFeature;
 import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.exec.TaskFactory;
 import org.apache.hadoop.hive.ql.exec.mr.MapRedTask;
-import org.apache.hadoop.hive.ql.io.AcidUtils;
-import org.apache.hadoop.hive.ql.io.orc.OrcInputFormat;
-import org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
@@ -50,7 +49,7 @@ import org.apache.hadoop.mapred.InputFormat;
 /**
  * Processor for the rule - table scan.
  */
-public class GenMRTableScan1 implements NodeProcessor {
+public class GenMRTableScan1 implements SemanticNodeProcessor {
   public GenMRTableScan1() {
   }
 
@@ -86,9 +85,10 @@ public class GenMRTableScan1 implements NodeProcessor {
         ctx.setCurrAliasId(currAliasId);
         mapCurrCtx.put(op, new GenMapRedCtx(currTask, currAliasId));
 
-        if (parseCtx.getQueryProperties().isAnalyzeCommand()) {
-          boolean noScan = parseCtx.getQueryProperties().isNoScanAnalyzeCommand();
-          if (BasicStatsNoJobTask.canUseFooterScan(table, inputFormat)) {
+        if (parseCtx.getQueryProperties().hasFeature(QueryFeature.ANALYZE)
+            && !parseCtx.getQueryProperties().hasFeature(QueryFeature.REWRITE)) {
+          boolean noScan = parseCtx.getQueryProperties().hasFeature(QueryFeature.NO_SCAN);
+          if (BasicStatsNoJobTask.canUseBasicStats(table, inputFormat)) {
             // For ORC and Parquet, all the following statements are the same
             // ANALYZE TABLE T [PARTITION (...)] COMPUTE STATISTICS
             // ANALYZE TABLE T [PARTITION (...)] COMPUTE STATISTICS noscan;

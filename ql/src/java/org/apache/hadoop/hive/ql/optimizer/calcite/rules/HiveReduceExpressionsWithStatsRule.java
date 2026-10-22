@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules;
 
@@ -22,6 +23,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.calcite.plan.RelOptPredicateList;
 import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.rel.RelNode;
@@ -34,10 +36,11 @@ import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
+import org.apache.calcite.rex.RexSimplify;
+import org.apache.calcite.rex.RexUnknownAs;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.Pair;
-import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.ql.optimizer.calcite.RelOptHiveTable;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveIn;
 import org.apache.hadoop.hive.ql.plan.ColStatistics;
@@ -154,7 +157,7 @@ public class HiveReduceExpressionsWithStatsRule extends RelOptRule {
 
         // We cannot apply the reduction
         return call;
-      } else if (call.getOperator().getKind() == SqlKind.IN) {
+      } else if (HiveIn.INSTANCE.equals(call.op)) {
         if (call.getOperands().get(0) instanceof RexInputRef) {
           // Ref
           RexInputRef ref = (RexInputRef) call.getOperands().get(0);
@@ -272,7 +275,11 @@ public class HiveReduceExpressionsWithStatsRule extends RelOptRule {
       // If we did not reduce, check the children nodes
       RexNode node = super.visitCall(call);
       if (node != call) {
-        node = RexUtil.simplify(rexBuilder, node);
+        // FIXME if this rule will make some changes; then it will invoke simplify on all subtrees during exiting the recursion
+        RexSimplify simplify =
+            new RexSimplify(rexBuilder, RelOptPredicateList.EMPTY, filterOp.getCluster().getPlanner().getExecutor());
+        node = simplify.simplifyUnknownAs(node,RexUnknownAs.UNKNOWN);
+
       }
       return node;
     }
@@ -296,8 +303,9 @@ public class HiveReduceExpressionsWithStatsRule extends RelOptRule {
         if (table != null) {
           ColStatistics colStats =
               table.getColStat(Lists.newArrayList(columnOrigin.getOriginColumnOrdinal()), false).get(0);
-          if (colStats != null && StatsUtils.areColumnStatsUptoDateForQueryAnswering(
-              table.getHiveTableMD(), table.getHiveTableMD().getParameters(), colStats.getColumnName())) {
+          if (colStats != null && !colStats.isPartialAggregate() &&
+              StatsUtils.areColumnStatsUptoDateForQueryAnswering(
+                  table.getHiveTableMD(), table.getHiveTableMD().getParameters(), colStats.getColumnName())) {
             return colStats;
           }
         }
@@ -310,10 +318,7 @@ public class HiveReduceExpressionsWithStatsRule extends RelOptRule {
       if (columnOrigin != null) {
         RelOptHiveTable table = (RelOptHiveTable) columnOrigin.getOriginTable();
         if (table != null) {
-          if (StatsUtils.areBasicStatsUptoDateForQueryAnswering(table.getHiveTableMD(),
-              table.getHiveTableMD().getParameters())) {
-            return StatsUtils.getNumRows(table.getHiveTableMD());
-          }
+          return StatsUtils.getRowCnt(table.getHiveTableMD());
         }
       }
       return null;

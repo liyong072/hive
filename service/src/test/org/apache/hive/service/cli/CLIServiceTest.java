@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service.cli;
@@ -21,7 +22,6 @@ package org.apache.hive.service.cli;
 import static org.junit.Assert.*;
 
 import java.io.ByteArrayInputStream;
-import java.io.Serializable;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -40,10 +40,12 @@ import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHook;
 import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHookContext;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
-import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.type.TypeReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.plan.api.StageType;
 import org.apache.hadoop.hive.ql.session.SessionState;
@@ -245,7 +247,7 @@ public abstract class CLIServiceTest {
     opStatus = runAsyncAndWait(sessionHandle, queryString, confOverlay, OperationState.ERROR, longPollingTimeout);
     // sqlState, errorCode should be set
     assertEquals(opStatus.getOperationException().getSQLState(), "08S01");
-    assertEquals(opStatus.getOperationException().getErrorCode(), 1);
+    assertEquals(opStatus.getOperationException().getErrorCode(), 40000);
     /**
      * Execute an async query with default config
      */
@@ -300,6 +302,8 @@ public abstract class CLIServiceTest {
   @Test
   public void testExecuteStatementParallel() throws Exception {
     Map<String, String> confOverlay = new HashMap<String, String>();
+    //TODO: HIVE-28283: CliServiceTest.testExecuteStatementParallel to run on Tez
+    confOverlay.put(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE.varname, "mr");
     String tableName = "TEST_EXEC_PARALLEL";
     String columnDefinitions = "(ID STRING)";
 
@@ -366,7 +370,7 @@ public abstract class CLIServiceTest {
 
     @Override
     public void postAnalyze(HiveSemanticAnalyzerHookContext context,
-      List<Task<? extends Serializable>> rootTasks) throws SemanticException {
+      List<Task<?>> rootTasks) throws SemanticException {
     }
   }
 
@@ -382,7 +386,7 @@ public abstract class CLIServiceTest {
 
     int THREAD_COUNT = 3;
     @SuppressWarnings("unchecked")
-    FutureTask<Void>[] tasks = (FutureTask<Void>[])new FutureTask[THREAD_COUNT];
+    FutureTask<Void>[] tasks = new FutureTask[THREAD_COUNT];
     long longPollingTimeoutMs = 10 * 60 * 1000; // Larger than max compile duration used in test
 
     // 1st query acquires the lock and takes 20 secs to compile

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +47,7 @@ import org.apache.hadoop.hive.ql.plan.PartitionDesc;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.plan.TableScanDesc;
 import org.apache.hadoop.hive.ql.plan.api.OperatorType;
+import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.ColumnProjectionUtils;
 import org.apache.hadoop.hive.serde2.Deserializer;
 import org.apache.hadoop.hive.serde2.SerDeException;
@@ -57,6 +60,8 @@ import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory;
 import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
+import org.apache.hadoop.io.BooleanWritable;
+import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
@@ -337,13 +342,13 @@ public class MapOperator extends AbstractMapOperator {
   /**
    * For each source table, combine the nested column pruning information from all its
    * table scan descriptors and set it in a configuration copy. This is necessary since
-   * the configuration property "READ_NESTED_COLUMN_PATH_CONF_STR" is set on a per-table
-   * basis, so we can't just use a single configuration for all the tables.
+   * the configuration properties are set on a per-table basis, so we can't just use a
+   * single configuration for all the tables.
    */
-  private Map<String, Configuration> cloneConfsForNestedColPruning(Configuration hconf) {
+  private Map<String, Configuration> cloneConfsForColPruning(Configuration hconf) {
     Map<String, Configuration> tableNameToConf = new HashMap<>();
 
-    for (Map.Entry<Path, ArrayList<String>> e : conf.getPathToAliases().entrySet()) {
+    for (Map.Entry<Path, List<String>> e : conf.getPathToAliases().entrySet()) {
       List<String> aliases = e.getValue();
       if (aliases == null || aliases.isEmpty()) {
         continue;
@@ -366,10 +371,15 @@ public class MapOperator extends AbstractMapOperator {
         if (!tableNameToConf.containsKey(tableName)) {
           Configuration clonedConf = new Configuration(hconf);
           clonedConf.unset(ColumnProjectionUtils.READ_NESTED_COLUMN_PATH_CONF_STR);
+          clonedConf.unset(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR);
+          clonedConf.unset(ColumnProjectionUtils.FETCH_VIRTUAL_COLUMNS_CONF_STR);
+          clonedConf.unset(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR);
           tableNameToConf.put(tableName, clonedConf);
         }
         Configuration newConf = tableNameToConf.get(tableName);
-        ColumnProjectionUtils.appendNestedColumnPaths(newConf, nestedColumnPaths);
+        ColumnProjectionUtils.appendReadColumns(newConf, tableScanDesc.getNeededColumnIDs(),
+            tableScanDesc.getOutputColumnNames(), tableScanDesc.getNeededNestedColumnPaths(),
+            tableScanDesc.hasVirtualCols());
       }
     }
 
@@ -380,7 +390,9 @@ public class MapOperator extends AbstractMapOperator {
       }
     }
 
-    for (PartitionDesc pd: conf.getAliasToPartnInfo().values()) {
+    Iterator<PartitionDesc> partitionIterator = conf.getPartitionDescs();
+    while (partitionIterator.hasNext()) {
+      PartitionDesc pd = partitionIterator.next();
       if (!tableNameToConf.containsKey(pd.getTableName())) {
         tableNameToConf.put(pd.getTableName(), hconf);
       }
@@ -400,14 +412,14 @@ public class MapOperator extends AbstractMapOperator {
     throws SerDeException, Exception {
     setChildOperators(children);
 
-    Map<String, Configuration> tableNameToConf = cloneConfsForNestedColPruning(hconf);
+    Map<String, Configuration> tableNameToConf = cloneConfsForColPruning(hconf);
 
     for (Operator<?> child : children) {
       TableScanOperator tsOp = (TableScanOperator) child;
       StructObjectInspector soi = null;
-      PartitionDesc partDesc = conf.getAliasToPartnInfo().get(tsOp.getConf().getAlias());
+      PartitionDesc partDesc = conf.getPartitionDesc(tsOp.getConf().getAlias());
       Configuration newConf = tableNameToConf.get(partDesc.getTableDesc().getTableName());
-      Deserializer serde = partDesc.getTableDesc().getDeserializer();
+      AbstractSerDe serde = partDesc.getTableDesc().getSerDe();
       partDesc.setProperties(partDesc.getProperties());
       MapOpCtx opCtx = new MapOpCtx(tsOp.getConf().getAlias(), child, partDesc);
       StructObjectInspector tableRowOI = (StructObjectInspector) serde.getObjectInspector();
@@ -423,10 +435,10 @@ public class MapOperator extends AbstractMapOperator {
     List<Operator<? extends OperatorDesc>> children =
         new ArrayList<Operator<? extends OperatorDesc>>();
 
-    Map<String, Configuration> tableNameToConf = cloneConfsForNestedColPruning(hconf);
+    Map<String, Configuration> tableNameToConf = cloneConfsForColPruning(hconf);
     Map<TableDesc, StructObjectInspector> convertedOI = getConvertedOI(tableNameToConf);
 
-    for (Map.Entry<Path, ArrayList<String>> entry : conf.getPathToAliases().entrySet()) {
+    for (Map.Entry<Path, List<String>> entry : conf.getPathToAliases().entrySet()) {
       Path onefile = entry.getKey();
       List<String> aliases = entry.getValue();
       PartitionDesc partDesc = conf.getPathToPartitionInfo().get(onefile);
@@ -435,10 +447,7 @@ public class MapOperator extends AbstractMapOperator {
 
       for (String alias : aliases) {
         Operator<? extends OperatorDesc> op = conf.getAliasToWork().get(alias);
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Adding alias " + alias + " to work list for file "
-              + onefile);
-        }
+        LOG.debug("Adding alias {} to work list for file {}", alias, onefile);
         Map<Operator<?>, MapOpCtx> contexts = opCtxMap.computeIfAbsent(onefile,
                 k -> new LinkedHashMap<>());
         if (contexts.containsKey(op)) {
@@ -522,9 +531,7 @@ public class MapOperator extends AbstractMapOperator {
         }
         builder.append(context.alias);
       }
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Processing alias(es) " + builder.toString() + " for file " + fpath);
-      }
+      LOG.debug("Processing alias(es) {} for file {}", builder, fpath);
     }
     // Add alias, table name, and partitions to hadoop conf so that their
     // children will inherit these
@@ -632,19 +639,6 @@ public class MapOperator extends AbstractMapOperator {
           }
         }
         break;
-        case ROWOFFSET: {
-          long current = ctx.getIoCxt().getCurrentRow();
-          LongWritable old = (LongWritable) vcValues[i];
-          if (old == null) {
-            old = new LongWritable(current);
-            vcValues[i] = old;
-            continue;
-          }
-          if (current != old.get()) {
-            old.set(current);
-          }
-        }
-        break;
         case RAWDATASIZE:
           long current = 0L;
           SerDeStats stats = deserializer.getSerDeStats();
@@ -673,7 +667,54 @@ public class MapOperator extends AbstractMapOperator {
             ctx.getIoCxt().setRecordIdentifier(null);//so we don't accidentally cache the value; shouldn't
             //happen since IO layer either knows how to produce ROW__ID or not - but to be safe
           }
-	  break;
+          break;
+        case PARTITION_SPEC_ID:
+          vcValues[i] = null;
+          if (ctx.getIoCxt().getPositionDeleteInfo() != null) {
+            vcValues[i] = new IntWritable(ctx.getIoCxt().getPositionDeleteInfo().getSpecId());
+          }
+          break;
+        case PARTITION_HASH:
+          vcValues[i] = null;
+          if (ctx.getIoCxt().getPositionDeleteInfo() != null) {
+            vcValues[i] = new LongWritable(ctx.getIoCxt().getPositionDeleteInfo().getPartitionHash());
+          }
+          break;
+        case PARTITION_NAME:
+          vcValues[i] = null;
+          if (ctx.getIoCxt().getPartitionName() != null) {
+            vcValues[i] = new Text(ctx.getIoCxt().getPartitionName());
+          }
+          break;
+        case FILE_PATH:
+          vcValues[i] = null;
+          if (ctx.getIoCxt().getPositionDeleteInfo() != null) {
+            vcValues[i] = new Text(ctx.getIoCxt().getPositionDeleteInfo().getFilePath());
+          }
+          break;
+        case ROW_POSITION:
+          vcValues[i] = null;
+          if (ctx.getIoCxt().getPositionDeleteInfo() != null) {
+            vcValues[i] = new LongWritable(ctx.getIoCxt().getPositionDeleteInfo().getFilePos());
+          }
+          break;
+        case ROWISDELETED:
+          vcValues[i] = new BooleanWritable(ctx.getIoCxt().isDeletedRecord());
+          break;
+        case ROW_LINEAGE_ID:
+          vcValues[i] = null;
+          if (ctx.getIoCxt().getRowLineageInfo() != null &&
+              ctx.getIoCxt().getRowLineageInfo().getBaseRowId() != null) {
+            vcValues[i] = new LongWritable(ctx.getIoCxt().getRowLineageInfo().getBaseRowId());
+          }
+          break;
+        case LAST_UPDATED_SEQUENCE_NUMBER:
+          vcValues[i] = null;
+          if (ctx.getIoCxt().getRowLineageInfo() != null &&
+              ctx.getIoCxt().getRowLineageInfo().getLastUpdatedSequenceNumber() != null) {
+            vcValues[i] = new LongWritable(ctx.getIoCxt().getRowLineageInfo().getLastUpdatedSequenceNumber());
+          }
+          break;
       }
     }
     return vcValues;

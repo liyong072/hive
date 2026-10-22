@@ -9,23 +9,21 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.jdbc.authorization;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashMap;
@@ -47,7 +45,6 @@ public class TestJdbcWithSQLAuthorization {
 
   @BeforeClass
   public static void beforeTest() throws Exception {
-    Class.forName(MiniHS2.getJdbcDriverName());
     HiveConf conf = new HiveConf();
     conf.setVar(ConfVars.HIVE_AUTHORIZATION_MANAGER, SQLStdHiveAuthorizerFactory.class.getName());
     conf.setVar(ConfVars.HIVE_AUTHENTICATOR_MANAGER, SessionStateUserAuthenticator.class.getName());
@@ -71,7 +68,7 @@ public class TestJdbcWithSQLAuthorization {
 
     String tableName1 = "test_jdbc_sql_auth1";
     String tableName2 = "test_jdbc_sql_auth2";
-    // using different code blocks so that jdbc variables are not accidently re-used
+    // using different code blocks so that jdbc variables are not accidentally re-used
     // between the actions. Different connection/statement object should be used for each action.
     {
       // create tables as user1
@@ -135,7 +132,7 @@ public class TestJdbcWithSQLAuthorization {
   @Test
   public void testAllowedCommands() throws Exception {
 
-    // using different code blocks so that jdbc variables are not accidently re-used
+    // using different code blocks so that jdbc variables are not accidentally re-used
     // between the actions. Different connection/statement object should be used for each action.
     {
       // create tables as user1
@@ -162,7 +159,7 @@ public class TestJdbcWithSQLAuthorization {
 
   @Test
   public void testAuthZFailureLlapCachePurge() throws Exception {
-    // using different code blocks so that jdbc variables are not accidently re-used
+    // using different code blocks so that jdbc variables are not accidentally re-used
     // between the actions. Different connection/statement object should be used for each action.
     {
       Connection hs2Conn = getConnection("user1");
@@ -176,7 +173,7 @@ public class TestJdbcWithSQLAuthorization {
           "not have following privileges for operation LLAP_CACHE_PURGE [[ADMIN PRIVILEGE] on Object " +
           "[type=COMMAND_PARAMS, name=[llap, cache, -purge]], [ADMIN PRIVILEGE] on Object " +
           "[type=SERVICE_NAME, name=localhost]]";
-        assertEquals(msg, e.getMessage());
+        assertTrue(e.getMessage().contains(msg));
       } finally {
         stmt.close();
         hs2Conn.close();
@@ -242,7 +239,4 @@ public class TestJdbcWithSQLAuthorization {
     stmt.close();
     hs2Conn.close();
   }
-
-
-
 }

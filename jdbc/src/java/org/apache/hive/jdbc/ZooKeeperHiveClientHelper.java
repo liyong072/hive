@@ -9,20 +9,21 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.jdbc;
 
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -30,8 +31,12 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
+import org.apache.curator.utils.ZKPaths;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.common.SSLZookeeperFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.common.IPStackUtils;
+import org.apache.hadoop.hive.metastore.utils.SecurityUtils;
 import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
 import org.apache.hive.service.server.HS2ActivePassiveHARegistry;
 import org.apache.hive.service.server.HS2ActivePassiveHARegistryClient;
@@ -42,7 +47,7 @@ import org.slf4j.LoggerFactory;
 import com.google.common.base.Joiner;
 
 class ZooKeeperHiveClientHelper {
-  static final Logger LOG = LoggerFactory.getLogger(ZooKeeperHiveClientHelper.class.getName());
+  static final Logger LOG = LoggerFactory.getLogger(ZooKeeperHiveClientHelper.class);
   // Pattern for key1=value1;key2=value2
   private static final Pattern kvPattern = Pattern.compile("([^=;]*)=([^;]*)[;]?");
 
@@ -67,8 +72,7 @@ class ZooKeeperHiveClientHelper {
    */
   public static boolean isZkHADynamicDiscoveryMode(Map<String, String> sessionConf) {
     final String discoveryMode = sessionConf.get(JdbcConnectionParams.SERVICE_DISCOVERY_MODE);
-    return (discoveryMode != null) &&
-      JdbcConnectionParams.SERVICE_DISCOVERY_MODE_ZOOKEEPER_HA.equalsIgnoreCase(discoveryMode);
+    return JdbcConnectionParams.SERVICE_DISCOVERY_MODE_ZOOKEEPER_HA.equalsIgnoreCase(discoveryMode);
   }
 
   /**
@@ -79,54 +83,120 @@ class ZooKeeperHiveClientHelper {
    */
   public static boolean isZkDynamicDiscoveryMode(Map<String, String> sessionConf) {
     final String discoveryMode = sessionConf.get(JdbcConnectionParams.SERVICE_DISCOVERY_MODE);
-    return (discoveryMode != null)
-      && (JdbcConnectionParams.SERVICE_DISCOVERY_MODE_ZOOKEEPER.equalsIgnoreCase(discoveryMode) ||
-      JdbcConnectionParams.SERVICE_DISCOVERY_MODE_ZOOKEEPER_HA.equalsIgnoreCase(discoveryMode));
+    return JdbcConnectionParams.SERVICE_DISCOVERY_MODE_ZOOKEEPER.equalsIgnoreCase(discoveryMode) ||
+        JdbcConnectionParams.SERVICE_DISCOVERY_MODE_ZOOKEEPER_HA.equalsIgnoreCase(discoveryMode);
+  }
+
+  static boolean isZkEnforceSASLClient(Map<String, String> sessionVars) {
+    HiveConf.ConfVars confVars = HiveConf.ConfVars.HIVE_ZOOKEEPER_USE_KERBEROS;
+    return sessionVars.containsKey(JdbcConnectionParams.AUTH_PRINCIPAL) &&
+        Boolean.parseBoolean(sessionVars.getOrDefault(confVars.varname, confVars.getDefaultValue()));
+  }
+
+  /**
+   * Parse and set up the SSL communication related Zookeeper params in connParams from sessionVars.
+   * @param connParams
+   */
+  public static void setZkSSLParams(JdbcConnectionParams connParams) {
+    Map<String, String> sessionConf = connParams.getSessionVars();
+    boolean sslEnabled = false;
+    if (sessionConf.containsKey(JdbcConnectionParams.ZOOKEEPER_SSL_ENABLE)) {
+      sslEnabled = Boolean.parseBoolean(sessionConf.get(JdbcConnectionParams.ZOOKEEPER_SSL_ENABLE));
+      connParams.setZooKeeperSslEnabled(sslEnabled);
+    }
+    if (sslEnabled) {
+      connParams.setZookeeperKeyStoreLocation(
+          StringUtils.defaultString(sessionConf.get(JdbcConnectionParams.ZOOKEEPER_KEYSTORE_LOCATION), ""));
+      connParams.setZookeeperKeyStorePassword(
+          StringUtils.defaultString(Utils.getPassword(sessionConf, JdbcConnectionParams.ZOOKEEPER_KEYSTORE_PASSWORD),
+              ""));
+      connParams.setZookeeperKeyStoreType(
+          StringUtils.defaultString(sessionConf.get(JdbcConnectionParams.ZOOKEEPER_KEYSTORE_TYPE),""));
+      connParams.setZookeeperTrustStoreLocation(
+          StringUtils.defaultString(sessionConf.get(JdbcConnectionParams.ZOOKEEPER_TRUSTSTORE_LOCATION), ""));
+      connParams.setZookeeperTrustStorePassword(
+          StringUtils.defaultString(Utils.getPassword(sessionConf, JdbcConnectionParams.ZOOKEEPER_TRUSTSTORE_PASSWORD),
+              ""));
+      connParams.setZookeeperTrustStoreType(
+          StringUtils.defaultString(sessionConf.get(JdbcConnectionParams.ZOOKEEPER_TRUSTSTORE_TYPE),""));
+    }
   }
 
   private static CuratorFramework getZkClient(JdbcConnectionParams connParams) throws Exception {
     String zooKeeperEnsemble = connParams.getZooKeeperEnsemble();
     CuratorFramework zooKeeperClient =
-        CuratorFrameworkFactory.builder().connectString(zooKeeperEnsemble)
-            .retryPolicy(new ExponentialBackoffRetry(1000, 3)).build();
+        CuratorFrameworkFactory.builder()
+            .connectString(zooKeeperEnsemble)
+            .retryPolicy(new ExponentialBackoffRetry(1000, 3))
+            .zookeeperFactory(
+            new SSLZookeeperFactory(connParams.isZooKeeperSslEnabled(), connParams.getZookeeperKeyStoreLocation(),
+                connParams.getZookeeperKeyStorePassword(), connParams.getZookeeperKeyStoreType(),
+                connParams.getZookeeperTrustStoreLocation(),
+                connParams.getZookeeperTrustStorePassword(), connParams.getZookeeperTrustStoreType()))
+            .build();
+
+    // If the client is requesting the Kerberos, then the ZooKeeper is mostly Kerberos-secured
+    if (isZkEnforceSASLClient(connParams.getSessionVars())) {
+      SecurityUtils.setZookeeperClientKerberosJaasConfig(null, null);
+    }
     zooKeeperClient.start();
     return zooKeeperClient;
   }
 
-  private static List<String> getServerHosts(JdbcConnectionParams connParams, CuratorFramework
-      zooKeeperClient) throws Exception {
-    List<String> serverHosts = zooKeeperClient.getChildren().forPath("/" + getZooKeeperNamespace(connParams));
-    // Remove the znodes we've already tried from this list
-    serverHosts.removeAll(connParams.getRejectedHostZnodePaths());
-    if (serverHosts.isEmpty()) {
-      throw new ZooKeeperHiveClientException(
-          "Tried all existing HiveServer2 uris from ZooKeeper.");
+  /**
+   * Get a list of all HiveServer2 server hosts.
+   *
+   * @param connParams The current JDBC connection parameters
+   * @param zooKeeperClient The client to use to connect to ZooKeeper
+   * @return A list of HiveServer2 hosts
+   * @throws ZooKeeperHiveClientException Failed to communicate to ZooKeeper
+   */
+  private static List<String> getServerHosts(final JdbcConnectionParams connParams,
+      final CuratorFramework zooKeeperClient) throws ZooKeeperHiveClientException {
+    final String zookeeperNamespace = getZooKeeperNamespace(connParams);
+    final String zkPath = ZKPaths.makePath(null, zookeeperNamespace);
+    try {
+      final List<String> serverHosts = zooKeeperClient.getChildren().forPath(zkPath);
+      LOG.info("Discovered HiveServer2 hosts in ZooKeeper [{}]: {}", zkPath, serverHosts);
+
+      if (serverHosts.isEmpty()) {
+        LOG.warn("Did not find any HiveServer2 hosts in ZooKeeper [{}]. "
+            + "Check that the Hive ZooKeeper namespace is configured correctly.", zkPath);
+      }
+
+      // Remove the znodes we've already tried from this list
+      serverHosts.removeAll(connParams.getRejectedHostZnodePaths());
+
+      LOG.debug("Servers in ZooKeeper after removing rejected: {}", serverHosts);
+
+      return serverHosts;
+    } catch (Exception e) {
+      throw new ZooKeeperHiveClientException("Unable to retrive HS2 host information from ZooKeeper", e);
     }
-    return serverHosts;
   }
 
   private static void updateParamsWithZKServerNode(JdbcConnectionParams connParams,
       CuratorFramework zooKeeperClient, String serverNode) throws Exception {
-    String zooKeeperNamespace = getZooKeeperNamespace(connParams);
+    final String zooKeeperNamespace = getZooKeeperNamespace(connParams);
     connParams.setCurrentHostZnodePath(serverNode);
     // Read data from the znode for this server node
     // This data could be either config string (new releases) or server end
     // point (old releases)
     String dataStr =
         new String(
-            zooKeeperClient.getData().forPath("/" + zooKeeperNamespace + "/" + serverNode),
-            Charset.forName("UTF-8"));
+            zooKeeperClient.getData().forPath(ZKPaths.makePath(null, zooKeeperNamespace, serverNode)),
+            StandardCharsets.UTF_8);
     // If dataStr is not null and dataStr is not a KV pattern,
     // it must be the server uri added by an older version HS2
     Matcher matcher = kvPattern.matcher(dataStr);
     if ((dataStr != null) && (!matcher.find())) {
-      String[] split = dataStr.split(":");
-      if (split.length != 2) {
-        throw new ZooKeeperHiveClientException("Unable to read HiveServer2 uri from ZooKeeper: "
-            + dataStr);
+      try {
+        IPStackUtils.HostPort hostPort = IPStackUtils.getHostAndPort(dataStr);
+        connParams.setHost(hostPort.getHostname());
+        connParams.setPort(hostPort.getPort());
+      } catch (Exception e) {
+        throw new ZooKeeperHiveClientException("Unable to parse HiveServer2 URI from ZooKeeper data: " + dataStr);
       }
-      connParams.setHost(split[0]);
-      connParams.setPort(Integer.parseInt(split[1]));
     } else {
       applyConfs(dataStr, connParams);
     }
@@ -136,30 +206,31 @@ class ZooKeeperHiveClientHelper {
     if (isZkHADynamicDiscoveryMode(connParams.getSessionVars())) {
       configureConnParamsHA(connParams);
     } else {
-      CuratorFramework zooKeeperClient = null;
-      try {
-        zooKeeperClient = getZkClient(connParams);
-        List<String> serverHosts = getServerHosts(connParams, zooKeeperClient);
-        // Now pick a server node randomly
-        String serverNode = serverHosts.get(new Random().nextInt(serverHosts.size()));
+      try (CuratorFramework zooKeeperClient = getZkClient(connParams)) {
+        final List<String> serverHosts = getServerHosts(connParams, zooKeeperClient);
+        if (serverHosts.isEmpty()) {
+          throw new ZooKeeperHiveClientException("Empty HiveServer2 URIs found from ZooKeeper to attempt");
+        }
+        // Pick a server node randomly
+        final String serverNode = serverHosts.get(ThreadLocalRandom.current().nextInt(serverHosts.size()));
         updateParamsWithZKServerNode(connParams, zooKeeperClient, serverNode);
+      } catch (ZooKeeperHiveClientException zkhce) {
+        throw zkhce;
       } catch (Exception e) {
         throw new ZooKeeperHiveClientException("Unable to read HiveServer2 configs from ZooKeeper", e);
-      } finally {
-        // Close the client connection with ZooKeeper
-        if (zooKeeperClient != null) {
-          zooKeeperClient.close();
-        }
       }
     }
   }
 
   private static void configureConnParamsHA(JdbcConnectionParams connParams) throws ZooKeeperHiveClientException {
     try {
+
       Configuration registryConf = new Configuration();
       registryConf.set(HiveConf.ConfVars.HIVE_ZOOKEEPER_QUORUM.varname, connParams.getZooKeeperEnsemble());
       registryConf.set(HiveConf.ConfVars.HIVE_SERVER2_ACTIVE_PASSIVE_HA_REGISTRY_NAMESPACE.varname,
         getZooKeeperNamespace(connParams));
+      registryConf.setBoolean(HiveConf.ConfVars.HIVE_ZOOKEEPER_USE_KERBEROS.varname,
+          isZkEnforceSASLClient(connParams.getSessionVars()));
       HS2ActivePassiveHARegistry haRegistryClient = HS2ActivePassiveHARegistryClient.getClient(registryConf);
       boolean foundLeader = false;
       String maxRetriesConf = connParams.getSessionVars().get(JdbcConnectionParams.RETRIES);
@@ -206,10 +277,14 @@ class ZooKeeperHiveClientHelper {
     CuratorFramework zooKeeperClient = null;
     try {
       zooKeeperClient = getZkClient(connParams);
-      List<String> serverHosts = getServerHosts(connParams, zooKeeperClient);
-      final List<JdbcConnectionParams> directParamsList = new ArrayList<>();
-      // For each node
-      for (String serverNode : serverHosts) {
+      final List<String> serverHosts = getServerHosts(connParams, zooKeeperClient);
+
+      if (serverHosts.isEmpty()) {
+        throw new ZooKeeperHiveClientException("No more HiveServer2 URIs from ZooKeeper to attempt");
+      }
+
+      final List<JdbcConnectionParams> directParamsList = new ArrayList<>(serverHosts.size());
+      for (final String serverNode : serverHosts) {
         JdbcConnectionParams directConnParams = new JdbcConnectionParams(connParams);
         directParamsList.add(directConnParams);
         updateParamsWithZKServerNode(directConnParams, zooKeeperClient, serverNode);
@@ -218,7 +293,6 @@ class ZooKeeperHiveClientHelper {
     } catch (Exception e) {
       throw new ZooKeeperHiveClientException("Unable to read HiveServer2 configs from ZooKeeper", e);
     } finally {
-      // Close the client connection with ZooKeeper
       if (zooKeeperClient != null) {
         zooKeeperClient.close();
       }

@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,18 +6,22 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p/>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p/>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.hooks;
 
+import static org.apache.hadoop.hive.ql.hooks.Entity.Type.PARTITION;
+import static org.apache.hadoop.hive.ql.hooks.Entity.Type.TABLE;
+import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERCATALOG_LOCATION;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERDATABASE;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERDATABASE_OWNER;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERPARTITION_BUCKETNUM;
@@ -52,6 +56,7 @@ import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERTABLE_TOUCH;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERTABLE_UNARCHIVE;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERTABLE_UPDATEPARTSTATS;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERTABLE_UPDATETABLESTATS;
+import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERTABLE_DROP_COL_STATS;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERTBLPART_SKEWED_LOCATION;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERVIEW_AS;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.ALTERVIEW_PROPERTIES;
@@ -71,7 +76,6 @@ import static org.apache.hadoop.hive.ql.plan.HiveOperation.DROPMACRO;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.DROPROLE;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.DROPTABLE;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.DROPVIEW;
-import static org.apache.hadoop.hive.ql.plan.HiveOperation.DROPVIEW_PROPERTIES;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.EXPORT;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.IMPORT;
 import static org.apache.hadoop.hive.ql.plan.HiveOperation.KILL_QUERY;
@@ -89,13 +93,14 @@ import java.net.UnknownHostException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -107,8 +112,6 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.llap.registry.impl.LlapRegistryService;
 import org.apache.hadoop.hive.ql.QueryPlan;
-import org.apache.hadoop.hive.ql.exec.ExplainTask;
-import org.apache.hadoop.hive.ql.exec.TaskFactory;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.mr.ExecDriver;
 import org.apache.hadoop.hive.ql.exec.tez.TezTask;
@@ -144,15 +147,16 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
     includedOperationSet = Arrays.stream(new HiveOperation[] { LOAD, EXPORT, IMPORT,
         CREATEDATABASE, DROPDATABASE, DROPTABLE, MSCK, ALTERTABLE_ADDCOLS, ALTERTABLE_REPLACECOLS,
         ALTERTABLE_RENAMECOL, ALTERTABLE_RENAMEPART, ALTERTABLE_UPDATEPARTSTATS,
-        ALTERTABLE_UPDATETABLESTATS, ALTERTABLE_RENAME, ALTERTABLE_DROPPARTS, ALTERTABLE_ADDPARTS,
+        ALTERTABLE_UPDATETABLESTATS, ALTERTABLE_DROP_COL_STATS,
+        ALTERTABLE_RENAME, ALTERTABLE_DROPPARTS, ALTERTABLE_ADDPARTS,
         ALTERTABLE_TOUCH, ALTERTABLE_ARCHIVE, ALTERTABLE_UNARCHIVE, ALTERTABLE_PROPERTIES,
         ALTERTABLE_SERIALIZER, ALTERPARTITION_SERIALIZER, ALTERTABLE_SERDEPROPERTIES,
         ALTERPARTITION_SERDEPROPERTIES, ALTERTABLE_CLUSTER_SORT, ANALYZE_TABLE, CACHE_METADATA,
         ALTERTABLE_BUCKETNUM, ALTERPARTITION_BUCKETNUM, CREATEFUNCTION, DROPFUNCTION,
         RELOADFUNCTION, CREATEMACRO, DROPMACRO, CREATEVIEW, DROPVIEW, ALTERVIEW_PROPERTIES,
-        DROPVIEW_PROPERTIES, LOCKTABLE, UNLOCKTABLE, CREATEROLE, DROPROLE, ALTERTABLE_FILEFORMAT,
+        LOCKTABLE, UNLOCKTABLE, CREATEROLE, DROPROLE, ALTERTABLE_FILEFORMAT,
         ALTERPARTITION_FILEFORMAT, ALTERTABLE_LOCATION, ALTERPARTITION_LOCATION, CREATETABLE,
-        TRUNCATETABLE, CREATETABLE_AS_SELECT, QUERY, ALTERDATABASE, ALTERDATABASE_OWNER,
+        TRUNCATETABLE, CREATETABLE_AS_SELECT, QUERY, ALTERCATALOG_LOCATION, ALTERDATABASE, ALTERDATABASE_OWNER,
         ALTERTABLE_MERGEFILES, ALTERPARTITION_MERGEFILES, ALTERTABLE_SKEWED,
         ALTERTBLPART_SKEWED_LOCATION, ALTERTABLE_PARTCOLTYPE, ALTERTABLE_EXCHANGEPARTITION,
         ALTERTABLE_DROPCONSTRAINT, ALTERTABLE_ADDCONSTRAINT, ALTERVIEW_RENAME, ALTERVIEW_AS,
@@ -169,18 +173,19 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
 
   public enum OtherInfoType {
     QUERY, STATUS, TEZ, MAPRED, INVOKER_INFO, SESSION_ID, THREAD_NAME, VERSION, CLIENT_IP_ADDRESS,
-    HIVE_ADDRESS, HIVE_INSTANCE_TYPE, CONF, PERF, LLAP_APP_ID
+    HIVE_ADDRESS, HIVE_INSTANCE_TYPE, CONF, PERF, LLAP_APP_ID, ERROR_MESSAGE, QUERY_TYPE
   }
 
   public enum ExecutionMode {
-    MR, TEZ, LLAP, SPARK, NONE
+    MR, TEZ, LLAP, NONE
   }
 
   static class EventLogger {
     private final Clock clock;
     private final String logFileName;
     private final DatePartitionedLogger<HiveHookEventProto> logger;
-    private final ScheduledExecutorService logWriter;
+    private final ScheduledThreadPoolExecutor logWriter;
+    private final int queueCapacity;
     private int logFileCount = 0;
     private ProtoMessageWriter<HiveHookEventProto> writer;
     private LocalDate writerDate;
@@ -190,6 +195,8 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
       this.clock = clock;
       // randomUUID is slow, since its cryptographically secure, only first query will take time.
       this.logFileName = "hive_" + UUID.randomUUID().toString();
+      this.queueCapacity = conf.getInt(ConfVars.HIVE_PROTO_EVENTS_QUEUE_CAPACITY.varname,
+        ConfVars.HIVE_PROTO_EVENTS_QUEUE_CAPACITY.defaultIntVal);
       String baseDir = conf.getVar(ConfVars.HIVE_PROTO_EVENTS_BASE_PATH);
       if (StringUtils.isBlank(baseDir)) {
         baseDir = null;
@@ -215,7 +222,7 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
 
       ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
           .setNameFormat("Hive Hook Proto Log Writer %d").build();
-      logWriter = Executors.newSingleThreadScheduledExecutor(threadFactory);
+      logWriter = new ScheduledThreadPoolExecutor(1, threadFactory);
 
       long rolloverInterval = conf.getTimeVar(
           HiveConf.ConfVars.HIVE_PROTO_EVENTS_ROLLOVER_CHECK_INTERVAL, TimeUnit.MICROSECONDS);
@@ -251,7 +258,7 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
         LOG.debug("Not logging events of operation type : {}", plan.getOperationName());
         return;
       }
-      HiveHookEventProto event;
+      HiveHookEventProtoPartialBuilder event;
       switch (hookContext.getHookType()) {
       case PRE_EXEC_HOOK:
         event = getPreHookEvent(hookContext);
@@ -268,10 +275,17 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
       }
       if (event != null) {
         try {
-          logWriter.execute(() -> writeEvent(event));
+          // ScheduledThreadPoolExecutor uses an unbounded queue which cannot be replaced with a bounded queue.
+          // Therefore checking queue capacity manually here.
+          if (logWriter.getQueue().size() < queueCapacity) {
+            logWriter.execute(() -> writeEvent(event));
+          } else {
+            LOG.warn("Writer queue full ignoring event {} for query {}",
+              hookContext.getHookType(), plan.getQueryId());
+          }
         } catch (RejectedExecutionException e) {
           LOG.warn("Writer queue full ignoring event {} for query {}",
-              hookContext.getHookType(), plan.getQueryId());
+            hookContext.getHookType(), plan.getQueryId());
         }
       }
     }
@@ -301,13 +315,15 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
     }
 
     private static final int MAX_RETRIES = 2;
-    private void writeEvent(HiveHookEventProto event) {
+    private void writeEvent(HiveHookEventProtoPartialBuilder builder) {
+      HiveHookEventProto event = builder.build();
       for (int retryCount = 0; retryCount <= MAX_RETRIES; ++retryCount) {
         try {
           if (eventPerFile) {
-            if (!maybeRolloverWriterForDay()) {
-              writer = logger.getWriter(logFileName + "_" + ++logFileCount);
+            if (writer != null) {
+              IOUtils.closeQuietly(writer);
             }
+            writer = logger.getWriter(logFileName + "_" + ++logFileCount);
             LOG.debug("Event per file enabled. New proto event file: {}", writer.getPath());
             writer.writeProto(event);
             IOUtils.closeQuietly(writer);
@@ -325,7 +341,7 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
           if (retryCount < MAX_RETRIES) {
             LOG.warn("Error writing proto message for query {}, eventType: {}, retryCount: {}," +
                 " error: {} ", event.getHiveQueryId(), event.getEventType(), retryCount,
-                e.getMessage());
+                e.getMessage(), e);
             LOG.trace("Exception", e);
           } else {
             LOG.error("Error writing proto message for query {}, eventType: {}: ",
@@ -341,7 +357,7 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
       }
     }
 
-    private HiveHookEventProto getPreHookEvent(HookContext hookContext) {
+    private HiveHookEventProtoPartialBuilder getPreHookEvent(HookContext hookContext) {
       QueryPlan plan = hookContext.getQueryPlan();
       LOG.info("Received pre-hook notification for: " + plan.getQueryId());
 
@@ -351,6 +367,7 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
       List<TezTask> tezTasks = Utilities.getTezTasks(plan.getRootTasks());
       ExecutionMode executionMode = getExecutionMode(plan, mrTasks, tezTasks);
 
+      Map<OtherInfoType, JSONObject> otherInfo = new HashMap<>();
       HiveHookEventProto.Builder builder = HiveHookEventProto.newBuilder();
       builder.setEventType(EventType.QUERY_SUBMITTED.name());
       builder.setTimestamp(plan.getQueryStartTime());
@@ -366,15 +383,6 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
       builder.addAllTablesWritten(getTablesFromEntitySet(hookContext.getOutputs()));
       if (hookContext.getOperationId() != null) {
         builder.setOperationId(hookContext.getOperationId());
-      }
-
-      try {
-        JSONObject queryObj = new JSONObject();
-        queryObj.put("queryText", plan.getQueryStr());
-        queryObj.put("queryPlan", getExplainPlan(plan, conf, hookContext));
-        addMapEntry(builder, OtherInfoType.QUERY, queryObj.toString());
-      } catch (Exception e) {
-        LOG.error("Unexpected exception while serializing json.", e);
       }
 
       addMapEntry(builder, OtherInfoType.TEZ, Boolean.toString(tezTasks.size() > 0));
@@ -409,14 +417,28 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
       for (Map.Entry<String, String> setting : conf) {
         confObj.put(setting.getKey(), setting.getValue());
       }
-      addMapEntry(builder, OtherInfoType.CONF, confObj.toString());
-      return builder.build();
+      otherInfo.put(OtherInfoType.CONF, confObj);
+
+      ExplainConfiguration explainConfig = new ExplainConfiguration();
+      explainConfig.setFormatted(true);
+      ExplainWork explainWork = new ExplainWork(null, // resFile
+              null, // pCtx
+              plan.getRootTasks(), // RootTasks
+              plan.getFetchTask(), // FetchTask
+              null, null, // analyzer
+              explainConfig, // explainConfig
+              plan.getCboInfo(), // cboInfo,
+              plan.getOptimizedQueryString(),
+              plan.getOptimizedCBOPlan());
+      return new HiveHookEventProtoPartialBuilder(
+              builder, explainWork, otherInfo, plan.getQueryStr(), conf.getVar(ConfVars.HIVE_STAGE_ID_REARRANGE));
     }
 
-    private HiveHookEventProto getPostHookEvent(HookContext hookContext, boolean success) {
+    private HiveHookEventProtoPartialBuilder getPostHookEvent(HookContext hookContext, boolean success) {
       QueryPlan plan = hookContext.getQueryPlan();
       LOG.info("Received post-hook notification for: " + plan.getQueryId());
 
+      Map<OtherInfoType, JSONObject> other = new HashMap<>();
       HiveHookEventProto.Builder builder = HiveHookEventProto.newBuilder();
       builder.setEventType(EventType.QUERY_COMPLETED.name());
       builder.setTimestamp(clock.getTime());
@@ -427,16 +449,17 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
         builder.setOperationId(hookContext.getOperationId());
       }
       addMapEntry(builder, OtherInfoType.STATUS, Boolean.toString(success));
+      addMapEntry(builder, OtherInfoType.ERROR_MESSAGE, hookContext.getErrorMessage());
+      addMapEntry(builder, OtherInfoType.QUERY_TYPE, hookContext.getQueryState().getCommandType());
       JSONObject perfObj = new JSONObject();
       for (String key : hookContext.getPerfLogger().getEndTimes().keySet()) {
         perfObj.put(key, hookContext.getPerfLogger().getDuration(key));
       }
-      addMapEntry(builder, OtherInfoType.PERF, perfObj.toString());
-
-      return builder.build();
+      other.put(OtherInfoType.PERF, perfObj);
+      return new HiveHookEventProtoPartialBuilder(builder, null, other, plan.getQueryStr(), null);
     }
 
-    private void addMapEntry(HiveHookEventProto.Builder builder, OtherInfoType key, String value) {
+    public static void addMapEntry(HiveHookEventProto.Builder builder, OtherInfoType key, String value) {
       if (value != null) {
         builder.addOtherInfo(
             MapFieldEntry.newBuilder().setKey(key.name()).setValue(value).build());
@@ -448,11 +471,11 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
     }
 
     private String getRequestUser(HookContext hookContext) {
-      String requestuser = hookContext.getUserName();
-      if (requestuser == null) {
-        requestuser = hookContext.getUgi().getUserName();
+      String requestUser = hookContext.getUserName();
+      if (requestUser == null) {
+        requestUser = hookContext.getUgi().getUserName();
       }
-      return requestuser;
+      return requestUser;
     }
 
     private String getQueueName(ExecutionMode mode, HiveConf conf) {
@@ -463,7 +486,6 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
         return conf.get(MRJobConfig.QUEUE_NAME);
       case TEZ:
         return conf.get(TezConfiguration.TEZ_QUEUE_NAME);
-      case SPARK:
       case NONE:
       default:
         return null;
@@ -471,13 +493,13 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
     }
 
     private List<String> getTablesFromEntitySet(Set<? extends Entity> entities) {
-      List<String> tableNames = new ArrayList<>();
+      Set<String> tableNames = new HashSet<>();
       for (Entity entity : entities) {
-        if (entity.getType() == Entity.Type.TABLE) {
+        if (entity.getType() == TABLE || entity.getType() == PARTITION) {
           tableNames.add(entity.getTable().getDbName() + "." + entity.getTable().getTableName());
         }
       }
-      return tableNames;
+      return new ArrayList<>(tableNames);
     }
 
     private ExecutionMode getExecutionMode(QueryPlan plan, List<ExecDriver> mrTasks,
@@ -492,31 +514,9 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
         return ExecutionMode.TEZ;
       } else if (mrTasks.size() > 0) {
         return ExecutionMode.MR;
-      } else if (Utilities.getSparkTasks(plan.getRootTasks()).size() > 0) {
-        return ExecutionMode.SPARK;
       } else {
         return ExecutionMode.NONE;
       }
-    }
-
-    private JSONObject getExplainPlan(QueryPlan plan, HiveConf conf, HookContext hookContext)
-        throws Exception {
-      // Get explain plan for the query.
-      ExplainConfiguration config = new ExplainConfiguration();
-      config.setFormatted(true);
-      ExplainWork work = new ExplainWork(null, // resFile
-          null, // pCtx
-          plan.getRootTasks(), // RootTasks
-          plan.getFetchTask(), // FetchTask
-          null, null, // analyzer
-          config, // explainConfig
-          plan.getCboInfo(), // cboInfo,
-          plan.getOptimizedQueryString(),
-          plan.getOptimizedCBOPlan()
-      );
-      ExplainTask explain = (ExplainTask) TaskFactory.get(work, conf);
-      explain.initialize(hookContext.getQueryState(), plan, null, null);
-      return explain.getJSONPlan(null, work);
     }
 
     private ApplicationId determineLlapId(HiveConf conf, ExecutionMode mode) {
@@ -561,7 +561,7 @@ public class HiveProtoLoggingHook implements ExecuteWithHookContext {
       EventLogger logger = EventLogger.getInstance(hookContext.getConf());
       logger.handle(hookContext);
     } catch (Exception e) {
-      LOG.error("Got exceptoin while processing event: ", e);
+      LOG.error("Got exception while processing event: ", e);
     }
   }
 }

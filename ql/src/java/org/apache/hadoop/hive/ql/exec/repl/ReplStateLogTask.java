@@ -9,17 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.repl;
 
-import org.apache.hadoop.hive.ql.DriverContext;
 import org.apache.hadoop.hive.ql.exec.Task;
+import org.apache.hadoop.hive.ql.exec.repl.util.ReplUtils;
 import org.apache.hadoop.hive.ql.plan.api.StageType;
 
 import java.io.Serializable;
@@ -34,8 +35,15 @@ public class ReplStateLogTask extends Task<ReplStateLogWork> implements Serializ
   private static final long serialVersionUID = 1L;
 
   @Override
-  public int execute(DriverContext driverContext) {
-    work.replStateLog();
+  public int execute() {
+    try {
+      work.replStateLog();
+    } catch (Exception e) {
+      LOG.error("Exception while logging metrics ", e);
+      setException(e);
+      return ReplUtils.handleException(true, e, work.getDumpDirectory(), work.getMetricCollector(),
+              getName(), conf);
+    }
     return 0;
   }
 
@@ -47,5 +55,12 @@ public class ReplStateLogTask extends Task<ReplStateLogWork> implements Serializ
   @Override
   public String getName() {
     return "REPL_STATE_LOG";
+  }
+
+  @Override
+  public boolean canExecuteInParallel() {
+    // ReplStateLogTask is executed only when all its parents are done with execution. So running it in parallel has no
+    // benefits.
+    return false;
   }
 }

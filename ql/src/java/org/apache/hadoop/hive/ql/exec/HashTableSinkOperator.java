@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec;
 
@@ -47,7 +48,6 @@ import org.apache.hadoop.hive.ql.plan.api.OperatorType;
 import org.apache.hadoop.hive.ql.session.SessionState.LogHelper;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
-import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils.ObjectInspectorCopyOption;
@@ -123,7 +123,7 @@ public class HashTableSinkOperator extends TerminalOperator<HashTableSinkDesc> i
   @SuppressWarnings("unchecked")
   protected void initializeOp(Configuration hconf) throws HiveException {
     super.initializeOp(hconf);
-    boolean isSilent = HiveConf.getBoolVar(hconf, HiveConf.ConfVars.HIVESESSIONSILENT);
+    boolean isSilent = HiveConf.getBoolVar(hconf, HiveConf.ConfVars.HIVE_SESSION_SILENT);
     console = new LogHelper(LOG, isSilent);
     memoryExhaustionChecker = MemoryExhaustionCheckerFactory.getChecker(console, hconf, conf);
     emptyRowContainer.addRow(emptyObjectArray);
@@ -173,24 +173,24 @@ public class HashTableSinkOperator extends TerminalOperator<HashTableSinkDesc> i
     }
     mapJoinTables = new MapJoinPersistableTableContainer[tagLen];
     mapJoinTableSerdes = new MapJoinTableContainerSerDe[tagLen];
-    hashTableScale = HiveConf.getLongVar(hconf, HiveConf.ConfVars.HIVEHASHTABLESCALE);
+    hashTableScale = HiveConf.getLongVar(hconf, HiveConf.ConfVars.HIVE_HASHTABLE_SCALE);
     if (hashTableScale <= 0) {
       hashTableScale = 1;
     }
     try {
       TableDesc keyTableDesc = conf.getKeyTblDesc();
-      AbstractSerDe keySerde = (AbstractSerDe) ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),
+      AbstractSerDe keySerDe = (AbstractSerDe) ReflectionUtils.newInstance(keyTableDesc.getSerDeClass(),
           null);
-      SerDeUtils.initializeSerDe(keySerde, null, keyTableDesc.getProperties(), null);
-      MapJoinObjectSerDeContext keyContext = new MapJoinObjectSerDeContext(keySerde, false);
+      keySerDe.initialize(null, keyTableDesc.getProperties(), null);
+      MapJoinObjectSerDeContext keyContext = new MapJoinObjectSerDeContext(keySerDe, false);
       for (Byte pos : order) {
         if (pos == posBigTableAlias) {
           continue;
         }
         mapJoinTables[pos] = new HashMapWrapper(hconf, -1);
         TableDesc valueTableDesc = conf.getValueTblFilteredDescs().get(pos);
-        AbstractSerDe valueSerDe = (AbstractSerDe) ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(), null);
-        SerDeUtils.initializeSerDe(valueSerDe, null, valueTableDesc.getProperties(), null);
+        AbstractSerDe valueSerDe = (AbstractSerDe) ReflectionUtils.newInstance(valueTableDesc.getSerDeClass(), null);
+        valueSerDe.initialize(null, valueTableDesc.getProperties(), null);
         mapJoinTableSerdes[pos] = new MapJoinTableContainerSerDe(keyContext, new MapJoinObjectSerDeContext(
             valueSerDe, hasFilter(pos)));
       }

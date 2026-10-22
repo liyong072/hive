@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -27,7 +28,6 @@ import org.apache.hadoop.hive.ql.plan.DummyStoreDesc;
 import org.apache.hadoop.hive.ql.plan.api.OperatorType;
 import org.apache.hadoop.hive.serde2.objectinspector.InspectableObject;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils;
-import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils.ObjectInspectorCopyOption;
 
 /**
  * For SortMerge joins, this is a dummy operator, which stores the row for the
@@ -99,8 +99,7 @@ public class DummyStoreOperator extends Operator<DummyStoreDesc> implements Seri
   @Override
   public void process(Object row, int tag) throws HiveException {
     // Store the row. See comments above for why we need a new copy of the row.
-    result.o = ObjectInspectorUtils.copyToStandardObject(row, inputObjInspectors[0],
-        ObjectInspectorCopyOption.WRITABLE);
+    result.o = ObjectInspectorUtils.copyToStandardObject(row, inputObjInspectors[0]);
   }
 
   @Override

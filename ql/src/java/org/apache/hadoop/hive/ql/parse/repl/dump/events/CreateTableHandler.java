@@ -9,15 +9,15 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.dump.events;
 
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.NotificationEvent;
@@ -26,10 +26,6 @@ import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.parse.EximUtil;
 import org.apache.hadoop.hive.ql.parse.repl.DumpType;
 import org.apache.hadoop.hive.ql.parse.repl.dump.Utils;
-
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
 
 class CreateTableHandler extends AbstractEventHandler<CreateTableMessage> {
 
@@ -54,7 +50,8 @@ class CreateTableHandler extends AbstractEventHandler<CreateTableMessage> {
 
     Table qlMdTable = new Table(tobj);
 
-    if (!Utils.shouldReplicate(withinContext.replicationSpec, qlMdTable, true, withinContext.hiveConf)) {
+    if (!Utils.shouldReplicate(withinContext.replicationSpec, qlMdTable, true,
+            withinContext.getTablesForBootstrap(), withinContext.oldReplScope, withinContext.hiveConf)) {
       return;
     }
 
@@ -65,7 +62,8 @@ class CreateTableHandler extends AbstractEventHandler<CreateTableMessage> {
     // If we are not dumping data about a table, we shouldn't be dumping basic statistics
     // as well, since that won't be accurate. So reset them to what they would look like for an
     // empty table.
-    if (withinContext.hiveConf.getBoolVar(HiveConf.ConfVars.REPL_DUMP_METADATA_ONLY)) {
+    if (Utils.shouldDumpMetaDataOnly(withinContext.hiveConf)
+            || Utils.shouldDumpMetaDataOnlyForExternalTables(qlMdTable, withinContext.hiveConf)) {
       qlMdTable.setStatsStateLikeNewTable();
     }
 
@@ -78,24 +76,21 @@ class CreateTableHandler extends AbstractEventHandler<CreateTableMessage> {
         withinContext.replicationSpec,
         withinContext.hiveConf);
 
-    Path dataPath = new Path(withinContext.eventRoot, "data");
+    boolean copyAtLoad = withinContext.hiveConf.getBoolVar(HiveConf.ConfVars.REPL_RUN_DATA_COPY_TASKS_ON_TARGET);
     Iterable<String> files = eventMessage.getFiles();
     if (files != null) {
-      // encoded filename/checksum of files, write into _files
-      try (BufferedWriter fileListWriter = writer(withinContext, dataPath)) {
+      if (copyAtLoad) {
+        // encoded filename/checksum of files, write into _files
+        Path dataPath = new Path(withinContext.eventRoot, EximUtil.DATA_PATH_NAME);
+        writeEncodedDumpFiles(withinContext, files, dataPath);
+      } else {
         for (String file : files) {
-          fileListWriter.write(file + "\n");
+          writeFileEntry(qlMdTable, null, file, withinContext);
         }
       }
     }
 
     withinContext.createDmd(this).write();
-  }
-
-  private BufferedWriter writer(Context withinContext, Path dataPath) throws IOException {
-    FileSystem fs = dataPath.getFileSystem(withinContext.hiveConf);
-    Path filesPath = new Path(dataPath, EximUtil.FILES_NAME);
-    return new BufferedWriter(new OutputStreamWriter(fs.create(filesPath)));
   }
 
   @Override

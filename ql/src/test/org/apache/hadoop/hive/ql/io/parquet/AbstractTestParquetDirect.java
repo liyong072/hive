@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.parquet;
@@ -167,7 +168,7 @@ public abstract class AbstractTestParquetDirect {
     Properties props = new Properties();
     props.setProperty(serdeConstants.LIST_COLUMNS, COMMA.join(columnNames));
     props.setProperty(serdeConstants.LIST_COLUMN_TYPES, COMMA.join(columnTypes));
-    serde.initialize(null, props);
+    serde.initialize(null, props, null);
     serde.deserialize(record);
   }
 }

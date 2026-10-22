@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -31,24 +32,24 @@ import java.util.Set;
 public class RowSchema implements Serializable {
 
   private static final long serialVersionUID = 1L;
-  private ArrayList<ColumnInfo> signature = new ArrayList<ColumnInfo>();
+  private List<ColumnInfo> signature = new ArrayList<ColumnInfo>();
 
   public RowSchema() {
   }
 
   public RowSchema(RowSchema that) {
-    this.signature = (ArrayList<ColumnInfo>) that.signature.clone();
+    this.signature = new ArrayList<>(that.signature);
   }
 
-  public RowSchema(ArrayList<ColumnInfo> signature) {
+  public RowSchema(List<ColumnInfo> signature) {
     this.signature = signature;
   }
 
-  public void setSignature(ArrayList<ColumnInfo> signature) {
+  public void setSignature(List<ColumnInfo> signature) {
     this.signature = signature;
   }
 
-  public ArrayList<ColumnInfo> getSignature() {
+  public List<ColumnInfo> getSignature() {
     return signature;
   }
 
@@ -65,16 +66,15 @@ public class RowSchema implements Serializable {
     for (ColumnInfo columnInfo: this.signature) {
       if (columnInfo.getTabAlias() == null) {
         if (tabAlias == null) {
-          if(columnInfo.getAlias() != null && alias != null &&
+          if(columnInfo.getAlias() != null &&
                   columnInfo.getAlias().equals(alias)) {
             return columnInfo;
           }
         }
-      }
-      else {
+      } else {
         if (tabAlias != null) {
           if (columnInfo.getTabAlias().equals(tabAlias) &&
-                  columnInfo.getAlias() != null && alias != null &&
+                  columnInfo.getAlias() != null &&
                   columnInfo.getAlias().equals(alias)) {
             return columnInfo;
           }

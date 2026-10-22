@@ -1,19 +1,20 @@
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.See the NOTICE file
+ * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
- * regarding copyright ownership.The ASF licenses this file
+ * regarding copyright ownership.  The ASF licenses this file
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
- * with the License.You may obtain a copy of the License at
+ * with the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer;
@@ -38,12 +39,12 @@ import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
@@ -80,7 +81,7 @@ public class BucketingSortingReduceSinkOptimizer extends Transform {
   @Override
   public ParseContext transform(ParseContext pctx) throws SemanticException {
 
-    Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
+    Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
 
     // process reduce sink added by hive.enforce.bucketing or hive.enforce.sorting
     opRules.put(new RuleRegExp("R1",
@@ -90,8 +91,8 @@ public class BucketingSortingReduceSinkOptimizer extends Transform {
         getBucketSortReduceSinkProc(pctx));
 
     // The dispatcher fires the processor corresponding to the closest matching rule
-    Dispatcher disp = new DefaultRuleDispatcher(getDefaultProc(), opRules, null);
-    GraphWalker ogw = new DefaultGraphWalker(disp);
+    SemanticDispatcher disp = new DefaultRuleDispatcher(getDefaultProc(), opRules, null);
+    SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
 
     // Create a list of top nodes
     ArrayList<Node> topNodes = new ArrayList<Node>();
@@ -101,17 +102,17 @@ public class BucketingSortingReduceSinkOptimizer extends Transform {
     return pctx;
   }
 
-  private NodeProcessor getDefaultProc() {
-    return new NodeProcessor() {
+  private SemanticNodeProcessor getDefaultProc() {
+    return new SemanticNodeProcessor() {
       @Override
       public Object process(Node nd, Stack<Node> stack,
-          NodeProcessorCtx procCtx, Object... nodeOutputs) throws SemanticException {
+                            NodeProcessorCtx procCtx, Object... nodeOutputs) throws SemanticException {
         return null;
       }
     };
   }
 
-  private NodeProcessor getBucketSortReduceSinkProc(ParseContext pctx) {
+  private SemanticNodeProcessor getBucketSortReduceSinkProc(ParseContext pctx) {
     return new BucketSortReduceSinkProcessor(pctx);
   }
 
@@ -119,7 +120,7 @@ public class BucketingSortingReduceSinkOptimizer extends Transform {
    * BucketSortReduceSinkProcessor.
    *
    */
-  public class BucketSortReduceSinkProcessor implements NodeProcessor {
+  public class BucketSortReduceSinkProcessor implements SemanticNodeProcessor {
     private final Logger LOG = LoggerFactory.getLogger(BucketSortReduceSinkProcessor.class);
     protected ParseContext pGraphContext;
 
@@ -477,7 +478,7 @@ public class BucketingSortingReduceSinkOptimizer extends Transform {
           SMBJoinDesc smbJoinDesc = smbOp.getConf();
           int posBigTable = smbJoinDesc.getPosBigTable();
 
-          // join keys dont match the bucketing keys
+          // join keys don't match the bucketing keys
           List<ExprNodeDesc> keysBigTable = smbJoinDesc.getKeys().get((byte) posBigTable);
           if (keysBigTable.size() != bucketPositions.size()) {
             return null;
@@ -621,8 +622,8 @@ public class BucketingSortingReduceSinkOptimizer extends Transform {
             if (selectDesc.getColList().size() < bucketPositions.size()
                 || selectDesc.getColList().size() != fsOp.getSchema().getSignature().size()) {
               // Some columns in select are pruned. This may happen if those are constants.
-              // TODO: the best solution is to hook the operator before fs with the select operator. 
-              // See smb_mapjoin_20.q for more details. 
+              // TODO: the best solution is to hook the operator before fs with the select operator.
+              // See smb_mapjoin_20.q for more details.
               return null;
             }
             // Only columns can be selected for both sorted and bucketed positions

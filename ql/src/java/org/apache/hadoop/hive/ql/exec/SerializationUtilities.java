@@ -6,14 +6,15 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p/>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p/>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec;
 
@@ -28,52 +29,49 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.ZoneId;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.conf.Configurable;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.CopyOnFirstWriteProperties;
 import org.apache.hadoop.hive.common.type.TimestampTZ;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.CompilationOpContext;
-import org.apache.hadoop.hive.ql.exec.vector.VectorFileSinkOperator;
-import org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat;
-import org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat;
-import org.apache.hadoop.hive.ql.io.RCFileInputFormat;
 import org.apache.hadoop.hive.ql.log.PerfLogger;
 import org.apache.hadoop.hive.ql.plan.AbstractOperatorDesc;
 import org.apache.hadoop.hive.ql.plan.BaseWork;
+import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
 import org.apache.hadoop.hive.ql.plan.MapWork;
 import org.apache.hadoop.hive.ql.plan.MapredWork;
 import org.apache.hadoop.hive.ql.plan.PartitionDesc;
-import org.apache.hadoop.hive.ql.plan.ReduceWork;
-import org.apache.hadoop.hive.ql.plan.SparkEdgeProperty;
-import org.apache.hadoop.hive.ql.plan.SparkWork;
-import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.serde2.Serializer;
-import org.apache.hadoop.hive.serde2.objectinspector.StandardConstantListObjectInspector;
-import org.apache.hadoop.hive.serde2.objectinspector.StandardConstantMapObjectInspector;
-import org.apache.hadoop.hive.serde2.objectinspector.StandardConstantStructObjectInspector;
-import org.apache.hadoop.mapred.SequenceFileInputFormat;
-import org.objenesis.strategy.StdInstantiatorStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.Registration;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
-import com.esotericsoftware.kryo.pool.KryoFactory;
-import com.esotericsoftware.kryo.pool.KryoPool;
-import com.esotericsoftware.kryo.serializers.FieldSerializer;
+import com.esotericsoftware.kryo.kryo5.Kryo;
+import com.esotericsoftware.kryo.kryo5.util.DefaultInstantiatorStrategy;
+import com.esotericsoftware.kryo.kryo5.objenesis.strategy.StdInstantiatorStrategy;
+import com.esotericsoftware.kryo.kryo5.Registration;
+import com.esotericsoftware.kryo.kryo5.io.Input;
+import com.esotericsoftware.kryo.kryo5.io.Output;
+import com.esotericsoftware.kryo.kryo5.util.Pool;
+import com.esotericsoftware.kryo.kryo5.serializers.FieldSerializer;
+
+import com.google.common.annotations.VisibleForTesting;
 
 /**
  * Utilities related to serialization and deserialization.
@@ -124,15 +122,21 @@ public class SerializationUtilities {
   /**
    * Provides general-purpose hooks for specific types, as well as a global hook.
    */
-  private static class KryoWithHooks extends Kryo {
+  private static class KryoWithHooks extends Kryo implements Configurable {
     private Hook globalHook;
+    // this should be set on-the-fly after borrowing this instance and needs to be reset on release
+    private Configuration configuration;
+    // when non-null, the first class read must be compatible with this type
+    private Class<?> rootType = null;
+    // total classes we have met during (de)serialization, should be reset on release
+    private long classCounter = 0;
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static final class SerializerWithHook extends com.esotericsoftware.kryo.Serializer {
-      private final com.esotericsoftware.kryo.Serializer old;
+    private static final class SerializerWithHook extends com.esotericsoftware.kryo.kryo5.Serializer {
+      private final com.esotericsoftware.kryo.kryo5.Serializer old;
       private final Hook hook;
 
-      private SerializerWithHook(com.esotericsoftware.kryo.Serializer old, Hook hook) {
+      private SerializerWithHook(com.esotericsoftware.kryo.kryo5.Serializer old, Hook hook) {
         this.old = old;
         this.hook = hook;
       }
@@ -199,7 +203,7 @@ public class SerializationUtilities {
 
     @Override
     public <T> T readObjectOrNull(Input input, Class<T> type,
-        @SuppressWarnings("rawtypes") com.esotericsoftware.kryo.Serializer serializer) {
+        @SuppressWarnings("rawtypes") com.esotericsoftware.kryo.kryo5.Serializer serializer) {
       Hook hook = ponderGlobalPreReadHook(type);
       T result = super.readObjectOrNull(input, type, serializer);
       return ponderGlobalPostReadHook(hook, result);
@@ -214,60 +218,87 @@ public class SerializationUtilities {
 
     @Override
     public <T> T readObject(Input input, Class<T> type,
-        @SuppressWarnings("rawtypes") com.esotericsoftware.kryo.Serializer serializer) {
+        @SuppressWarnings("rawtypes") com.esotericsoftware.kryo.kryo5.Serializer serializer) {
       Hook hook = ponderGlobalPreReadHook(type);
       T result = super.readObject(input, type, serializer);
       return ponderGlobalPostReadHook(hook, result);
+    }
+
+    @Override
+    public void setConf(Configuration conf) {
+      this.configuration = conf;
+
+    }
+
+    @Override
+    public Configuration getConf() {
+      return configuration;
+    }
+
+    @Override
+    public com.esotericsoftware.kryo.kryo5.Registration getRegistration(Class type) {
+      // If this instance deserializes a payload that a remote client controls (e.g. PartitionExpressionForMetastore at
+      // a remote HMS) or that a client can persist (e.g. a table property copied into the job conf), the first class
+      // encountered during deserialization must be compatible with the expected root type.
+      if (rootType != null && classCounter == 0 && !rootType.isAssignableFrom(type)) {
+        throw new UnsupportedOperationException("The object to be deserialized must be a "
+            + rootType.getName() + ", but encountered: " + type);
+      }
+      classCounter++;
+      return super.getRegistration(type);
+    }
+
+    void setRootType(Class<?> rootType) {
+      this.rootType = rootType;
+      this.classCounter = 0;
+    }
+
+    // reset the fields on release
+    public void restore() {
+      setConf(null);
+      rootType = null;
+      classCounter = 0;
     }
   }
 
   private static final Object FAKE_REFERENCE = new Object();
 
-  private static KryoFactory factory = new KryoFactory() {
-    @Override
-    public Kryo create() {
-      KryoWithHooks kryo = new KryoWithHooks();
-      kryo.register(java.sql.Date.class, new SqlDateSerializer());
-      kryo.register(java.sql.Timestamp.class, new TimestampSerializer());
-      kryo.register(TimestampTZ.class, new TimestampTZSerializer());
-      kryo.register(Path.class, new PathSerializer());
-      kryo.register(Arrays.asList("").getClass(), new ArraysAsListSerializer());
-      kryo.register(new java.util.ArrayList().subList(0,0).getClass(), new ArrayListSubListSerializer());
-      kryo.register(CopyOnFirstWriteProperties.class, new CopyOnFirstWritePropertiesSerializer());
-      kryo.register(MapWork.class, new MapWorkSerializer(kryo, MapWork.class));
-      kryo.register(PartitionDesc.class, new PartitionDescSerializer(kryo, PartitionDesc.class));
-
-      ((Kryo.DefaultInstantiatorStrategy) kryo.getInstantiatorStrategy())
-          .setFallbackInstantiatorStrategy(
-              new StdInstantiatorStrategy());
-      removeField(kryo, AbstractOperatorDesc.class, "colExprMap");
-      removeField(kryo, AbstractOperatorDesc.class, "statistics");
-      kryo.register(ReduceWork.class);
-      kryo.register(TableDesc.class);
-      kryo.register(UnionOperator.class);
-      kryo.register(FileSinkOperator.class);
-      kryo.register(VectorFileSinkOperator.class);
-      kryo.register(HiveIgnoreKeyTextOutputFormat.class);
-      kryo.register(StandardConstantListObjectInspector.class);
-      kryo.register(StandardConstantMapObjectInspector.class);
-      kryo.register(StandardConstantStructObjectInspector.class);
-      kryo.register(SequenceFileInputFormat.class);
-      kryo.register(RCFileInputFormat.class);
-      kryo.register(HiveSequenceFileOutputFormat.class);
-      kryo.register(SparkEdgeProperty.class);
-      kryo.register(SparkWork.class);
-      kryo.register(Pair.class);
-      kryo.register(MemoryMonitorInfo.class);
-
-      // This must be called after all the explicit register calls.
-      return kryo.processHooks(kryoTypeHooks, globalHook);
-    }
-  };
-
   // Bounded queue could be specified here but that will lead to blocking.
   // ConcurrentLinkedQueue is unbounded and will release soft referenced kryo instances under
   // memory pressure.
-  private static KryoPool kryoPool = new KryoPool.Builder(factory).softReferences().build();
+  private static Pool<Kryo> kryoPool = new Pool<Kryo>(true, true, 32) {
+    protected Kryo create() {
+      return createNewKryo();
+    }
+  };
+
+  public static Kryo createNewKryo() {
+    KryoWithHooks kryo = new KryoWithHooks();
+
+    // references was true by default in kryo4, so we need to set this here for unchanged behavior
+    kryo.setReferences(true);
+    // registrationRequired=false lets kryo users skip the kryo.register call for all serialized classes
+    kryo.setRegistrationRequired(false);
+
+    kryo.register(java.sql.Date.class, new SqlDateSerializer());
+    kryo.register(java.sql.Timestamp.class, new TimestampSerializer());
+    kryo.register(TimestampTZ.class, new TimestampTZSerializer());
+    kryo.register(Path.class, new PathSerializer());
+    kryo.register(Arrays.asList("").getClass(), new ArraysAsListSerializer());
+    kryo.register(new java.util.ArrayList().subList(0,0).getClass(), new ArrayListSubListSerializer());
+    kryo.register(CopyOnFirstWriteProperties.class, new CopyOnFirstWritePropertiesSerializer());
+    kryo.register(MapWork.class, new MapWorkSerializer(kryo, MapWork.class));
+    kryo.register(PartitionDesc.class, new PartitionDescSerializer(kryo, PartitionDesc.class));
+
+    ((DefaultInstantiatorStrategy) kryo.getInstantiatorStrategy())
+        .setFallbackInstantiatorStrategy(
+            new StdInstantiatorStrategy());
+    removeField(kryo, AbstractOperatorDesc.class, "colExprMap");
+    removeField(kryo, AbstractOperatorDesc.class, "statistics");
+
+    // This must be called after all the explicit register calls.
+    return kryo.processHooks(kryoTypeHooks, globalHook);
+  }
 
   /**
    * By default, kryo pool uses ConcurrentLinkedQueue which is unbounded. To facilitate reuse of
@@ -277,8 +308,13 @@ public class SerializationUtilities {
    * @return kryo instance
    */
   public static Kryo borrowKryo() {
-    Kryo kryo = kryoPool.borrow();
+    return borrowKryo(null);
+  }
+
+  public static Kryo borrowKryo(Configuration configuration) {
+    Kryo kryo = kryoPool.obtain();
     kryo.setClassLoader(Thread.currentThread().getContextClassLoader());
+    ((KryoWithHooks) kryo).setConf(configuration);
     return kryo;
   }
 
@@ -288,7 +324,10 @@ public class SerializationUtilities {
    * @param kryo - kryo instance to be released
    */
   public static void releaseKryo(Kryo kryo) {
-    kryoPool.release(kryo);
+    if (kryo != null){
+      ((KryoWithHooks) kryo).restore();
+    }
+    kryoPool.free(kryo);
   }
 
   private static void removeField(Kryo kryo, Class type, String fieldName) {
@@ -301,10 +340,10 @@ public class SerializationUtilities {
    * Kryo serializer for timestamp.
    */
   private static class TimestampSerializer extends
-      com.esotericsoftware.kryo.Serializer<Timestamp> {
+      com.esotericsoftware.kryo.kryo5.Serializer<Timestamp> {
 
     @Override
-    public Timestamp read(Kryo kryo, Input input, Class<Timestamp> clazz) {
+    public Timestamp read(Kryo kryo, Input input, Class<? extends Timestamp> clazz) {
       Timestamp ts = new Timestamp(input.readLong());
       ts.setNanos(input.readInt());
       return ts;
@@ -317,7 +356,7 @@ public class SerializationUtilities {
     }
   }
 
-  private static class TimestampTZSerializer extends com.esotericsoftware.kryo.Serializer<TimestampTZ> {
+  private static class TimestampTZSerializer extends com.esotericsoftware.kryo.kryo5.Serializer<TimestampTZ> {
 
     @Override
     public void write(Kryo kryo, Output output, TimestampTZ object) {
@@ -327,7 +366,7 @@ public class SerializationUtilities {
     }
 
     @Override
-    public TimestampTZ read(Kryo kryo, Input input, Class<TimestampTZ> type) {
+    public TimestampTZ read(Kryo kryo, Input input, Class<? extends TimestampTZ> type) {
       long seconds = input.readLong();
       int nanos = input.readInt();
       String zoneId = input.readString();
@@ -340,10 +379,10 @@ public class SerializationUtilities {
    * java.sql.Date and java.util.Date while deserializing
    */
   private static class SqlDateSerializer extends
-      com.esotericsoftware.kryo.Serializer<java.sql.Date> {
+      com.esotericsoftware.kryo.kryo5.Serializer<java.sql.Date> {
 
     @Override
-    public java.sql.Date read(Kryo kryo, Input input, Class<java.sql.Date> clazz) {
+    public java.sql.Date read(Kryo kryo, Input input, Class<? extends java.sql.Date> clazz) {
       return new java.sql.Date(input.readLong());
     }
 
@@ -353,7 +392,7 @@ public class SerializationUtilities {
     }
   }
 
-  private static class PathSerializer extends com.esotericsoftware.kryo.Serializer<Path> {
+  private static class PathSerializer extends com.esotericsoftware.kryo.kryo5.Serializer<Path> {
 
     @Override
     public void write(Kryo kryo, Output output, Path path) {
@@ -361,73 +400,95 @@ public class SerializationUtilities {
     }
 
     @Override
-    public Path read(Kryo kryo, Input input, Class<Path> type) {
+    public Path read(Kryo kryo, Input input, Class<? extends Path> type) {
       return new Path(URI.create(input.readString()));
     }
   }
 
   /**
-   * Supports sublists created via {@link ArrayList#subList(int, int)} since java7 (oracle jdk,
-   * represented by <code>java.util.ArrayList$SubList</code>).
+   * Supports sublists created via {@link ArrayList#subList(int, int)} since java7 and {@link LinkedList#subList(int, int)} since java9 (openjdk).
    * This is from kryo-serializers package.
    */
-  private static class ArrayListSubListSerializer extends com.esotericsoftware.kryo.Serializer<List<?>> {
+  private static class ArrayListSubListSerializer extends com.esotericsoftware.kryo.kryo5.Serializer<List<?>> {
 
-      private Field _parentField;
-      private Field _parentOffsetField;
-      private Field _sizeField;
+    private Field _parentField;
+    private Field _parentOffsetField;
+    private Field _sizeField;
 
-      public ArrayListSubListSerializer() {
-          try {
-              final Class<?> clazz = Class.forName("java.util.ArrayList$SubList");
-              _parentField = clazz.getDeclaredField("parent");
-              _parentOffsetField = clazz.getDeclaredField( "parentOffset" );
-              _sizeField = clazz.getDeclaredField( "size" );
-              _parentField.setAccessible( true );
-              _parentOffsetField.setAccessible( true );
-              _sizeField.setAccessible( true );
-          } catch (final Exception e) {
-              throw new RuntimeException(e);
-          }
-      }
-
-      @Override
-      public List<?> read(final Kryo kryo, final Input input, final Class<List<?>> clazz) {
-          kryo.reference(FAKE_REFERENCE);
-          final List<?> list = (List<?>) kryo.readClassAndObject(input);
-          final int fromIndex = input.readInt(true);
-          final int toIndex = input.readInt(true);
-          return list.subList(fromIndex, toIndex);
-      }
-
-      @Override
-      public void write(final Kryo kryo, final Output output, final List<?> obj) {
-        try {
-            kryo.writeClassAndObject(output, _parentField.get(obj));
-            final int parentOffset = _parentOffsetField.getInt( obj );
-            final int fromIndex = parentOffset;
-            output.writeInt(fromIndex, true);
-            final int toIndex = fromIndex + _sizeField.getInt( obj );
-            output.writeInt(toIndex, true);
-        } catch (final Exception e) {
-                throw new RuntimeException(e);
-        }
-      }
-
-      @Override
-      public List<?> copy(final Kryo kryo, final List<?> original) {
-        try {
-            kryo.reference(FAKE_REFERENCE);
-            final List<?> list = (List<?>) _parentField.get(original);
-            final int parentOffset = _parentOffsetField.getInt( original );
-            final int fromIndex = parentOffset;
-            final int toIndex = fromIndex + _sizeField.getInt( original );
-            return kryo.copy(list).subList(fromIndex, toIndex);
-        } catch (final Exception e) {
-                throw new RuntimeException(e);
-        }
+    public ArrayListSubListSerializer() {
+      try {
+        final Class<?> clazz = Class.forName("java.util.ArrayList$SubList");
+        _parentField = getParentField(clazz);
+        _parentOffsetField = getOffsetField(clazz);
+        _sizeField = clazz.getDeclaredField( "size" );
+        _parentField.setAccessible( true );
+        _parentOffsetField.setAccessible( true );
+        _sizeField.setAccessible( true );
+      } catch (final Exception e) {
+        throw new RuntimeException(e);
       }
     }
+
+    private static Field getParentField(Class clazz) throws NoSuchFieldException {
+      try {
+        // java 9+
+        return clazz.getDeclaredField("root");
+      } catch(NoSuchFieldException e) {
+        return clazz.getDeclaredField("parent");
+      }
+    }
+
+    private static Field getOffsetField(Class<?> clazz) throws NoSuchFieldException {
+      try {
+        // up to jdk8 (which also has an "offset" field (we don't need) - therefore we check "parentOffset" first
+        return clazz.getDeclaredField( "parentOffset" );
+      } catch (NoSuchFieldException e) {
+        // jdk9+ only has "offset" which is the parent offset
+        return clazz.getDeclaredField( "offset" );
+      }
+    }
+
+    @Override
+    public List<?> read(final Kryo kryo, final Input input, final Class<? extends List<?>> clazz) {
+      kryo.reference(FAKE_REFERENCE);
+      final List<?> list = (List<?>) kryo.readClassAndObject(input);
+      final int fromIndex = input.readInt(true);
+      final int toIndex = input.readInt(true);
+      return list.subList(fromIndex, toIndex);
+    }
+
+    @Override
+    public void write(final Kryo kryo, final Output output, final List<?> obj) {
+      try {
+        kryo.writeClassAndObject(output, _parentField.get(obj));
+        final int parentOffset = _parentOffsetField.getInt( obj );
+        final int fromIndex = parentOffset;
+        output.writeInt(fromIndex, true);
+        final int toIndex = fromIndex + _sizeField.getInt( obj );
+        output.writeInt(toIndex, true);
+      } catch (final RuntimeException e) {
+        // Don't eat and wrap RuntimeExceptions because the ObjectBuffer.write...
+        // handles SerializationException specifically (resizing the buffer)...
+        throw e;
+      } catch (final Exception e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    @Override
+    public List<?> copy(final Kryo kryo, final List<?> original) {
+      kryo.reference(FAKE_REFERENCE);
+      try {
+        final List<?> list = (List<?>) _parentField.get(original);
+        final int parentOffset = _parentOffsetField.getInt( original );
+        final int fromIndex = parentOffset;
+        final int toIndex = fromIndex + _sizeField.getInt( original );
+        return kryo.copy(list).subList(fromIndex, toIndex);
+      } catch(final Exception e) {
+        throw new RuntimeException(e);
+      }
+    }
+  }
 
   /**
    * A kryo {@link Serializer} for lists created via {@link Arrays#asList(Object...)}.
@@ -439,7 +500,7 @@ public class SerializationUtilities {
    * This is from kryo-serializers package. Added explicitly to avoid classpath issues.
    */
   private static class ArraysAsListSerializer
-      extends com.esotericsoftware.kryo.Serializer<List<?>> {
+      extends com.esotericsoftware.kryo.kryo5.Serializer<List<?>> {
 
     private Field _arrayField;
 
@@ -455,7 +516,7 @@ public class SerializationUtilities {
     }
 
     @Override
-    public List<?> read(final Kryo kryo, final Input input, final Class<List<?>> type) {
+    public List<?> read(final Kryo kryo, final Input input, final Class<? extends List<?>> type) {
       final int length = input.readInt(true);
       Class<?> componentType = kryo.readClass(input).getType();
       if (componentType.isPrimitive()) {
@@ -523,7 +584,7 @@ public class SerializationUtilities {
    * superclass declares most of its fields transient.
    */
   private static class CopyOnFirstWritePropertiesSerializer extends
-      com.esotericsoftware.kryo.serializers.MapSerializer {
+      com.esotericsoftware.kryo.kryo5.serializers.MapSerializer<Map> {
 
     @Override
     public void write(Kryo kryo, Output output, Map map) {
@@ -534,7 +595,7 @@ public class SerializationUtilities {
     }
 
     @Override
-    public Map read(Kryo kryo, Input input, Class<Map> type) {
+    public Map read(Kryo kryo, Input input, Class<? extends Map> type) {
       Map map = super.read(kryo, input, type);
       Properties ip = kryo.readObjectOrNull(input, Properties.class);
       ((CopyOnFirstWriteProperties) map).setInterned(ip);
@@ -543,25 +604,66 @@ public class SerializationUtilities {
   }
 
   /**
-   * We use a custom {@link com.esotericsoftware.kryo.Serializer} for {@link MapWork} objects in
-   * order to invoke any string interning code present in the "setter" methods. The fields in {@link
-   * MapWork} often store paths that contain duplicate strings, so interning them can decrease
-   * memory significantly.
+   * We use a custom {@link com.esotericsoftware.kryo.Serializer} for {@link MapWork} objects e.g. in
+   * order to remove useless properties in execution time.
    */
   private static class MapWorkSerializer extends FieldSerializer<MapWork> {
 
-    MapWorkSerializer(Kryo kryo, Class type) {
+    public MapWorkSerializer(Kryo kryo, Class type) {
       super(kryo, type);
     }
 
     @Override
-    public MapWork read(Kryo kryo, Input input, Class<MapWork> type) {
-      MapWork mapWork = super.read(kryo, input, type);
-      // The set methods in MapWork intern the any duplicate strings which is why we call them
-      // during de-serialization
-      mapWork.setPathToPartitionInfo(mapWork.getPathToPartitionInfo());
-      mapWork.setPathToAliases(mapWork.getPathToAliases());
-      return mapWork;
+    public void write(Kryo kryo, Output output, MapWork mapWork) {
+      filterMapworkProperties(kryo, mapWork);
+      super.write(kryo, output, mapWork);
+    }
+
+    private void filterMapworkProperties(Kryo kryo, MapWork mapWork) {
+      Configuration configuration = ((KryoWithHooks) kryo).getConf();
+      if (configuration == null || HiveConf
+          .getVar(configuration, HiveConf.ConfVars.HIVE_PLAN_MAPWORK_SERIALIZATION_SKIP_PROPERTIES).isEmpty()) {
+        return;
+      }
+      String[] filterProps =
+          HiveConf.getVar(configuration, HiveConf.ConfVars.HIVE_PLAN_MAPWORK_SERIALIZATION_SKIP_PROPERTIES).split(",");
+      for (String prop : filterProps) {
+        boolean isRegex = isRegex(prop);
+        Pattern pattern = Pattern.compile(prop);
+
+        LOG.debug("Trying to filter MapWork properties (regex: " + isRegex + "): " + prop);
+
+        for (Entry<Path, PartitionDesc> partDescEntry : mapWork.getPathToPartitionInfo().entrySet()) {
+          /*
+           * remove by regex, could be a bit more expensive because of iterating and matching regexes
+           * e.g.: in case of impala_intermediate_stats_chunk1, impala_intermediate_stats_chunk2, user only needs to
+           * configure impala_intermediate_stats_chunk.*
+           */
+          if (isRegex) {
+            Iterator<Entry<Object, Object>> itProps =
+                partDescEntry.getValue().getProperties().entrySet().iterator();
+            while (itProps.hasNext()) {
+              Map.Entry<Object, Object> entry = itProps.next();
+              String actualProp = (String) entry.getKey();
+              Matcher matcher = pattern.matcher(actualProp);
+
+              if (matcher.find()) {
+                LOG.debug("Removed '{}' from MapWork (partition: {})", actualProp, partDescEntry.getKey());
+                itProps.remove();
+              }
+            }
+          } else {
+            Object objRemoved = partDescEntry.getValue().getProperties().remove(prop);
+            if (objRemoved != null) {
+              LOG.debug("Removed '{}' from MapWork (partition: {})", prop, partDescEntry.getKey());
+            }
+          }
+        }
+      }
+    }
+
+    private boolean isRegex(String prop) {
+      return prop.contains("*");
     }
   }
 
@@ -578,7 +680,7 @@ public class SerializationUtilities {
     }
 
     @Override
-    public PartitionDesc read(Kryo kryo, Input input, Class<PartitionDesc> type) {
+    public PartitionDesc read(Kryo kryo, Input input, Class<? extends PartitionDesc> type) {
       PartitionDesc partitionDesc = super.read(kryo, input, type);
       // The set methods in PartitionDesc intern the any duplicate strings which is why we call them
       // during de-serialization
@@ -597,32 +699,25 @@ public class SerializationUtilities {
    * @param out  The stream to write to.
    */
   public static void serializePlan(Object plan, OutputStream out) {
-    serializePlan(plan, out, false);
+    serializePlan(plan, out, null);
   }
 
-  public static void serializePlan(Kryo kryo, Object plan, OutputStream out) {
-    serializePlan(kryo, plan, out, false);
-  }
-
-  private static void serializePlan(Object plan, OutputStream out, boolean cloningPlan) {
-    Kryo kryo = borrowKryo();
+  @VisibleForTesting
+  static void serializePlan(Object plan, OutputStream out, Configuration configuration) {
+    Kryo kryo = borrowKryo(configuration);
     try {
-      serializePlan(kryo, plan, out, cloningPlan);
+      serializePlan(kryo, plan, out);
     } finally {
       releaseKryo(kryo);
     }
   }
 
-  private static void serializePlan(Kryo kryo, Object plan, OutputStream out, boolean cloningPlan) {
+  public static void serializePlan(Kryo kryo, Object plan, OutputStream out) {
     PerfLogger perfLogger = SessionState.getPerfLogger();
-    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.SERIALIZE_PLAN);
+    perfLogger.perfLogBegin(CLASS_NAME, PerfLogger.SERIALIZE_PLAN);
     LOG.info("Serializing " + plan.getClass().getSimpleName() + " using kryo");
-    if (cloningPlan) {
-      serializeObjectByKryo(kryo, plan, out);
-    } else {
-      serializeObjectByKryo(kryo, plan, out);
-    }
-    perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.SERIALIZE_PLAN);
+    serializeObjectByKryo(kryo, plan, out);
+    perfLogger.perfLogEnd(CLASS_NAME, PerfLogger.SERIALIZE_PLAN);
   }
 
   /**
@@ -633,36 +728,23 @@ public class SerializationUtilities {
    * @return The plan, such as QueryPlan, MapredWork, etc.
    */
   public static <T> T deserializePlan(InputStream in, Class<T> planClass) {
-    return deserializePlan(in, planClass, false);
-  }
-
-  public static <T> T deserializePlan(Kryo kryo, InputStream in, Class<T> planClass) {
-    return deserializePlan(kryo, in, planClass, false);
-  }
-
-  private static <T> T deserializePlan(InputStream in, Class<T> planClass, boolean cloningPlan) {
     Kryo kryo = borrowKryo();
     T result = null;
     try {
-      result = deserializePlan(kryo, in, planClass, cloningPlan);
+      result = deserializePlan(kryo, in, planClass);
     } finally {
       releaseKryo(kryo);
     }
     return result;
   }
 
-  private static <T> T deserializePlan(Kryo kryo, InputStream in, Class<T> planClass,
-      boolean cloningPlan) {
+  public static <T> T deserializePlan(Kryo kryo, InputStream in, Class<T> planClass) {
     PerfLogger perfLogger = SessionState.getPerfLogger();
-    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.DESERIALIZE_PLAN);
+    perfLogger.perfLogBegin(CLASS_NAME, PerfLogger.DESERIALIZE_PLAN);
     T plan;
     LOG.info("Deserializing " + planClass.getSimpleName() + " using kryo");
-    if (cloningPlan) {
-      plan = deserializeObjectByKryo(kryo, in, planClass);
-    } else {
-      plan = deserializeObjectByKryo(kryo, in, planClass);
-    }
-    perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.DESERIALIZE_PLAN);
+    plan = deserializeObjectByKryo(kryo, in, planClass);
+    perfLogger.perfLogEnd(CLASS_NAME, PerfLogger.DESERIALIZE_PLAN);
     return plan;
   }
 
@@ -674,18 +756,18 @@ public class SerializationUtilities {
   public static MapredWork clonePlan(MapredWork plan) {
     // TODO: need proper clone. Meanwhile, let's at least keep this horror in one place
     PerfLogger perfLogger = SessionState.getPerfLogger();
-    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.CLONE_PLAN);
+    perfLogger.perfLogBegin(CLASS_NAME, PerfLogger.CLONE_PLAN);
     Operator<?> op = plan.getAnyOperator();
     CompilationOpContext ctx = (op == null) ? null : op.getCompilationOpContext();
     ByteArrayOutputStream baos = new ByteArrayOutputStream(4096);
-    serializePlan(plan, baos, true);
+    serializePlan(plan, baos);
     MapredWork newPlan = deserializePlan(new ByteArrayInputStream(baos.toByteArray()),
-        MapredWork.class, true);
+        MapredWork.class);
     // Restore the context.
     for (Operator<?> newOp : newPlan.getAllOperators()) {
       newOp.setCompilationOpContext(ctx);
     }
-    perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.CLONE_PLAN);
+    perfLogger.perfLogEnd(CLASS_NAME, PerfLogger.CLONE_PLAN);
     return newPlan;
   }
 
@@ -696,15 +778,15 @@ public class SerializationUtilities {
    */
   public static List<Operator<?>> cloneOperatorTree(List<Operator<?>> roots) {
     if (roots.isEmpty()) {
-      return new ArrayList<>();
+      return Collections.emptyList();
     }
     ByteArrayOutputStream baos = new ByteArrayOutputStream(4096);
     CompilationOpContext ctx = roots.get(0).getCompilationOpContext();
-    serializePlan(roots, baos, true);
+    serializePlan(roots, baos);
     @SuppressWarnings("unchecked")
     List<Operator<?>> result =
         deserializePlan(new ByteArrayInputStream(baos.toByteArray()),
-            roots.getClass(), true);
+            roots.getClass());
     // Restore the context.
     LinkedList<Operator<?>> newOps = new LinkedList<>(result);
     while (!newOps.isEmpty()) {
@@ -725,18 +807,18 @@ public class SerializationUtilities {
    */
   public static BaseWork cloneBaseWork(BaseWork plan) {
     PerfLogger perfLogger = SessionState.getPerfLogger();
-    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.CLONE_PLAN);
+    perfLogger.perfLogBegin(CLASS_NAME, PerfLogger.CLONE_PLAN);
     Operator<?> op = plan.getAnyRootOperator();
     CompilationOpContext ctx = (op == null) ? null : op.getCompilationOpContext();
     ByteArrayOutputStream baos = new ByteArrayOutputStream(4096);
-    serializePlan(plan, baos, true);
+    serializePlan(plan, baos);
     BaseWork newPlan = deserializePlan(new ByteArrayInputStream(baos.toByteArray()),
-        plan.getClass(), true);
+        plan.getClass());
     // Restore the context.
     for (Operator<?> newOp : newPlan.getAllOperators()) {
       newOp.setCompilationOpContext(ctx);
     }
-    perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.CLONE_PLAN);
+    perfLogger.perfLogEnd(CLASS_NAME, PerfLogger.CLONE_PLAN);
     return newPlan;
   }
 
@@ -760,34 +842,50 @@ public class SerializationUtilities {
   }
 
   /**
-   * Serializes expression via Kryo.
-   * @param expr Expression.
+   * Serializes any object via Kryo. Type information will be serialized as well, allowing dynamic deserialization
+   * without the need to pass the class.
+   * @param object The object to serialize.
    * @return Bytes.
    */
-  public static byte[] serializeExpressionToKryo(ExprNodeGenericFuncDesc expr) {
-    return serializeObjectToKryo(expr);
+  public static byte[] serializeObjectWithTypeInformation(Serializable object) {
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    Kryo kryo = borrowKryo();
+    try (Output output = new Output(baos)) {
+      kryo.writeClassAndObject(output, object);
+    } finally {
+      releaseKryo(kryo);
+    }
+    return baos.toByteArray();
   }
 
   /**
    * Deserializes expression from Kryo.
    * @param bytes Bytes containing the expression.
+   * @param isPartFilter ture if it is a partition filter
    * @return Expression; null if deserialization succeeded, but the result type is incorrect.
    */
-  public static ExprNodeGenericFuncDesc deserializeExpressionFromKryo(byte[] bytes) {
-    return deserializeObjectFromKryo(bytes, ExprNodeGenericFuncDesc.class);
+  public static <T> T deserializeObjectWithTypeInformation(byte[] bytes,
+      boolean isPartFilter) {
+    KryoWithHooks kryo = (KryoWithHooks) borrowKryo();
+    kryo.setRootType(isPartFilter ? ExprNodeDesc.class : null);
+    try (Input inp = new Input(new ByteArrayInputStream(bytes))) {
+      return (T) kryo.readClassAndObject(inp);
+    } finally {
+      releaseKryo(kryo);
+    }
   }
 
   public static String serializeExpression(ExprNodeGenericFuncDesc expr) {
-    return new String(Base64.encodeBase64(serializeExpressionToKryo(expr)),
+    return new String(Base64.encodeBase64(serializeObjectToKryo(expr)),
         StandardCharsets.UTF_8);
   }
 
   public static ExprNodeGenericFuncDesc deserializeExpression(String s) {
     byte[] bytes = Base64.decodeBase64(s.getBytes(StandardCharsets.UTF_8));
-    return deserializeExpressionFromKryo(bytes);
+    return deserializeObjectFromKryo(bytes, ExprNodeGenericFuncDesc.class);
   }
 
-  private static byte[] serializeObjectToKryo(Serializable object) {
+  public static byte[] serializeObjectToKryo(Serializable object) {
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
     Output output = new Output(baos);
     Kryo kryo = borrowKryo();
@@ -800,17 +898,14 @@ public class SerializationUtilities {
     return baos.toByteArray();
   }
 
-  private static <T extends Serializable> T deserializeObjectFromKryo(byte[] bytes, Class<T> clazz) {
-    Input inp = new Input(new ByteArrayInputStream(bytes));
-    Kryo kryo = borrowKryo();
-    T func = null;
-    try {
-      func = kryo.readObject(inp, clazz);
+  public static <T> T deserializeObjectFromKryo(byte[] bytes, Class<T> clazz) {
+    KryoWithHooks kryo = (KryoWithHooks) borrowKryo();
+    kryo.setRootType(clazz);
+    try (Input inp = new Input(new ByteArrayInputStream(bytes))) {
+      return kryo.readObject(inp, clazz);
     } finally {
       releaseKryo(kryo);
     }
-    inp.close();
-    return func;
   }
 
   public static String serializeObject(Serializable expr) {
@@ -819,9 +914,9 @@ public class SerializationUtilities {
   }
 
   public static <T extends Serializable> T deserializeObject(String s,
-      Class<T> clazz) {
+                                                             Class<T> clazz) {
     return deserializeObjectFromKryo(
-        Base64.decodeBase64(s.getBytes(StandardCharsets.UTF_8)), clazz);
+            Base64.decodeBase64(s.getBytes(StandardCharsets.UTF_8)), clazz);
   }
 
 }

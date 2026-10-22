@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
@@ -96,9 +97,9 @@ public class TestGenericUDFJsonRead {
       udf.initialize(arguments);
 
       Object res = udf.evaluate(evalArgs("{\"a\":\"b\"}"));
-      assertTrue(res instanceof Object[]);
-      Object o[] = (Object[]) res;
-      assertEquals(new Text("b"), o[0]);
+      assertTrue(res instanceof List<?>);
+      List<?> o = (List<?>) res;
+      assertEquals(new Text("b"), o.get(0));
     }
   }
 
@@ -109,9 +110,10 @@ public class TestGenericUDFJsonRead {
       udf.initialize(arguments);
 
       Object res = udf.evaluate(evalArgs("{\"a\":null}"));
-      assertTrue(res instanceof Object[]);
-      Object o[] = (Object[]) res;
-      assertEquals(null, o[0]);
+      assertTrue(res instanceof List<?>);
+
+      List<?> o = (List<?>) res;
+      assertEquals(null, o.get(0));
     }
   }
 
@@ -144,9 +146,10 @@ public class TestGenericUDFJsonRead {
       udf.initialize(arguments);
 
       Object res = udf.evaluate(evalArgs("{\"a\":null}"));
-      assertTrue(res instanceof Object[]);
-      Object o[] = (Object[]) res;
-      assertEquals(null, o[0]);
+      assertTrue(res instanceof List<?>);
+
+      List<?> o = (List<?>) res;
+      assertEquals(null, o.get(0));
     }
   }
 
@@ -156,10 +159,8 @@ public class TestGenericUDFJsonRead {
       ObjectInspector[] arguments = buildArguments("struct<a:int>");
       udf.initialize(arguments);
 
-      Object res = udf.evaluate(evalArgs("{\"b\":null}"));
-      assertTrue(res instanceof Object[]);
-      Object o[] = (Object[]) res;
-      assertEquals(null, o[0]);
+      // Invalid - should throw Exception
+      udf.evaluate(evalArgs("{\"b\":null}"));
     }
   }
 
@@ -169,10 +170,8 @@ public class TestGenericUDFJsonRead {
       ObjectInspector[] arguments = buildArguments("array<int>");
       udf.initialize(arguments);
 
-      Object res = udf.evaluate(evalArgs("[1,22,2,{\"b\":null}]"));
-      assertTrue(res instanceof Object[]);
-      Object o[] = (Object[]) res;
-      assertEquals(null, o[0]);
+      // Invalid - should throw Exception
+      udf.evaluate(evalArgs("[1,22,2,{\"b\":null}]"));
     }
   }
 
@@ -184,7 +183,7 @@ public class TestGenericUDFJsonRead {
 
       Object res = udf.evaluate(evalArgs("{\"a\":\"v\"}"));
       assertTrue(res instanceof Map);
-      Map o = (Map) res;
+      Map<?, ?> o = (Map<?, ?>) res;
       assertEquals(1, o.size());
       assertEquals(new Text("v"), o.get(new Text("a")));
     }

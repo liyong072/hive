@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -26,15 +27,13 @@ import org.apache.hadoop.hive.ql.exec.vector.VectorExpressionDescriptor;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.util.TimestampUtils;
+import org.apache.hadoop.hive.serde.serdeConstants;
 
 public class CastDoubleToTimestamp extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private int colNum;
-
   public CastDoubleToTimestamp(int colNum, int outputColumnNum) {
-    super(outputColumnNum);
-    this.colNum = colNum;
+    super(colNum, outputColumnNum);
   }
 
   public CastDoubleToTimestamp() {
@@ -54,7 +53,7 @@ public class CastDoubleToTimestamp extends VectorExpression {
       this.evaluateChildren(batch);
     }
 
-    DoubleColumnVector inputColVector = (DoubleColumnVector) batch.cols[colNum];
+    DoubleColumnVector inputColVector = (DoubleColumnVector) batch.cols[inputColumnNum[0]];
     TimestampColumnVector outputColVector = (TimestampColumnVector) batch.cols[outputColumnNum];
     int[] sel = batch.selected;
     boolean[] inputIsNull = inputColVector.isNull;
@@ -148,7 +147,7 @@ public class CastDoubleToTimestamp extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return getColumnParamString(0, colNum);
+    return getColumnParamString(0, inputColumnNum[0]);
   }
 
   @Override
@@ -158,7 +157,7 @@ public class CastDoubleToTimestamp extends VectorExpression {
             VectorExpressionDescriptor.Mode.PROJECTION)
         .setNumArguments(1)
         .setArgumentTypes(
-            VectorExpressionDescriptor.ArgumentType.getType("double"))
+            VectorExpressionDescriptor.ArgumentType.getType(serdeConstants.DOUBLE_TYPE_NAME))
         .setInputExpressionTypes(
             VectorExpressionDescriptor.InputExpressionType.COLUMN).build();
   }

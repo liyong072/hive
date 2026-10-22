@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common.ndv.hll;
@@ -25,8 +26,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.TreeMap;
-
 import org.apache.hadoop.hive.common.ndv.hll.HyperLogLog.EncodingType;
 
 /**
@@ -38,24 +37,24 @@ public class HyperLogLogUtils {
 
   /**
    * HyperLogLog is serialized using the following format
-   * 
+   *
    * <pre>
-   * |-4 byte-|------varlong----|varint (optional)|----------|  
+   * |-4 byte-|------varlong----|varint (optional)|----------|
    * ---------------------------------------------------------
    * | header | estimated-count | register-length | register |
    * ---------------------------------------------------------
-   * 
+   *
    * <b>4 byte header</b> is encoded like below
    * 3 bytes - HLL magic string to identify serialized stream
    * 4 bits  - p (number of bits to be used as register index)
    * 1       - spare bit (not used)
    * 3 bits  - encoding (000 - sparse, 001..110 - n bit packing, 111 - no bit packing)
-   * 
+   *
    * Followed by header are 3 fields that are required for reconstruction
    * of hyperloglog
    * Estimated count - variable length long to store last computed estimated count.
    *                   This is just for quick lookup without deserializing registers
-   * Register length - number of entries in the register (required only for 
+   * Register length - number of entries in the register (required only for
    *                   for sparse representation. For bit-packing, the register
    *                   length can be found from p)
    * </pre>
@@ -104,7 +103,7 @@ public class HyperLogLogUtils {
       byte[] register = hll.getHLLDenseRegister().getRegister();
       bitpackHLLRegister(out, register, bitWidth);
     } else if (enc.equals(EncodingType.SPARSE)) {
-      TreeMap<Integer, Byte> sparseMap = hll.getHLLSparseRegister().getSparseMap();
+      Map<Integer, Byte> sparseMap = hll.getHLLSparseRegister().getSparseMap();
 
       // write the number of elements in sparse map (required for
       // reconstruction)
@@ -201,11 +200,13 @@ public class HyperLogLogUtils {
 
   /**
    * This function deserializes the serialized hyperloglogs from a byte array.
-   * @param buf - to deserialize
-   * @return HyperLogLog
+   * @param buf
+   * @param start
+   * @param len
+   * @return
    */
-  public static HyperLogLog deserializeHLL(final byte[] buf) {
-    InputStream is = new ByteArrayInputStream(buf); // TODO: use faster non-sync inputstream
+  public static HyperLogLog deserializeHLL(final byte[] buf, final int start, final int len) {
+    InputStream is = new ByteArrayInputStream(buf, start, len); // TODO: use faster non-sync inputstream
     try {
       HyperLogLog result = deserializeHLL(is);
       is.close();
@@ -213,6 +214,15 @@ public class HyperLogLogUtils {
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  /**
+   * This function deserializes the serialized hyperloglogs from a byte array.
+   * @param buf - to deserialize
+   * @return HyperLogLog
+   */
+  public static HyperLogLog deserializeHLL(final byte[] buf) {
+    return deserializeHLL(buf, 0, buf.length);
   }
 
   private static void bitpackHLLRegister(OutputStream out, byte[] register, int bitWidth)

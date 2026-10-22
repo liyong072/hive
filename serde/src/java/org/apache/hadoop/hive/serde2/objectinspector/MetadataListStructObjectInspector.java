@@ -9,16 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.objectinspector;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,15 +42,14 @@ public class MetadataListStructObjectInspector extends
     StandardStructObjectInspector {
 
   static ConcurrentHashMap<List<List<String>>, MetadataListStructObjectInspector>
-      cached = new ConcurrentHashMap<List<List<String>>, MetadataListStructObjectInspector>();
+      cached = new ConcurrentHashMap<>();
 
   // public static MetadataListStructObjectInspector getInstance(int fields) {
   // return getInstance(ObjectInspectorUtils.getIntegerArray(fields));
   // }
   public static MetadataListStructObjectInspector getInstance(
       List<String> columnNames) {
-    ArrayList<List<String>> key = new ArrayList<List<String>>(1);
-    key.add(columnNames);
+    List<List<String>> key = Collections.singletonList(columnNames);
     MetadataListStructObjectInspector result = cached.get(key);
     if (result == null) {
       result = new MetadataListStructObjectInspector(columnNames);
@@ -62,8 +63,7 @@ public class MetadataListStructObjectInspector extends
 
   public static MetadataListStructObjectInspector getInstance(
       List<String> columnNames, List<String> columnComments) {
-    ArrayList<List<String>> key = new ArrayList<List<String>>(2);
-    Collections.addAll(key, columnNames, columnComments);
+    List<List<String>> key = Arrays.asList(columnNames, columnComments);
 
     MetadataListStructObjectInspector result = cached.get(key);
     if (result == null) {
@@ -76,13 +76,9 @@ public class MetadataListStructObjectInspector extends
     return result;
   }
 
-  static ArrayList<ObjectInspector> getFieldObjectInspectors(int fields) {
-    ArrayList<ObjectInspector> r = new ArrayList<ObjectInspector>(fields);
-    for (int i = 0; i < fields; i++) {
-      r.add(PrimitiveObjectInspectorFactory
-          .getPrimitiveJavaObjectInspector(PrimitiveCategory.STRING));
-    }
-    return r;
+  static List<ObjectInspector> getFieldObjectInspectors(int fields) {
+    return Collections.nCopies(fields,
+        PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.STRING));
   }
 
   protected MetadataListStructObjectInspector() {

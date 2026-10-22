@@ -1,7 +1,9 @@
 PREHOOK: query: DROP TABLE src_events
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: DROP TABLE src_events
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE TABLE src_events
 (
   log_id      BIGINT,
@@ -52,8 +54,10 @@ POSTHOOK: type: LOAD
 POSTHOOK: Output: default@src_events
 PREHOOK: query: DROP TABLE parquet_events
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: DROP TABLE parquet_events
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE TABLE parquet_events
 (
   log_id      BIGINT,
@@ -99,6 +103,7 @@ POSTHOOK: query: INSERT OVERWRITE TABLE parquet_events PARTITION (run_date, game
 SELECT * FROM src_events
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@src_events
+POSTHOOK: Output: default@parquet_events
 POSTHOOK: Output: default@parquet_events@run_date=20120921/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@parquet_events@run_date=20121021/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@parquet_events@run_date=20121121/game_id=39/event_name=hq_change
@@ -313,6 +318,7 @@ POSTHOOK: query: INSERT OVERWRITE TABLE parquet_events PARTITION (run_date, game
 SELECT * FROM src_events
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@src_events
+POSTHOOK: Output: default@parquet_events
 POSTHOOK: Output: default@parquet_events@run_date=20120921/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@parquet_events@run_date=20121021/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@parquet_events@run_date=20121121/game_id=39/event_name=hq_change
@@ -433,6 +439,7 @@ POSTHOOK: query: INSERT OVERWRITE TABLE parquet_events PARTITION (run_date, game
 SELECT * FROM src_events
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@src_events
+POSTHOOK: Output: default@parquet_events
 POSTHOOK: Output: default@parquet_events@run_date=20120921/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@parquet_events@run_date=20121021/game_id=39/event_name=hq_change
 POSTHOOK: Output: default@parquet_events@run_date=20121121/game_id=39/event_name=hq_change

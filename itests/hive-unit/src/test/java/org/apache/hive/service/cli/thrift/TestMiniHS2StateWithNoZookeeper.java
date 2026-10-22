@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service.cli.thrift;
@@ -50,11 +51,14 @@ public class TestMiniHS2StateWithNoZookeeper {
   private static HiveConf hiveConf = null;
 
   @BeforeClass
-  public static void beforeTest() throws Exception   { 
+  public static void beforeTest() throws Exception   {
+    MiniHS2.cleanupLocalDir();
     hiveConf = new HiveConf();
     hiveConf.setBoolVar(ConfVars.HIVE_SERVER2_SUPPORT_DYNAMIC_SERVICE_DISCOVERY, true);
     hiveConf.setIntVar(ConfVars.HIVE_ZOOKEEPER_CONNECTION_MAX_RETRIES, 0);
     hiveConf.setTimeVar(ConfVars.HIVE_ZOOKEEPER_CONNECTION_BASESLEEPTIME, 0, TimeUnit.MILLISECONDS);
+    // Disable killquery, this way only HS2 start will fail, not the SessionManager service
+    hiveConf.setBoolVar(ConfVars.HIVE_ZOOKEEPER_KILLQUERY_ENABLE, false);
     miniHS2 = new MiniHS2(hiveConf);
     Map<String, String> confOverlay = new HashMap<String, String>();
     try {

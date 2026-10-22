@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service.auth;
@@ -31,12 +32,12 @@ import org.slf4j.LoggerFactory;
 
 /**
  * This class is responsible for setting the ipAddress for operations executed via HiveServer2.
- * <p>
+ * <br>
  * <ul>
  * <li>IP address is only set for operations that calls listeners with hookContext</li>
  * <li>IP address is only set if the underlying transport mechanism is socket</li>
  * </ul>
- * </p>
+ * <br>
  *
  * @see org.apache.hadoop.hive.ql.hooks.ExecuteWithHookContext
  */
@@ -49,11 +50,12 @@ public class TSetIpAddressProcessor<I extends Iface> extends TCLIService.Process
   }
 
   @Override
-  public boolean process(final TProtocol in, final TProtocol out) throws TException {
+  public void process(final TProtocol in, final TProtocol out) throws TException {
     setIpAddress(in);
     setUserName(in);
     try {
-      return super.process(in, out);
+      super.process(in, out);
+      return;
     } finally {
       THREAD_LOCAL_USER_NAME.remove();
       THREAD_LOCAL_IP_ADDRESS.remove();

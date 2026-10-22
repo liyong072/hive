@@ -9,16 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.optimized;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 
 import org.apache.hadoop.hive.ql.util.JavaDataModel;
 import org.slf4j.Logger;
@@ -50,7 +52,7 @@ public abstract class VectorMapJoinOptimizedHashTable
 
   protected final MapJoinTableContainer originalTableContainer;
   protected final MapJoinTableContainerDirectAccess containerDirectAccess;
-  protected final ReusableGetAdaptorDirectAccess adapatorDirectAccess;
+  protected final ReusableGetAdaptorDirectAccess adapterDirectAccess;
 
   public static class SerializedBytes {
     byte[] bytes;
@@ -60,19 +62,25 @@ public abstract class VectorMapJoinOptimizedHashTable
 
   @Override
   public VectorMapJoinNonMatchedIterator createNonMatchedIterator(MatchTracker matchTracker) {
-    throw new RuntimeException("Not implemented");
+    throw new UnsupportedOperationException();
   }
 
   @Override
   public int spillPartitionId() {
-    return adapatorDirectAccess.directSpillPartitionId();
+    return adapterDirectAccess.directSpillPartitionId();
   }
 
   @Override
-  public void putRow(BytesWritable currentKey, BytesWritable currentValue)
+  public void putRow(long hashCode, BytesWritable currentKey, BytesWritable currentValue)
       throws SerDeException, HiveException, IOException {
+    // Method only supported by FAST HashTable implementations
+    throw new UnsupportedEncodingException();
+  }
 
-    putRowInternal(currentKey, currentValue);
+  @Override
+  public boolean containsLongKey(long currentKey) {
+    // Method only supported by FAST HashTable implementations
+    throw new UnsupportedOperationException();
   }
 
   protected void putRowInternal(BytesWritable key, BytesWritable value)
@@ -88,10 +96,10 @@ public abstract class VectorMapJoinOptimizedHashTable
     hashTableResult.forget();
 
     JoinUtil.JoinResult joinResult =
-            adapatorDirectAccess.setDirect(keyBytes, keyOffset, keyLength,
+            adapterDirectAccess.setDirect(keyBytes, keyOffset, keyLength,
                 bytesBytesMultiHashMapResult, matchTracker);
     if (joinResult == JoinUtil.JoinResult.SPILL) {
-      hashTableResult.setSpillPartitionId(adapatorDirectAccess.directSpillPartitionId());
+      hashTableResult.setSpillPartitionId(adapterDirectAccess.directSpillPartitionId());
     }
 
     hashTableResult.setJoinResult(joinResult);
@@ -104,7 +112,7 @@ public abstract class VectorMapJoinOptimizedHashTable
 
     this.originalTableContainer = originalTableContainer;
     containerDirectAccess = (MapJoinTableContainerDirectAccess) originalTableContainer;
-    adapatorDirectAccess = (ReusableGetAdaptorDirectAccess) hashMapRowGetter;
+    adapterDirectAccess = (ReusableGetAdaptorDirectAccess) hashMapRowGetter;
   }
 
   @Override
@@ -122,6 +130,6 @@ public abstract class VectorMapJoinOptimizedHashTable
 
   @Override
   public MatchTracker createMatchTracker() {
-    return adapatorDirectAccess.createMatchTracker();
+    return adapterDirectAccess.createMatchTracker();
   }
 }

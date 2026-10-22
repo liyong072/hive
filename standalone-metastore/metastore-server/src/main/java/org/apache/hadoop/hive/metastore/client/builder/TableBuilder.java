@@ -6,18 +6,20 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.client.builder;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.common.TableName;
 import org.apache.hadoop.hive.common.ValidTxnList;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.TableType;
@@ -28,6 +30,7 @@ import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.PrincipalType;
+import org.apache.hadoop.hive.metastore.api.SourceTable;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
 import org.apache.hadoop.hive.metastore.utils.SecurityUtils;
@@ -40,6 +43,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Build a {@link Table}.  The database name and table name must be provided, plus whatever is
@@ -53,7 +57,7 @@ public class TableBuilder extends StorageDescriptorBuilder<TableBuilder> {
   private int createTime, lastAccessTime, retention;
   private Map<String, String> tableParams;
   private boolean rewriteEnabled, temporary;
-  private Set<String> mvReferencedTables;
+  private List<SourceTable> mvReferencedTables;
   private PrincipalType ownerType;
 
   public TableBuilder() {
@@ -64,7 +68,7 @@ public class TableBuilder extends StorageDescriptorBuilder<TableBuilder> {
     retention = 0;
     partCols = new ArrayList<>();
     type = TableType.MANAGED_TABLE.name();
-    mvReferencedTables = new HashSet<>();
+    mvReferencedTables = new ArrayList<>();
     temporary = false;
     super.setChild(this);
   }
@@ -172,13 +176,15 @@ public class TableBuilder extends StorageDescriptorBuilder<TableBuilder> {
     return this;
   }
 
-  public TableBuilder addMaterializedViewReferencedTable(String tableName) {
-    mvReferencedTables.add(tableName);
+  public TableBuilder addMaterializedViewReferencedTable(SourceTable sourceTable) {
+    mvReferencedTables.add(sourceTable);
     return this;
   }
 
-  public TableBuilder addMaterializedViewReferencedTables(Set<String> tableNames) {
-    mvReferencedTables.addAll(tableNames);
+  public TableBuilder addMaterializedViewReferencedTables(Set<SourceTable> tableNames) {
+    for (SourceTable tableName : tableNames) {
+      addMaterializedViewReferencedTable(tableName);
+    }
     return this;
   }
 
@@ -208,7 +214,12 @@ public class TableBuilder extends StorageDescriptorBuilder<TableBuilder> {
     if (temporary) t.setTemporary(temporary);
     t.setCatName(catName);
     if (!mvReferencedTables.isEmpty()) {
-      CreationMetadata cm = new CreationMetadata(catName, dbName, tableName, mvReferencedTables);
+      Set<String> tablesUsed = mvReferencedTables.stream()
+              .map(sourceTable -> TableName.getDbTable(
+                      sourceTable.getTable().getDbName(), sourceTable.getTable().getTableName()))
+              .collect(Collectors.toSet());
+      CreationMetadata cm = new CreationMetadata(catName, dbName, tableName, tablesUsed);
+      cm.setSourceTables(mvReferencedTables);
       if (mvValidTxnList != null) cm.setValidTxnList(mvValidTxnList);
       t.setCreationMetadata(cm);
     }

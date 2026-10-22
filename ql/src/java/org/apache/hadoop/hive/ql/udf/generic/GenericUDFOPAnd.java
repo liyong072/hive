@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
@@ -26,6 +27,7 @@ import org.apache.hadoop.hive.ql.exec.vector.expressions.ColAndCol;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.FilterColAndScalar;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.FilterExprAndExpr;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.FilterScalarAndColumn;
+import org.apache.hadoop.hive.ql.exec.vector.expressions.ScalarNullAndCol;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.udf.UDFType;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -37,7 +39,7 @@ import org.apache.hadoop.io.BooleanWritable;
  * GenericUDF Class for computing and.
  */
 @Description(name = "and", value = "a1 _FUNC_ a2 _FUNC_ ... _FUNC_ an - Logical and")
-@VectorizedExpressions({ColAndCol.class, FilterExprAndExpr.class, FilterColAndScalar.class,
+@VectorizedExpressions({ColAndCol.class, ScalarNullAndCol.class, FilterExprAndExpr.class, FilterColAndScalar.class,
     FilterScalarAndColumn.class})
 @NDV(maxNdv = 2)
 @UDFType(deterministic = true, commutative = true)

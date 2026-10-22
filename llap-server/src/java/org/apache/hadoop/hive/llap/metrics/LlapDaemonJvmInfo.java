@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.llap.metrics;
 
@@ -24,7 +25,7 @@ import com.google.common.base.Objects;
 
 /**
  * Llap daemon JVM info. These are some additional metrics that are not exposed via
- * {@link org.apache.hadoop.metrics.jvm.JvmMetrics}
+ * {@link org.apache.hadoop.hive.common.JvmMetrics}
  *
  * NOTE: These metrics are for sinks supported by hadoop-metrics2. There is already a /jmx endpoint
  * that gives all these info.

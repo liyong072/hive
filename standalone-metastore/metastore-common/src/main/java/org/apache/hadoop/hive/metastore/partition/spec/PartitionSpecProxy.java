@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.partition.spec;
@@ -24,6 +25,7 @@ import org.apache.hadoop.hive.metastore.api.PartitionSpec;
 
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 /**
  * Polymorphic proxy class, equivalent to org.apache.hadoop.hive.metastore.api.PartitionSpec.
@@ -213,7 +215,7 @@ public abstract class PartitionSpecProxy {
     @Override public String getLocation() { return partition.getSd().getLocation(); }
     @Override public void setCreateTime(long time) { partition.setCreateTime((int)time);}
     @Override public boolean hasNext() { return false; } // No next partition.
-    @Override public Partition next() { return null; } // No next partition.
+    @Override public Partition next() { throw new NoSuchElementException(); } // No next partition.
     @Override public void remove() {} // Do nothing.
   } // P
 

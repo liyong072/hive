@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
@@ -45,7 +46,6 @@ import org.apache.hadoop.hive.ql.plan.TezEdgeProperty;
 import org.apache.hadoop.hive.ql.plan.TezWork;
 import org.apache.hadoop.hive.ql.plan.UnionWork;
 
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -61,14 +61,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * to break them into TezTasks.
  *
  */
-public class GenTezProcContext implements NodeProcessorCtx{
+public class GenTezProcContext implements NodeProcessorCtx {
 
   public final ParseContext parseContext;
   public final HiveConf conf;
   public final List<Task<MoveWork>> moveTask;
 
   // rootTasks is the entry point for all generated tasks
-  public final List<Task<? extends Serializable>> rootTasks;
+  public final List<Task<?>> rootTasks;
 
   public final Set<ReadEntity> inputs;
   public final Set<WriteEntity> outputs;
@@ -164,7 +164,7 @@ public class GenTezProcContext implements NodeProcessorCtx{
 
   @SuppressWarnings("unchecked")
   public GenTezProcContext(HiveConf conf, ParseContext parseContext,
-      List<Task<MoveWork>> moveTask, List<Task<? extends Serializable>> rootTasks,
+      List<Task<MoveWork>> moveTask, List<Task<?>> rootTasks,
       Set<ReadEntity> inputs, Set<WriteEntity> outputs) {
 
     this.conf = conf;
@@ -174,7 +174,7 @@ public class GenTezProcContext implements NodeProcessorCtx{
     this.inputs = inputs;
     this.outputs = outputs;
     this.currentTask = (TezTask) TaskFactory.get(
-        new TezWork(conf.getVar(HiveConf.ConfVars.HIVEQUERYID), conf));
+        new TezWork(conf.getVar(HiveConf.ConfVars.HIVE_QUERY_ID), conf));
     this.leafOperatorToFollowingWork = new LinkedHashMap<Operator<?>, BaseWork>();
     this.linkOpWithWorkMap = new LinkedHashMap<Operator<?>, Map<BaseWork, TezEdgeProperty>>();
     this.linkWorkWithReduceSinkMap = new LinkedHashMap<BaseWork, List<ReduceSinkOperator>>();

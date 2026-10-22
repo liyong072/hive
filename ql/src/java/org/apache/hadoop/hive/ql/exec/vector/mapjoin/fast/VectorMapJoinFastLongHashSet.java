@@ -9,17 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
 
 import java.io.IOException;
 
+import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.ql.exec.JoinUtil;
@@ -48,11 +50,16 @@ public class VectorMapJoinFastLongHashSet
   }
 
   @Override
-  public void putRow(BytesWritable currentKey, BytesWritable currentValue)
+  public void putRow(long hashCode, BytesWritable currentKey, BytesWritable currentValue)
       throws HiveException, IOException {
 
     // Ignore NULL keys (HashSet not used for FULL OUTER).
-    adaptPutRow(currentKey, currentValue);
+    adaptPutRow(hashCode, currentKey, currentValue);
+  }
+
+  @Override
+  public boolean containsLongKey(long currentKey) {
+    return containsKey(currentKey);
   }
 
   /*
@@ -61,7 +68,8 @@ public class VectorMapJoinFastLongHashSet
    */
   @VisibleForTesting
   public void testPutRow(long currentKey) throws HiveException, IOException {
-    add(currentKey, null);
+    long hashCode = HashCodeUtil.calculateLongHashCode(currentKey);
+    add(hashCode, currentKey, null);
   }
 
   @Override
@@ -109,11 +117,11 @@ public class VectorMapJoinFastLongHashSet
       boolean isFullOuter,
       boolean minMaxEnabled,
       HashTableKeyType hashTableKeyType,
-      int initialCapacity, float loadFactor, int writeBuffersSize, long estimatedKeyCount) {
+      int initialCapacity, float loadFactor, int writeBuffersSize, long estimatedKeyCount, TableDesc tableDesc) {
     super(
         isFullOuter,
         minMaxEnabled, hashTableKeyType,
-        initialCapacity, loadFactor, writeBuffersSize, estimatedKeyCount);
+        initialCapacity, loadFactor, writeBuffersSize, estimatedKeyCount, tableDesc);
   }
 
   @Override

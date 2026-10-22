@@ -9,17 +9,20 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.llap.cache;
 
 import java.util.List;
+import java.util.function.Predicate;
 
 import org.apache.hadoop.hive.common.io.Allocator;
+import org.apache.hadoop.hive.common.io.CacheTag;
 import org.apache.hadoop.hive.common.io.DataCache.BooleanRef;
 import org.apache.hadoop.hive.common.io.DataCache.DiskRangeListFactory;
 import org.apache.hadoop.hive.common.io.DiskRange;
@@ -85,7 +88,7 @@ public class SimpleBufferManager implements BufferUsageManager, LowLevelCache {
 
   @Override
   public long[] putFileData(Object fileKey, DiskRange[] ranges, MemoryBuffer[] chunks,
-      long baseOffset, Priority priority, LowLevelCacheCounters qfCounters, String tag) {
+      long baseOffset, Priority priority, LowLevelCacheCounters qfCounters, CacheTag tag) {
     for (int i = 0; i < chunks.length; ++i) {
       LlapAllocatorBuffer buffer = (LlapAllocatorBuffer)chunks[i];
       if (LlapIoImpl.LOCKING_LOGGER.isTraceEnabled()) {
@@ -99,6 +102,11 @@ public class SimpleBufferManager implements BufferUsageManager, LowLevelCache {
 
   @Override
   public void notifyEvicted(MemoryBuffer buffer) {
+    throw new UnsupportedOperationException("Buffer manager doesn't have cache");
+  }
+
+  @Override
+  public long markBuffersForProactiveEviction(Predicate<CacheTag> predicate, boolean isInstantDeallocation) {
     throw new UnsupportedOperationException("Buffer manager doesn't have cache");
   }
 }

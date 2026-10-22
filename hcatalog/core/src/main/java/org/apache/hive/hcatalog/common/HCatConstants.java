@@ -81,7 +81,7 @@ public final class HCatConstants {
 
   public static final String HCAT_TABLE_SCHEMA = "hcat.table.schema";
 
-  public static final String HCAT_METASTORE_URI = HiveConf.ConfVars.METASTOREURIS.varname;
+  public static final String HCAT_METASTORE_URI = HiveConf.ConfVars.METASTORE_URIS.varname;
 
   public static final String HCAT_PERMS = "hcat.perms";
 
@@ -186,7 +186,7 @@ public final class HCatConstants {
 
   /**
    * {@value} (default: {@value #HCAT_DATA_CONVERT_BOOLEAN_TO_INTEGER_DEFAULT}).
-   * Pig < 0.10.0 does not have boolean support, and scripts written for pre-boolean Pig versions
+   * Pig &lt; 0.10.0 does not have boolean support, and scripts written for pre-boolean Pig versions
    * will not expect boolean values when upgrading Pig. For integration the option is offered to
    * convert boolean fields to integers by setting this Hadoop configuration key.
    */

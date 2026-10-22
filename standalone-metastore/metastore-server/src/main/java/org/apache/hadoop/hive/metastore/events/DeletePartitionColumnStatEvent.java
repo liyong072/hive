@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.events;
@@ -31,7 +32,7 @@ import java.util.List;
 @InterfaceAudience.Public
 @InterfaceStability.Stable
 public class DeletePartitionColumnStatEvent extends ListenerEvent {
-  private String catName, dbName, tableName, colName, partName;
+  private String catName, dbName, tableName, colName, partName, engine;
 
   private List<String> partVals;
 
@@ -42,10 +43,11 @@ public class DeletePartitionColumnStatEvent extends ListenerEvent {
    * @param partName partition column name
    * @param partVals partition value
    * @param colName column name
+   * @param engine engine
    * @param handler handler that is firing the event
    */
   public DeletePartitionColumnStatEvent(String catName, String dbName, String tableName, String partName,
-                                        List<String> partVals, String colName, IHMSHandler handler) {
+      List<String> partVals, String colName, String engine, IHMSHandler handler) {
     super(true, handler);
     this.catName = catName;
     this.dbName = dbName;
@@ -53,6 +55,7 @@ public class DeletePartitionColumnStatEvent extends ListenerEvent {
     this.colName = colName;
     this.partName = partName;
     this.partVals = partVals;
+    this.engine = engine;
   }
 
   public String getCatName() {
@@ -77,5 +80,9 @@ public class DeletePartitionColumnStatEvent extends ListenerEvent {
 
   public List<String> getPartVals() {
     return partVals;
+  }
+
+  public String getEngine() {
+    return engine;
   }
 }

@@ -1,19 +1,20 @@
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.See the NOTICE file
+ * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
- * regarding copyright ownership.The ASF licenses this file
+ * regarding copyright ownership.  The ASF licenses this file
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
- * with the License.You may obtain a copy of the License at
+ * with the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer;
 
@@ -41,7 +42,7 @@ import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
@@ -59,7 +60,7 @@ import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 /**
  * this transformation does bucket map join optimization.
  */
-abstract public class AbstractBucketJoinProc implements NodeProcessor {
+abstract public class AbstractBucketJoinProc implements SemanticNodeProcessor {
 
   protected ParseContext pGraphContext;
 
@@ -191,21 +192,19 @@ abstract public class AbstractBucketJoinProc implements NodeProcessor {
       String baseBigAlias,
       List<String> joinAliases) throws SemanticException {
 
-    LinkedHashMap<String, List<Integer>> tblAliasToNumberOfBucketsInEachPartition =
+    Map<String, List<Integer>> tblAliasToNumberOfBucketsInEachPartition =
         new LinkedHashMap<String, List<Integer>>();
-    LinkedHashMap<String, List<List<String>>> tblAliasToBucketedFilePathsInEachPartition =
+    Map<String, List<List<String>>> tblAliasToBucketedFilePathsInEachPartition =
         new LinkedHashMap<String, List<List<String>>>();
 
-    HashMap<String, TableScanOperator> topOps = pGraphContext.getTopOps();
+    Map<String, TableScanOperator> topOps = pGraphContext.getTopOps();
 
-    HashMap<String, String> aliasToNewAliasMap = new HashMap<String, String>();
+    Map<String, String> aliasToNewAliasMap = new HashMap<String, String>();
 
     // (partition to bucket file names) and (partition to bucket number) for
     // the big table;
-    LinkedHashMap<Partition, List<String>> bigTblPartsToBucketFileNames =
-        new LinkedHashMap<Partition, List<String>>();
-    LinkedHashMap<Partition, Integer> bigTblPartsToBucketNumber =
-        new LinkedHashMap<Partition, Integer>();
+    Map<Partition, List<String>> bigTblPartsToBucketFileNames = new LinkedHashMap<Partition, List<String>>();
+    Map<Partition, Integer> bigTblPartsToBucketNumber = new LinkedHashMap<Partition, Integer>();
 
     Integer[] joinKeyOrder = null; // accessing order of join cols to bucket cols, should be same
     boolean bigTablePartitioned = true;

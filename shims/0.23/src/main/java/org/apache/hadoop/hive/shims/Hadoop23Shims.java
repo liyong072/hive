@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.shims;
 
@@ -30,6 +31,7 @@ import java.security.AccessControlException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -39,7 +41,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import javax.security.auth.Subject;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.crypto.CipherSuite;
 import org.apache.hadoop.crypto.key.KeyProvider;
@@ -51,6 +53,7 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FutureDataInputStreamBuilder;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
@@ -60,6 +63,7 @@ import org.apache.hadoop.fs.TrashPolicy;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdfs.DFSClient;
+import org.apache.hadoop.hdfs.DFSUtilClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.MiniDFSNNTopology;
@@ -69,7 +73,9 @@ import org.apache.hadoop.hdfs.protocol.EncryptionZone;
 import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
 import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicyInfo;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
+import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.protocol.HdfsLocatedFileStatus;
+import org.apache.hadoop.hdfs.protocol.SnapshotDiffReportListing;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.ipc.CallerContext;
 import org.apache.hadoop.mapred.ClusterStatus;
@@ -96,14 +102,16 @@ import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authentication.util.KerberosName;
 import org.apache.hadoop.tools.DistCp;
-import org.apache.hadoop.tools.DistCpOptions;
-import org.apache.hadoop.tools.DistCpOptions.FileAttribute;
+import org.apache.hadoop.tools.DistCpConstants;
 import org.apache.hadoop.util.Progressable;
+import org.apache.hadoop.util.SuppressFBWarnings;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FairSchedulerConfiguration;
 import org.apache.tez.dag.api.TezConfiguration;
 import org.apache.tez.runtime.library.api.TezRuntimeConfiguration;
 import org.apache.tez.test.MiniTezCluster;
+
+import static org.apache.hadoop.hive.shims.Utils.RAW_RESERVED_VIRTUAL_PATH;
+import static org.apache.hadoop.tools.DistCpConstants.CONF_LABEL_DISTCP_JOB_ID;
 
 /**
  * Implemention of shims against Hadoop 0.23.0.
@@ -262,9 +270,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
    */
   @Override
   public void refreshDefaultQueue(Configuration conf, String userName) throws IOException {
-    if (StringUtils.isNotBlank(userName) && isFairScheduler(conf)) {
-      ShimLoader.getSchedulerShims().refreshDefaultQueue(conf, userName);
-    }
+    //no op
   }
 
   private boolean isFairScheduler (Configuration conf) {
@@ -284,7 +290,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
   /**
    * Shim for MiniMrCluster
    */
-  public class MiniMrShim implements HadoopShims.MiniMrShim {
+  public static class MiniMrShim implements HadoopShims.MiniMrShim {
 
     private final MiniMRCluster mr;
     private final Configuration conf;
@@ -296,7 +302,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
 
     public MiniMrShim(Configuration conf, int numberOfTaskTrackers,
                       String nameNode, int numDir) throws IOException {
-      this.conf = conf;
+      this.conf = new Configuration(conf);
 
       JobConf jConf = new JobConf(conf);
       jConf.set("yarn.scheduler.capacity.root.queues", "default");
@@ -345,12 +351,12 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     return new MiniTezLocalShim(conf, usingLlap);
   }
 
-  public class MiniTezLocalShim extends Hadoop23Shims.MiniMrShim {
+  public static class MiniTezLocalShim extends Hadoop23Shims.MiniMrShim {
     private final Configuration conf;
     private final boolean isLlap;
 
     public MiniTezLocalShim(Configuration conf, boolean usingLlap) {
-      this.conf = conf;
+      this.conf = new Configuration(conf);
       this.isLlap = usingLlap;
       setupConfiguration(conf);
     }
@@ -363,7 +369,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     @Override
     public void setupConfiguration(Configuration conf) {
       conf.setBoolean(TezConfiguration.TEZ_LOCAL_MODE, true);
-
+      conf.setBoolean("tez.local.mode.without.network", true);
       conf.setBoolean(TezRuntimeConfiguration.TEZ_RUNTIME_OPTIMIZE_LOCAL_FETCH, true);
 
       conf.setBoolean(TezConfiguration.TEZ_IGNORE_LIB_URIS, true);
@@ -397,7 +403,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
   /**
    * Shim for MiniTezCluster
    */
-  public class MiniTezShim extends Hadoop23Shims.MiniMrShim {
+  public static class MiniTezShim extends Hadoop23Shims.MiniMrShim {
 
     private final MiniTezCluster mr;
     private final Configuration conf;
@@ -406,16 +412,10 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     public MiniTezShim(Configuration conf, int numberOfTaskTrackers, String nameNode,
                        boolean usingLlap) throws IOException {
       mr = new MiniTezCluster("hive", numberOfTaskTrackers);
-      conf.setInt(YarnConfiguration.YARN_MINICLUSTER_NM_PMEM_MB, 512);
+      conf.setInt(YarnConfiguration.YARN_MINICLUSTER_NM_PMEM_MB, 4096);
       conf.setInt(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_MB, 128);
-      conf.setInt(YarnConfiguration.RM_SCHEDULER_MAXIMUM_ALLOCATION_MB, 512);
-      // Overrides values from the hive/tez-site.
-      conf.setInt("hive.tez.container.size", 128);
-      conf.setInt(TezConfiguration.TEZ_AM_RESOURCE_MEMORY_MB, 128);
-      conf.setInt(TezConfiguration.TEZ_TASK_RESOURCE_MEMORY_MB, 128);
-      conf.setInt(TezRuntimeConfiguration.TEZ_RUNTIME_IO_SORT_MB, 24);
-      conf.setInt(TezRuntimeConfiguration.TEZ_RUNTIME_UNORDERED_OUTPUT_BUFFER_SIZE_MB, 10);
-      conf.setFloat(TezRuntimeConfiguration.TEZ_RUNTIME_SHUFFLE_FETCH_BUFFER_PERCENT, 0.4f);
+      conf.setInt(YarnConfiguration.RM_SCHEDULER_MAXIMUM_ALLOCATION_MB, 4096);
+
       conf.set("fs.defaultFS", nameNode);
       conf.set("tez.am.log.level", "DEBUG");
       conf.set(MRJobConfig.MR_AM_STAGING_DIR, "/apps_staging_dir");
@@ -445,16 +445,9 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     @Override
     public void setupConfiguration(Configuration conf) {
       Configuration config = mr.getConfig();
-      for (Map.Entry<String, String> pair: config) {
+      for (Map.Entry<String, String> pair : config) {
         conf.set(pair.getKey(), pair.getValue());
       }
-      // Overrides values from the hive/tez-site.
-      conf.setInt("hive.tez.container.size", 128);
-      conf.setInt(TezConfiguration.TEZ_AM_RESOURCE_MEMORY_MB, 128);
-      conf.setInt(TezConfiguration.TEZ_TASK_RESOURCE_MEMORY_MB, 128);
-      conf.setInt(TezRuntimeConfiguration.TEZ_RUNTIME_IO_SORT_MB, 24);
-      conf.setInt(TezRuntimeConfiguration.TEZ_RUNTIME_UNORDERED_OUTPUT_BUFFER_SIZE_MB, 10);
-      conf.setFloat(TezRuntimeConfiguration.TEZ_RUNTIME_SHUFFLE_FETCH_BUFFER_PERCENT, 0.4f);
       if (isLlap) {
         conf.set("hive.llap.execution.mode", "all");
       }
@@ -473,15 +466,6 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     conf.set("hadoop.proxyuser." + user + ".hosts", "*");
   }
 
-  /**
-   * Returns a shim to wrap MiniSparkOnYARNCluster
-   */
-  @Override
-  public MiniMrShim getMiniSparkCluster(Configuration conf, int numberOfTaskTrackers,
-    String nameNode, int numDir) throws IOException {
-    return new MiniSparkShim(conf, numberOfTaskTrackers, nameNode, numDir);
-  }
-
   @Override
   public void setHadoopCallerContext(String callerContext) {
     CallerContext.setCurrent(new CallerContext.Builder(callerContext).build());
@@ -495,57 +479,6 @@ public class Hadoop23Shims extends HadoopShimsSecure {
   @Override
   public void setHadoopSessionContext(String sessionId) {
     setHadoopCallerContext("hive_sessionId_" + sessionId);
-  }
-
-  /**
-   * Shim for MiniSparkOnYARNCluster
-   */
-  public class MiniSparkShim extends Hadoop23Shims.MiniMrShim {
-
-    private final MiniSparkOnYARNCluster mr;
-    private final Configuration conf;
-
-    public MiniSparkShim(Configuration conf, int numberOfTaskTrackers,
-      String nameNode, int numDir) throws IOException {
-      mr = new MiniSparkOnYARNCluster("sparkOnYarn");
-      conf.set("fs.defaultFS", nameNode);
-      conf.set("yarn.resourcemanager.scheduler.class", "org.apache.hadoop.yarn.server.resourcemanager.scheduler.fair.FairScheduler");
-      // disable resource monitoring, although it should be off by default
-      conf.setBoolean(YarnConfiguration.YARN_MINICLUSTER_CONTROL_RESOURCE_MONITORING, false);
-      conf.setInt(YarnConfiguration.YARN_MINICLUSTER_NM_PMEM_MB, 2048);
-      conf.setInt(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_MB, 512);
-      conf.setInt(FairSchedulerConfiguration.RM_SCHEDULER_INCREMENT_ALLOCATION_MB, 512);
-      conf.setInt(YarnConfiguration.RM_SCHEDULER_MAXIMUM_ALLOCATION_MB, 2048);
-      configureImpersonation(conf);
-      mr.init(conf);
-      mr.start();
-      this.conf = mr.getConfig();
-    }
-
-    @Override
-    public int getJobTrackerPort() throws UnsupportedOperationException {
-      String address = conf.get("yarn.resourcemanager.address");
-      address = StringUtils.substringAfterLast(address, ":");
-
-      if (StringUtils.isBlank(address)) {
-        throw new IllegalArgumentException("Invalid YARN resource manager port.");
-      }
-
-      return Integer.parseInt(address);
-    }
-
-    @Override
-    public void shutdown() throws IOException {
-      mr.stop();
-    }
-
-    @Override
-    public void setupConfiguration(Configuration conf) {
-      Configuration config = mr.getConfig();
-      for (Map.Entry<String, String> pair : config) {
-        conf.set(pair.getKey(), pair.getValue());
-      }
-    }
   }
 
   @Override
@@ -619,11 +552,18 @@ public class Hadoop23Shims extends HadoopShimsSecure {
    * MiniDFSShim.
    *
    */
-  public class MiniDFSShim implements HadoopShims.MiniDFSShim {
+  public static class MiniDFSShim implements HadoopShims.MiniDFSShim {
     private final MiniDFSCluster cluster;
 
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "intended")
     public MiniDFSShim(MiniDFSCluster cluster) {
       this.cluster = cluster;
+      Arrays.stream(cluster.getNameNodeInfos())
+          .forEach(info ->
+              LOG.info("Namenode {} (ns={}) address: {}",
+                  info.getNamenodeId(),
+                  info.getNameserviceId(),
+                  info.nameNode.getNameNodeAddress()));
     }
 
     @Override
@@ -644,7 +584,8 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     }
     return hcatShimInstance;
   }
-  private final class HCatHadoopShims23 implements HCatHadoopShims {
+
+  private static final class HCatHadoopShims23 implements HCatHadoopShims {
     @Override
     public TaskID createTaskID() {
       return new TaskID("", 0, TaskType.MAP, 0);
@@ -738,7 +679,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
   }
   @Override
   public WebHCatJTShim getWebHCatShim(Configuration conf, UserGroupInformation ugi) throws IOException {
-    return new WebHCatJTShim23(conf, ugi);//this has state, so can't be cached
+    return WebHCatJTShim23.createInstance(conf, ugi);//this has state, so can't be cached
   }
 
   private static final class HdfsFileStatusWithIdImpl implements HdfsFileStatusWithId {
@@ -828,21 +769,22 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     stream.hflush();
   }
 
-  class ProxyFileSystem23 extends ProxyFileSystem {
-    public ProxyFileSystem23(FileSystem fs) {
-      super(fs);
-    }
+  static class ProxyFileSystem23 extends ProxyFileSystem {
     public ProxyFileSystem23(FileSystem fs, URI uri) {
       super(fs, uri);
     }
 
     @Override
-    public RemoteIterator<LocatedFileStatus> listLocatedStatus(final Path f)
-      throws FileNotFoundException, IOException {
+    public FutureDataInputStreamBuilder openFile(Path path) throws IOException, UnsupportedOperationException {
+      return super.openFile(ProxyFileSystem23.super.swizzleParamPath(path));
+    }
+
+    @Override
+    public RemoteIterator<LocatedFileStatus> listLocatedStatus(final Path f) throws FileNotFoundException, IOException {
+      final RemoteIterator<LocatedFileStatus> remoteIterator =
+          ProxyFileSystem23.super.listLocatedStatus(ProxyFileSystem23.super.swizzleParamPath(f));
       return new RemoteIterator<LocatedFileStatus>() {
-        private final RemoteIterator<LocatedFileStatus> stats =
-            ProxyFileSystem23.super.listLocatedStatus(
-                ProxyFileSystem23.super.swizzleParamPath(f));
+        private final RemoteIterator<LocatedFileStatus> stats = remoteIterator;
 
         @Override
         public boolean hasNext() throws IOException {
@@ -852,8 +794,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
         @Override
         public LocatedFileStatus next() throws IOException {
           LocatedFileStatus result = stats.next();
-          return new LocatedFileStatus(
-              ProxyFileSystem23.super.swizzleFileStatus(result, false),
+          return new LocatedFileStatus(ProxyFileSystem23.super.swizzleFileStatus(result, false),
               result.getBlockLocations());
         }
       };
@@ -1030,7 +971,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
   /**
    * Shim for KerberosName
    */
-  public class KerberosNameShim implements HadoopShimsSecure.KerberosNameShim {
+  public static class KerberosNameShim implements HadoopShimsSecure.KerberosNameShim {
 
     private final KerberosName kerberosName;
 
@@ -1068,6 +1009,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
 
     private final DistributedFileSystem dfs;
 
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "intended")
     public StoragePolicyShim(DistributedFileSystem fs) {
       this.dfs = fs;
     }
@@ -1107,14 +1049,25 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     }
   }
 
-  private static final String DISTCP_OPTIONS_PREFIX = "distcp.options.";
-
-  List<String> constructDistCpParams(List<Path> srcPaths, Path dst, Configuration conf) {
+  List<String> constructDistCpParams(List<Path> srcPaths, Path dst, Configuration conf) throws IOException {
     // -update and -delete are mandatory options for directory copy to work.
-    // -pbx is default preserve options if user doesn't pass any.
+    List<String> params = constructDistCpDefaultParams(conf, dst.getFileSystem(conf),
+            srcPaths.get(0).getFileSystem(conf), srcPaths);
+    if (!params.contains("-delete")) {
+      params.add("-delete");
+    }
+    for (Path src : srcPaths) {
+      params.add(src.toString());
+    }
+    params.add(dst.toString());
+    return params;
+  }
+
+  private List<String> constructDistCpDefaultParams(Configuration conf, FileSystem dstFs,
+                                                    FileSystem sourceFs, List<Path> srcPaths) throws IOException {
     List<String> params = new ArrayList<String>();
     boolean needToAddPreserveOption = true;
-    for (Map.Entry<String,String> entry : conf.getPropsWithPrefix(DISTCP_OPTIONS_PREFIX).entrySet()){
+    for (Map.Entry<String,String> entry : conf.getPropsWithPrefix(Utils.DISTCP_OPTIONS_PREFIX).entrySet()){
       String distCpOption = entry.getKey();
       String distCpVal = entry.getValue();
       if (distCpOption.startsWith("p")) {
@@ -1126,17 +1079,55 @@ public class Hadoop23Shims extends HadoopShimsSecure {
       }
     }
     if (needToAddPreserveOption) {
-      params.add("-pbx");
+      if (conf.getBoolean("dfs.xattr.supported.only.on.reserved.namespace", false)) {
+        boolean shouldCopyXAttrs =  srcPaths.get(0).toUri().getPath().startsWith(RAW_RESERVED_VIRTUAL_PATH)
+          && Utils.checkFileSystemXAttrSupport(sourceFs, new Path(RAW_RESERVED_VIRTUAL_PATH))
+          && Utils.checkFileSystemXAttrSupport(dstFs, new Path(RAW_RESERVED_VIRTUAL_PATH));
+        params.add(shouldCopyXAttrs ? "-pbx" : "-pb");
+      } else {
+        params.add((Utils.checkFileSystemXAttrSupport(dstFs)
+          && Utils.checkFileSystemXAttrSupport(sourceFs)) ? "-pbx" : "-pb");
+      }
     }
     if (!params.contains("-update")) {
       params.add("-update");
     }
-    if (!params.contains("-delete")) {
-      params.add("-delete");
+    return params;
+  }
+
+  /**
+   * Constructs the params to be passed for using snapshot based replication
+   * @param srcPaths source paths
+   * @param dst destination
+   * @param sourceSnap starting snapshot
+   * @param destSnap end snapshot
+   * @param conf hive configuration
+   * @param diff -diff or -rdiff
+   * @return
+   */
+  List<String> constructDistCpWithSnapshotParams(List<Path> srcPaths, Path dst, String sourceSnap, String destSnap,
+      Configuration conf, String diff) throws IOException {
+    // Get the default distcp params
+    List<String> params = constructDistCpDefaultParams(conf, dst.getFileSystem(conf),
+            srcPaths.get(0).getFileSystem(conf), srcPaths);
+    if (params.contains("-delete")) {
+      params.remove("-delete");
     }
+
+    // Add distCp snapshot diff parameters.
+
+    // Add -diff or -rdiff
+    params.add(diff);
+    // Add the starting snapshot.
+    params.add(sourceSnap);
+    // Add the second snapshot
+    params.add(destSnap);
+
+    // Add the source paths.
     for (Path src : srcPaths) {
       params.add(src.toString());
     }
+    // Add the target path.
     params.add(dst.toString());
     return params;
   }
@@ -1158,36 +1149,164 @@ public class Hadoop23Shims extends HadoopShimsSecure {
 
   @Override
   public boolean runDistCp(List<Path> srcPaths, Path dst, Configuration conf) throws IOException {
-       DistCpOptions options = new DistCpOptions.Builder(srcPaths, dst)
-               .withSyncFolder(true)
-               .withDeleteMissing(true)
-               .preserve(FileAttribute.BLOCKSIZE)
-               .preserve(FileAttribute.XATTR)
-               .build();
-
     // Creates the command-line parameters for distcp
     List<String> params = constructDistCpParams(srcPaths, dst, conf);
-
+    DistCp distcp = null;
     try {
-      conf.setBoolean("mapred.mapper.new-api", true);
-      DistCp distcp = new DistCp(conf, options);
+      distcp = new DistCp(conf, null);
+      distcp.getConf().setBoolean("mapred.mapper.new-api", true);
 
       // HIVE-13704 states that we should use run() instead of execute() due to a hadoop known issue
       // added by HADOOP-10459
-      if (distcp.run(params.toArray(new String[0])) == 0) {
+      return runDistCpInternal(distcp, params) ==  0;
+    } catch (Exception e) {
+      throw new IOException("Cannot execute DistCp process: ", e);
+    } finally {
+      // Set the job id from distCp conf to the callers configuration.
+      if (distcp != null) {
+        String jobId = distcp.getConf().get(CONF_LABEL_DISTCP_JOB_ID);
+        if (jobId != null) {
+          conf.set(CONF_LABEL_DISTCP_JOB_ID, jobId);
+        }
+      }
+    }
+  }
+
+  @Override
+  public boolean runDistCpWithSnapshots(String oldSnapshot, String newSnapshot, List<Path> srcPaths, Path dst,
+      boolean overwriteTarget, Configuration conf)
+      throws IOException {
+    List<String> params = constructDistCpWithSnapshotParams(srcPaths, dst, oldSnapshot, newSnapshot, conf, "-diff");
+    try {
+      DistCp distcp = new DistCp(conf, null);
+      distcp.getConf().setBoolean("mapred.mapper.new-api", true);
+      int returnCode = runDistCpInternal(distcp, params);
+      if (returnCode == 0) {
         return true;
-      } else {
-        return false;
+      } else if (returnCode == DistCpConstants.INVALID_ARGUMENT) {
+        // Handling FileNotFoundException, if source got deleted, in that case we don't want to copy either, So it is
+        // like a success case, we didn't had anything to copy and we copied nothing, so, we need not to fail.
+        LOG.warn("Copy failed with INVALID_ARGUMENT for source: {} to target: {} snapshot1: {} snapshot2: {} "
+            + "params: {}", srcPaths, dst, oldSnapshot, newSnapshot, params);
+        return true;
+      } else if (returnCode == DistCpConstants.UNKNOWN_ERROR && overwriteTarget) {
+        // Check if this error is due to target modified.
+        if (shouldRdiff(dst, conf, oldSnapshot, overwriteTarget)) {
+          LOG.warn("Copy failed due to target modified. Attempting to restore back the target. source: {} target: {} "
+              + "snapshot: {}", srcPaths, dst, oldSnapshot);
+          List<String> rParams = constructDistCpWithSnapshotParams(srcPaths, dst, ".", oldSnapshot, conf, "-rdiff");
+          DistCp rDistcp = new DistCp(conf, null);
+          returnCode = runDistCpInternal(rDistcp, rParams);
+          if (returnCode == 0) {
+            LOG.info("Target restored to previous state.  source: {} target: {} snapshot: {}. Reattempting to copy.",
+                srcPaths, dst, oldSnapshot);
+            dst.getFileSystem(conf).deleteSnapshot(dst, oldSnapshot);
+            dst.getFileSystem(conf).createSnapshot(dst, oldSnapshot);
+            returnCode = runDistCpInternal(distcp, params);
+            if (returnCode == 0) {
+              return true;
+            } else {
+              LOG.error("Copy failed with after target restore for source: {} to target: {} snapshot1: {} snapshot2: "
+                  + "{} params: {}. Return code: {}", srcPaths, dst, oldSnapshot, newSnapshot, params, returnCode);
+              return false;
+            }
+          }
+        }
       }
     } catch (Exception e) {
-      throw new IOException("Cannot execute DistCp process: " + e, e);
-    } finally {
-      conf.setBoolean("mapred.mapper.new-api", false);
+      throw new IOException("Cannot execute DistCp process: ", e);
+    }
+    return false;
+  }
+
+  protected int runDistCpInternal(DistCp distcp, List<String> params) {
+    ensureMapReduceQueue(distcp.getConf());
+    return distcp.run(params.toArray(new String[0]));
+  }
+
+  /**
+   * This method ensures if there is an explicit tez.queue.name set, the hadoop shim will submit jobs
+   * to the same yarn queue. This solves a security issue where e.g settings have the following values:
+   * tez.queue.name=sample
+   * hive.server2.tez.queue.access.check=true
+   * In this case, when a query submits Tez DAGs, the tez client layer checks whether the end user has access to
+   * the yarn queue 'sample' via YarnQueueHelper, but this is not respected in case of MR jobs that run
+   * even if the query execution engine is Tez. E.g. an EXPORT TABLE can submit DistCp MR jobs at some stages when
+   * certain criteria are met. We tend to restrict the setting of mapreduce.job.queuename in order to bypass this
+   * security flaw, and even the default queue is unexpected if we explicitly set tez.queue.name.
+   * Under the hood the desired behavior is to have DistCp jobs in the same yarn queue as other parts
+   * of the query. Most of the time, the user isn't aware that a query involves DistCp jobs, hence isn't aware
+   * of these details.
+   */
+  protected void ensureMapReduceQueue(Configuration conf) {
+    String queueName = conf.get(TezConfiguration.TEZ_QUEUE_NAME);
+    boolean isTez = "tez".equalsIgnoreCase(conf.get("hive.execution.engine"));
+    boolean shouldMapredJobsFollowTezQueue = conf.getBoolean("hive.mapred.job.follow.tez.queue", false);
+
+    LOG.debug("Checking tez.queue.name {}, isTez: {}, shouldMapredJobsFollowTezQueue: {}", queueName, isTez,
+        shouldMapredJobsFollowTezQueue);
+    if (isTez && shouldMapredJobsFollowTezQueue && queueName != null && queueName.length() > 0) {
+      LOG.info("Setting mapreduce.job.queuename (current: '{}') to become tez.queue.name: '{}'",
+          conf.get(MRJobConfig.QUEUE_NAME), queueName);
+      conf.set(MRJobConfig.QUEUE_NAME, queueName);
+    }
+  }
+
+  /**
+   * Checks wether reverse diff on the snapshot should be performed or not.
+   * @param p path where snapshot exists.
+   * @param conf the hive configuration.
+   * @param snapshot the name of snapshot.
+   * @param overwriteTarget whether overwriting target is enabled.
+   * @return true, if we need to do rdiff.
+   */
+  private static boolean shouldRdiff(Path p, Configuration conf, String snapshot, boolean overwriteTarget) throws Exception {
+    // Using the configuration in string form since hive-shims doesn't have a dependency on hive-common.
+    boolean targetModified = false;
+    try {
+      DistributedFileSystem dfs = (DistributedFileSystem) p.getFileSystem(conf);
+      // Check if the target got modified
+      SnapshotDiffReportListing snapshotDiff = dfs.getClient()
+          .getSnapshotDiffReportListing(p.toUri().getPath(), snapshot, "", DFSUtilClient.EMPTY_BYTES, -1);
+
+      // If there is even a single entry in these list, we can conclude that the target is modified, and we need to
+      // do a reverse diff.
+      if (snapshotDiff.getCreateList() != null && !snapshotDiff.getCreateList().isEmpty()) {
+        targetModified = true;
+      }
+      if (snapshotDiff.getModifyList() != null && !snapshotDiff.getModifyList().isEmpty()) {
+        targetModified = true;
+      }
+      if (snapshotDiff.getDeleteList() != null && !snapshotDiff.getDeleteList().isEmpty()) {
+        targetModified = true;
+      }
+    } catch (Exception e) {
+      LOG.error("Failed to compute snapshot diff for path: {} and snapshot: {}", p, snapshot);
+    }
+    if (targetModified && !overwriteTarget) {
+      throw new Exception(
+          "The target modified during snapshot based data copy for path: " + p + " and snapshot: " + snapshot);
+    }
+    return targetModified;
+  }
+
+  public boolean runDistCpWithSnapshotsAs(String oldSnapshot, String newSnapshot, List<Path> srcPaths, Path dst,
+      boolean overwriteTarget, UserGroupInformation proxyUser, Configuration conf) throws IOException {
+    try {
+      return proxyUser.doAs(new PrivilegedExceptionAction<Boolean>() {
+        @Override
+        public Boolean run() throws Exception {
+          return runDistCpWithSnapshots(oldSnapshot, newSnapshot, srcPaths, dst, overwriteTarget, conf);
+        }
+      });
+    } catch (InterruptedException e) {
+      throw new IOException(e);
     }
   }
 
   private static Boolean hdfsEncryptionSupport;
 
+  @SuppressFBWarnings(value = "LI_LAZY_INIT_STATIC", justification = "All threads set the same value despite data race")
   public static boolean isHdfsEncryptionSupported() {
     if (hdfsEncryptionSupport == null) {
       Method m = null;
@@ -1205,8 +1324,8 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     return hdfsEncryptionSupport;
   }
 
-  public class HdfsEncryptionShim implements HadoopShims.HdfsEncryptionShim {
-    private final String HDFS_SECURITY_DEFAULT_CIPHER = "AES/CTR/NoPadding";
+  public static class HdfsEncryptionShim implements HadoopShims.HdfsEncryptionShim {
+    private static final String HDFS_SECURITY_DEFAULT_CIPHER = "AES/CTR/NoPadding";
 
     /**
      * Gets information about HDFS encryption zones
@@ -1220,12 +1339,17 @@ public class Hadoop23Shims extends HadoopShimsSecure {
 
     private final Configuration conf;
 
-    public HdfsEncryptionShim(URI uri, Configuration conf) throws IOException {
-      DistributedFileSystem dfs = (DistributedFileSystem)FileSystem.get(uri, conf);
+    public static HdfsEncryptionShim createInstance(URI uri, Configuration conf) throws IOException {
+      HdfsAdmin hadmin = new HdfsAdmin(uri, conf);
+      KeyProvider keyP = hadmin.getKeyProvider();
+      HdfsEncryptionShim hdfsEncryptionShim = new HdfsEncryptionShim(conf);
+      hdfsEncryptionShim.hdfsAdmin = hadmin;
+      hdfsEncryptionShim.keyProvider = keyP;
+      return hdfsEncryptionShim;
+    }
 
+    private HdfsEncryptionShim(Configuration conf) {
       this.conf = conf;
-      this.keyProvider = dfs.getClient().getKeyProvider();
-      this.hdfsAdmin = new HdfsAdmin(uri, conf);
     }
 
     @Override
@@ -1236,14 +1360,41 @@ public class Hadoop23Shims extends HadoopShimsSecure {
       } else {
         fullPath = path.getFileSystem(conf).makeQualified(path);
       }
-      if(!"hdfs".equalsIgnoreCase(path.toUri().getScheme())) {
+      if (!isFileInHdfs(path.getFileSystem(conf), path)) {
         return false;
       }
 
       return (getEncryptionZoneForPath(fullPath) != null);
     }
 
-    private EncryptionZone getEncryptionZoneForPath(Path path) throws IOException {
+    /**
+     * Returns true if the given fs supports mount functionality. In general we
+     * can have child file systems only in the case of mount fs like
+     * ViewFsOverloadScheme or ViewDistributedFileSystem. Returns false if the
+     * getChildFileSystems API returns null.
+     */
+    private boolean isMountedFs(FileSystem fs) {
+      return fs.getChildFileSystems() != null;
+    }
+
+    private boolean isFileInHdfs(FileSystem fs, Path path) throws IOException {
+      String hdfsScheme = "hdfs";
+      boolean isHdfs = hdfsScheme.equalsIgnoreCase(path.toUri().getScheme());
+      // The ViewHDFS supports that, any non-hdfs paths can be mounted as hdfs
+      // paths. Here HDFSEncryptionShim actually works only for hdfs paths. But
+      // in the case of ViewHDFS, paths can be with hdfs scheme, but they might
+      // actually resolve to other fs.
+      // ex: hdfs://ns1/test ---> o3fs://b.v.ozone1/test
+      // So, we need to lookup where the actual file is to know the filesystem
+      // in use. The resolvePath is a sure shot way of knowing which file system
+      // the file is.
+      if (isHdfs && isMountedFs(fs)) {
+        isHdfs = hdfsScheme.equals(fs.resolvePath(path).toUri().getScheme());
+      }
+      return isHdfs;
+    }
+
+    public EncryptionZone getEncryptionZoneForPath(Path path) throws IOException {
       if (path.getFileSystem(conf).exists(path)) {
         return hdfsAdmin.getEncryptionZoneForPath(path);
       } else if (!path.getParent().equals(path)) {
@@ -1287,15 +1438,16 @@ public class Hadoop23Shims extends HadoopShimsSecure {
      *
      * @param path1 First  path to compare
      * @param path2 Second path to compare
+     * @param encryptionShim2 The encryption-shim corresponding to path2.
      * @return 1 if path1 is stronger; 0 if paths are equals; -1 if path1 is weaker.
      * @throws IOException If an error occurred attempting to get key metadata
      */
     @Override
-    public int comparePathKeyStrength(Path path1, Path path2) throws IOException {
+    public int comparePathKeyStrength(Path path1, Path path2, HadoopShims.HdfsEncryptionShim encryptionShim2) throws IOException {
       EncryptionZone zone1, zone2;
 
       zone1 = getEncryptionZoneForPath(path1);
-      zone2 = getEncryptionZoneForPath(path2);
+      zone2 = ((HdfsEncryptionShim)encryptionShim2).hdfsAdmin.getEncryptionZoneForPath(path2);
 
       if (zone1 == null && zone2 == null) {
         return 0;
@@ -1386,8 +1538,8 @@ public class Hadoop23Shims extends HadoopShimsSecure {
   public HadoopShims.HdfsEncryptionShim createHdfsEncryptionShim(FileSystem fs, Configuration conf) throws IOException {
     if (isHdfsEncryptionSupported()) {
       URI uri = fs.getUri();
-      if ("hdfs".equals(uri.getScheme())) {
-        return new HdfsEncryptionShim(uri, conf);
+      if ("hdfs".equals(uri.getScheme()) && fs instanceof DistributedFileSystem) {
+        return HdfsEncryptionShim.createInstance(uri, conf);
       }
     }
 
@@ -1417,7 +1569,11 @@ public class Hadoop23Shims extends HadoopShimsSecure {
 
   @Override
   public long getFileId(FileSystem fs, String path) throws IOException {
-    return ensureDfs(fs).getClient().getFileInfo(path).getFileId();
+    HdfsFileStatus fileInfo = ensureDfs(fs).getClient().getFileInfo(path);
+    if (fileInfo == null) {
+      throw new FileNotFoundException(path + " does not exist.");
+    }
+    return fileInfo.getFileId();
   }
 
 
@@ -1454,7 +1610,6 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     }
     try {
       Subject origSubject = (Subject) getSubjectMethod.invoke(baseUgi);
-      
       Subject subject = new Subject(false, origSubject.getPrincipals(),
           cloneCredentials(origSubject.getPublicCredentials()),
           cloneCredentials(origSubject.getPrivateCredentials()));
@@ -1472,7 +1627,7 @@ public class Hadoop23Shims extends HadoopShimsSecure {
     }
     return set;
   }
-  
+
   private static Boolean hdfsErasureCodingSupport;
 
   /**

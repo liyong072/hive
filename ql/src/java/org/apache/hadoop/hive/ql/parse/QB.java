@@ -9,17 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -29,10 +30,9 @@ import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.ql.ddl.table.CreateTableDesc;
+import org.apache.hadoop.hive.ql.ddl.table.create.CreateTableDesc;
+import org.apache.hadoop.hive.ql.ddl.view.create.CreateMaterializedViewDesc;
 import org.apache.hadoop.hive.ql.metadata.Table;
-import org.apache.hadoop.hive.ql.plan.CreateViewDesc;
 
 /**
  * Implementation of the query block.
@@ -49,8 +49,10 @@ public class QB {
   private int numSelDi = 0;
   private HashMap<String, String> aliasToTabs;
   private HashMap<String, QBExpr> aliasToSubq;
+  private HashMap<String, QBExpr> aliasToSubqExpr;
   private HashMap<String, Table> viewAliasToViewSchema;
   private HashMap<String, Map<String, String>> aliasToProps;
+  private HashMap<String, QBSystemVersion> aliasToSystemVersion;
   private List<String> aliases;
   private QBParseInfo qbp;
   private QBMetaData qbm;
@@ -64,7 +66,7 @@ public class QB {
   private Set<String> aliasInsideView;
 
   // If this is a materialized view, this stores the view descriptor
-  private CreateViewDesc viewDesc;
+  private CreateMaterializedViewDesc viewDesc;
 
   // used by PTFs
   /*
@@ -98,6 +100,8 @@ public class QB {
    */
   private QBSubQuery havingClauseSubQueryPredicate;
 
+  private int subQueryExpressionAliasCounter = 0;
+
   // results
 
   public void print(String msg) {
@@ -117,6 +121,7 @@ public class QB {
     // Must be deterministic order maps - see HIVE-8707
     aliasToTabs = new LinkedHashMap<String, String>();
     aliasToSubq = new LinkedHashMap<String, QBExpr>();
+    aliasToSubqExpr = new LinkedHashMap<>();
     viewAliasToViewSchema = new LinkedHashMap<String, Table>();
     aliasToProps = new LinkedHashMap<String, Map<String, String>>();
     aliases = new ArrayList<String>();
@@ -130,6 +135,7 @@ public class QB {
     destToWindowingSpec = new LinkedHashMap<String, WindowingSpec>();
     id = getAppendedAliasFromId(outer_id, alias);
     aliasInsideView = new HashSet<>();
+    aliasToSystemVersion = new LinkedHashMap<>();
   }
 
   // For sub-queries, the id. and alias should be appended since same aliases can be re-used
@@ -190,6 +196,10 @@ public class QB {
     aliasToProps.put(alias.toLowerCase(), props);
   }
 
+  public void setSystemVersion(String alias, QBSystemVersion asOf) {
+    aliasToSystemVersion.put(alias.toLowerCase(), asOf);
+  }
+
   public void addAlias(String alias) {
     if (!aliases.contains(alias.toLowerCase())) {
       aliases.add(alias.toLowerCase());
@@ -220,6 +230,10 @@ public class QB {
     return aliasToSubq.keySet();
   }
 
+  public Set<String> getSubqExprAliases() {
+    return aliasToSubqExpr.keySet();
+  }
+
   public Set<String> getTabAliases() {
     return aliasToTabs.keySet();
   }
@@ -232,12 +246,20 @@ public class QB {
     return aliasToSubq.get(alias.toLowerCase());
   }
 
+  public QBExpr getSubqExprForAlias(String alias) {
+    return aliasToSubqExpr.get(alias.toLowerCase());
+  }
+
   public String getTabNameForAlias(String alias) {
     return aliasToTabs.get(alias.toLowerCase());
   }
 
   public Map<String, String> getTabPropsForAlias(String alias) {
     return aliasToProps.get(alias.toLowerCase());
+  }
+
+  public QBSystemVersion getSystemVersionForAlias(String alias) {
+    return aliasToSystemVersion.get(alias.toLowerCase());
   }
 
   public void rewriteViewToSubq(String alias, String viewName, QBExpr qbexpr, Table tab) {
@@ -295,6 +317,20 @@ public class QB {
 
   public boolean hasTableSample(String alias) {
     return qbp.getTabSample(alias) != null;
+  }
+  
+  public boolean hasTableSampleRecursive() {
+    if (!qbp.getNameToSample().isEmpty()) {
+      return true;
+    }
+    
+    for (QBExpr qbExpr: aliasToSubq.values()) {
+      if (qbExpr.getQB() != null && qbExpr.getQB().hasTableSampleRecursive()) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   public CreateTableDesc getTableDesc() {
@@ -407,20 +443,16 @@ public class QB {
     return havingClauseSubQueryPredicate;
   }
 
-  public CreateViewDesc getViewDesc() {
+  public CreateMaterializedViewDesc getViewDesc() {
     return viewDesc;
   }
 
-  public void setViewDesc(CreateViewDesc viewDesc) {
+  public void setViewDesc(CreateMaterializedViewDesc viewDesc) {
     this.viewDesc = viewDesc;
   }
 
   public boolean isMaterializedView() {
-    return viewDesc != null && viewDesc.isMaterialized();
-  }
-
-  public boolean isView() {
-    return viewDesc != null && !viewDesc.isMaterialized();
+    return viewDesc != null;
   }
 
   public boolean isMultiDestQuery() {
@@ -455,5 +487,25 @@ public class QB {
       }
     }
     return aliasToTabs.size()==0 && aliasToSubq.size()==0;
+  }
+
+  // returns false when the query block doesn't have
+  // a table defined, e.g. "select 5"
+  public boolean hasTableDefined() {
+    return !(aliases.size() == 1 && aliases.get(0).equals(SemanticAnalyzer.DUMMY_TABLE));
+  }
+
+  public void addSubqExprAlias(ASTNode expressionTree, SemanticAnalyzer semanticAnalyzer) throws SemanticException {
+    String alias = "__subexpr" + subQueryExpressionAliasCounter++;
+
+    // Recursively do the first phase of semantic analysis for the subquery
+    QBExpr qbexpr = new QBExpr(alias);
+
+    ASTNode subqref = (ASTNode) expressionTree.getChild(1);
+    semanticAnalyzer.doPhase1QBExpr(subqref, qbexpr, getId(), alias, isInsideView(), null);
+
+    // Insert this map into the stats
+    aliasToSubqExpr.put(alias, qbexpr);
+    addAlias(alias);
   }
 }

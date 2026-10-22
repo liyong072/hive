@@ -7,7 +7,7 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -256,9 +256,7 @@ public class SlotZnode implements Closeable {
   private void processCreateResult(CuratorFramework client, CuratorEvent event) throws Exception {
     boolean doesExist = event.getResultCode() == KeeperException.Code.NODEEXISTS.intValue();
     if (!doesExist && event.getResultCode() != KeeperException.Code.OK.intValue()) {
-      if (LOG.isInfoEnabled()) {
-        LOG.info("Trying to reacquire due to create error: " + event);
-      }
+      LOG.info("Trying to reacquire due to create error: " + event);
       startCreateCurrentNode(); // TODO: a pattern from Curator. Better error handling?
       return;
     }
@@ -301,10 +299,7 @@ public class SlotZnode implements Closeable {
     if (Arrays.equals(actual, data)) {
       handleCreatedNode(path);
     } else {
-      if (LOG.isInfoEnabled()) {
-        LOG.info("Data at {} is from a different node: {} (we are {})",
-            path, new String(actual, CHARSET), dataStr);
-      }
+      LOG.info("Data at {} is from a different node: {} (we are {})", path, new String(actual, CHARSET), dataStr);
       nodePath.getAndSet(null);
       chooseSlotToTake(); // Try another slot.
       startCreateCurrentNode();

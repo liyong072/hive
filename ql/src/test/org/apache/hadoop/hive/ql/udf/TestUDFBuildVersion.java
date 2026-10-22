@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf;
@@ -21,12 +22,15 @@ package org.apache.hadoop.hive.ql.udf;
 import org.apache.hadoop.io.Text;
 import org.apache.hive.common.util.HiveVersionInfo;
 
-import junit.framework.TestCase;
+
+import static org.junit.Assert.assertEquals;
+import org.junit.Test;
 
 /**
  * Unit Test Case for UDFBuildVersion.
  */
-public class TestUDFBuildVersion extends TestCase {
+public class TestUDFBuildVersion {
+  @Test
   public void testVersion() {
     UDFBuildVersion udf = new UDFBuildVersion();
     Text result = udf.evaluate();

@@ -9,31 +9,48 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.load.log;
 
+import org.apache.hadoop.hive.ql.exec.repl.ReplStatsTracker;
 import org.apache.hadoop.hive.ql.parse.repl.load.log.state.IncrementalLoadBegin;
 import org.apache.hadoop.hive.ql.parse.repl.load.log.state.IncrementalLoadEnd;
 import org.apache.hadoop.hive.ql.parse.repl.load.log.state.IncrementalLoadEvent;
 import org.apache.hadoop.hive.ql.parse.repl.ReplLogger;
 import org.apache.hadoop.hive.ql.parse.repl.ReplState.LogTag;
 
-public class IncrementalLoadLogger extends ReplLogger {
+/**
+ * IncrementalLoadLogger.
+ *
+ * ReplLogger for Incremental Load.
+ **/
+public class IncrementalLoadLogger extends ReplLogger<String> {
+  private final ReplStatsTracker replStatsTracker;
   private String dbName;
   private String dumpDir;
   private long numEvents;
   private long eventSeqNo;
+  private long currentEventTimestamp;
 
-  public IncrementalLoadLogger(String dbName, String dumpDir, int numEvents) {
+  public IncrementalLoadLogger(String dbName, String dumpDir, int numEvents, ReplStatsTracker replStatsTracker) {
     this.dbName = dbName;
     this.dumpDir = dumpDir;
     this.numEvents = numEvents;
     this.eventSeqNo = 0;
+    this.currentEventTimestamp = 0;
+    this.replStatsTracker = replStatsTracker;
+  }
+
+  public void initiateEventTimestamp(long timestamp) {
+    if (this.currentEventTimestamp == 0) {
+      this.currentEventTimestamp = timestamp;
+    }
   }
 
   @Override
@@ -44,12 +61,19 @@ public class IncrementalLoadLogger extends ReplLogger {
   @Override
   public void eventLog(String eventId, String eventType) {
     eventSeqNo++;
-    (new IncrementalLoadEvent(dbName, eventId, eventType, eventSeqNo, numEvents))
-            .log(LogTag.EVENT_LOAD);
+    long previousEventTimestamp = this.currentEventTimestamp;
+    IncrementalLoadEvent incEvent = new IncrementalLoadEvent(dbName,
+            eventId, eventType, eventSeqNo, numEvents, previousEventTimestamp, replStatsTracker);
+    incEvent.log(LogTag.EVENT_LOAD);
+    this.currentEventTimestamp = incEvent.getLoadTimeMillis();
   }
 
   @Override
   public void endLog(String lastReplId) {
     (new IncrementalLoadEnd(dbName, numEvents, dumpDir, lastReplId)).log(LogTag.END);
+  }
+
+  public ReplStatsTracker getReplStatsTracker() {
+    return replStatsTracker;
   }
 }

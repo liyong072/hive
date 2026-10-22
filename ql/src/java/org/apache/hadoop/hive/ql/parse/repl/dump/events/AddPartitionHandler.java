@@ -9,15 +9,15 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.dump.events;
 
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.NotificationEvent;
@@ -31,9 +31,7 @@ import org.apache.hadoop.hive.ql.parse.EximUtil;
 import org.apache.hadoop.hive.ql.parse.repl.DumpType;
 import org.apache.hadoop.hive.ql.parse.repl.dump.Utils;
 
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
+import java.io.File;
 import java.util.Iterator;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -67,7 +65,8 @@ class AddPartitionHandler extends AbstractEventHandler {
     }
 
     final Table qlMdTable = new Table(tobj);
-    if (!Utils.shouldReplicate(withinContext.replicationSpec, qlMdTable, true, withinContext.hiveConf)) {
+    if (!Utils.shouldReplicate(withinContext.replicationSpec, qlMdTable, true,
+            withinContext.getTablesForBootstrap(), withinContext.oldReplScope,  withinContext.hiveConf)) {
       return;
     }
 
@@ -98,6 +97,7 @@ class AddPartitionHandler extends AbstractEventHandler {
         withinContext.replicationSpec,
         withinContext.hiveConf);
 
+    boolean copyAtLoad = withinContext.hiveConf.getBoolVar(HiveConf.ConfVars.REPL_RUN_DATA_COPY_TASKS_ON_TARGET);
     Iterator<PartitionFiles> partitionFilesIter = apm.getPartitionFilesIter().iterator();
 
     // We expect one to one mapping between partitions and file iterators. For external table, this
@@ -106,25 +106,20 @@ class AddPartitionHandler extends AbstractEventHandler {
       for (Partition qlPtn : qlPtns) {
         Iterable<String> files = partitionFilesIter.next().getFiles();
         if (files != null) {
-          // encoded filename/checksum of files, write into _files
-          try (BufferedWriter fileListWriter = writer(withinContext, qlPtn)) {
+          if (copyAtLoad) {
+            // encoded filename/checksum of files, write into _files
+            Path ptnDataPath = new Path(withinContext.eventRoot, EximUtil.DATA_PATH_NAME + File.separator
+                    + qlPtn.getName());
+            writeEncodedDumpFiles(withinContext, files, ptnDataPath);
+          } else {
             for (String file : files) {
-              fileListWriter.write(file);
-              fileListWriter.newLine();
+              writeFileEntry(qlMdTable, qlPtn, file, withinContext);
             }
           }
         }
       }
     }
     withinContext.createDmd(this).write();
-  }
-
-  private BufferedWriter writer(Context withinContext, Partition qlPtn)
-      throws IOException {
-    Path ptnDataPath = new Path(withinContext.eventRoot, qlPtn.getName());
-    FileSystem fs = ptnDataPath.getFileSystem(withinContext.hiveConf);
-    Path filesPath = new Path(ptnDataPath, EximUtil.FILES_NAME);
-    return new BufferedWriter(new OutputStreamWriter(fs.create(filesPath)));
   }
 
   @Override

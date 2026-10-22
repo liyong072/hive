@@ -9,15 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.events;
 
+import com.google.common.base.Supplier;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.hive.metastore.IHMSHandler;
@@ -30,18 +32,23 @@ import org.apache.hadoop.hive.metastore.api.Table;
 @InterfaceStability.Stable
 public class PreReadTableEvent extends PreEventContext {
 
-  private final Table table;
+  private final Supplier<Table> tableSupplier;
 
   public PreReadTableEvent(Table table, IHMSHandler handler) {
     super(PreEventType.READ_TABLE, handler);
-    this.table = table;
+    this.tableSupplier = () -> table;
+  }
+
+  public PreReadTableEvent(Supplier<Table> tableSupplier, IHMSHandler handler) {
+    super(PreEventType.READ_TABLE, handler);
+    this.tableSupplier = tableSupplier;
   }
 
   /**
    * @return the table
    */
   public Table getTable() {
-    return table;
+    return tableSupplier.get();
   }
 
 }

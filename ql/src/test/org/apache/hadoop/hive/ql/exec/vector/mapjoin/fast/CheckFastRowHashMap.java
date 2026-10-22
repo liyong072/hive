@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
@@ -35,6 +36,7 @@ import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinHash
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableKeyType;
 import org.apache.hadoop.hive.serde2.WriteBuffers;
 import org.apache.hadoop.hive.serde2.io.ByteWritable;
+import org.apache.hadoop.hive.serde2.io.DateWritableV2;
 import org.apache.hadoop.hive.serde2.io.ShortWritable;
 import org.apache.hadoop.hive.serde2.lazy.VerifyLazy;
 import org.apache.hadoop.hive.serde2.lazybinary.fast.LazyBinaryDeserializeRead;
@@ -313,7 +315,7 @@ public class CheckFastRowHashMap extends CheckFastHashTable {
       return array[index].getValues();
     }
 
-    public void verify(VectorMapJoinFastHashTable map,
+    public void verify(VectorMapJoinFastHashTableContainerBase map,
         HashTableKeyType hashTableKeyType,
         TypeInfo[] valueTypeInfos, boolean doClipping,
         boolean useExactBytes, Random random) throws IOException {
@@ -335,10 +337,11 @@ public class CheckFastRowHashMap extends CheckFastHashTable {
         case SHORT:
         case INT:
         case LONG:
+        case DATE:
           {
             Object[] keyRow = element.getKeyRow();
             Object keyObject = keyRow[0];
-            VectorMapJoinFastLongHashMap longHashMap = (VectorMapJoinFastLongHashMap) map;
+            VectorMapJoinFastLongHashMapContainer longHashMap = (VectorMapJoinFastLongHashMapContainer) map;
             hashMapResult = longHashMap.createHashMapResult();
             long longKey;
             switch (hashTableKeyType) {
@@ -357,6 +360,9 @@ public class CheckFastRowHashMap extends CheckFastHashTable {
             case LONG:
               longKey = ((LongWritable) keyObject).get();
               break;
+            case DATE:
+              longKey = ((DateWritableV2) keyObject).getDays();
+              break;
             default:
               throw new RuntimeException("Unexpected hash table key type " + hashTableKeyType.name());
             }
@@ -370,7 +376,7 @@ public class CheckFastRowHashMap extends CheckFastHashTable {
           {
             Object[] keyRow = element.getKeyRow();
             Object keyObject = keyRow[0];
-            VectorMapJoinFastStringHashMap stringHashMap = (VectorMapJoinFastStringHashMap) map;
+            VectorMapJoinFastStringHashMapContainer stringHashMap = (VectorMapJoinFastStringHashMapContainer) map;
             hashMapResult = stringHashMap.createHashMapResult();
             Text text = (Text) keyObject;
             byte[] bytes = text.getBytes();
@@ -384,7 +390,7 @@ public class CheckFastRowHashMap extends CheckFastHashTable {
         case MULTI_KEY:
           {
             byte[] keyBytes = element.getKey();
-            VectorMapJoinFastMultiKeyHashMap stringHashMap = (VectorMapJoinFastMultiKeyHashMap) map;
+            VectorMapJoinFastMultiKeyHashMapContainer stringHashMap = (VectorMapJoinFastMultiKeyHashMapContainer) map;
             hashMapResult = stringHashMap.createHashMapResult();
             joinResult = stringHashMap.lookup(keyBytes, 0, keyBytes.length, hashMapResult);
             if (joinResult != JoinUtil.JoinResult.MATCH) {

@@ -50,8 +50,8 @@ import org.apache.hadoop.hive.ql.DriverFactory;
 import org.apache.hadoop.hive.ql.IDriver;
 import org.apache.hadoop.hive.ql.io.StorageFormats;
 import org.apache.hadoop.hive.ql.processors.CommandProcessor;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorException;
 import org.apache.hadoop.hive.ql.processors.CommandProcessorFactory;
-import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
 import org.apache.hadoop.hive.ql.processors.HiveCommand;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.shims.HadoopShims;
@@ -93,7 +93,6 @@ public class TestHCatLoaderEncryption {
   private static final String SECURITY_KEY_PROVIDER_URI_NAME = "dfs.encryption.key.provider.uri";
 
   private HadoopShims.MiniDFSShim dfs = null;
-  private HadoopShims.HdfsEncryptionShim hes = null;
   private final String[] testOnlyCommands = new String[]{"crypto"};
   private IDriver driver;
   private Map<Integer, Pair<Integer, String>> basicInputData;
@@ -146,10 +145,7 @@ public class TestHCatLoaderEncryption {
    */
   static void executeStatementOnDriver(String cmd, IDriver driver) throws Exception {
     LOG.debug("Executing: " + cmd);
-    CommandProcessorResponse cpr = driver.run(cmd);
-    if(cpr.getResponseCode() != 0) {
-      throw new IOException("Failed to execute \"" + cmd + "\". Driver returned " + cpr.getResponseCode() + " Error: " + cpr.getErrorMessage());
-    }
+    driver.run(cmd);
   }
 
   @Before
@@ -163,10 +159,12 @@ public class TestHCatLoaderEncryption {
     }
 
     HiveConf hiveConf = new HiveConf(this.getClass());
-    hiveConf.set(HiveConf.ConfVars.PREEXECHOOKS.varname, "");
-    hiveConf.set(HiveConf.ConfVars.POSTEXECHOOKS.varname, "");
+    //TODO: HIVE-27998: hcatalog tests on Tez
+    hiveConf.setVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE, "mr");
+    hiveConf.set(HiveConf.ConfVars.PRE_EXEC_HOOKS.varname, "");
+    hiveConf.set(HiveConf.ConfVars.POST_EXEC_HOOKS.varname, "");
     hiveConf.set(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname, "false");
-    hiveConf.set(HiveConf.ConfVars.METASTOREWAREHOUSE.varname, TEST_WAREHOUSE_DIR);
+    hiveConf.set(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname, TEST_WAREHOUSE_DIR);
     hiveConf
     .setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
         "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
@@ -224,7 +222,7 @@ public class TestHCatLoaderEncryption {
     fs = dfs.getFileSystem();
 
     // set up a java key provider for encrypted hdfs cluster
-    hes = shims.createHdfsEncryptionShim(fs, conf);
+    shims.createHdfsEncryptionShim(fs, conf);
   }
 
   public static String ensurePathEndsInSlash(String path) {
@@ -246,16 +244,17 @@ public class TestHCatLoaderEncryption {
     if (crypto == null) {
       return;
     }
-    checkExecutionResponse(crypto.run("CREATE_KEY --keyName key_128 --bitLength 128"));
-    checkExecutionResponse(crypto.run("CREATE_ZONE --keyName key_128 --path " + path));
+    checkExecutionResponse(crypto, "CREATE_KEY --keyName key_128 --bitLength 128");
+    checkExecutionResponse(crypto, "CREATE_ZONE --keyName key_128 --path " + path);
   }
 
-  private void checkExecutionResponse(CommandProcessorResponse response) {
-    int rc = response.getResponseCode();
-    if (rc != 0) {
-      SessionState.get().out.println(response);
+  private void checkExecutionResponse(CommandProcessor processor, String command) {
+    try {
+      processor.run(command);
+    } catch (CommandProcessorException e) {
+      SessionState.get().out.println(e);
+      assertTrue("Crypto command failed with the exit code " + e.getResponseCode(), false);
     }
-    assertEquals("Crypto command failed with the exit code" + rc, 0, rc);
   }
 
   private void removeEncryptionZone() throws Exception {
@@ -265,7 +264,7 @@ public class TestHCatLoaderEncryption {
     if (crypto == null) {
       return;
     }
-    checkExecutionResponse(crypto.run("DELETE_KEY --keyName key_128"));
+    checkExecutionResponse(crypto, "DELETE_KEY --keyName key_128");
   }
 
   private CommandProcessor getTestCommand(final String commandName) throws SQLException {

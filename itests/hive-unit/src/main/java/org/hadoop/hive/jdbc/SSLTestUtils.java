@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.hadoop.hive.jdbc;
@@ -26,6 +27,7 @@ import java.util.Map;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 
 
 public class SSLTestUtils {
@@ -55,15 +57,21 @@ public class SSLTestUtils {
   }
 
   public static void setMetastoreSslConf(HiveConf conf) {
-    conf.setBoolVar(HiveConf.ConfVars.HIVE_METASTORE_USE_SSL, true);
-    conf.setVar(HiveConf.ConfVars.HIVE_METASTORE_SSL_KEYSTORE_PATH,
+    MetastoreConf.setBoolVar(conf, MetastoreConf.ConfVars.USE_SSL, true);
+    MetastoreConf.setVar(conf, MetastoreConf.ConfVars.SSL_KEYSTORE_PATH,
             dataFileDir + File.separator + LOCALHOST_KEY_STORE_NAME);
-    conf.setVar(HiveConf.ConfVars.HIVE_METASTORE_SSL_KEYSTORE_PASSWORD,
+    MetastoreConf.setVar(conf, MetastoreConf.ConfVars.SSL_KEYSTORE_PASSWORD,
             KEY_STORE_TRUST_STORE_PASSWORD);
-    conf.setVar(HiveConf.ConfVars.HIVE_METASTORE_SSL_TRUSTSTORE_PATH,
+    MetastoreConf.setVar(conf, MetastoreConf.ConfVars.SSL_TRUSTSTORE_PATH,
             dataFileDir + File.separator + TRUST_STORE_NAME);
-    conf.setVar(HiveConf.ConfVars.HIVE_METASTORE_SSL_TRUSTSTORE_PASSWORD,
+    MetastoreConf.setVar(conf, MetastoreConf.ConfVars.SSL_TRUSTSTORE_PASSWORD,
             KEY_STORE_TRUST_STORE_PASSWORD);
+  }
+
+  public static void setMetastoreHttpsConf(HiveConf conf) {
+    setMetastoreSslConf(conf);
+    MetastoreConf.setVar(conf, MetastoreConf.ConfVars.THRIFT_TRANSPORT_MODE, "http");
+    MetastoreConf.setVar(conf, MetastoreConf.ConfVars.METASTORE_CLIENT_THRIFT_TRANSPORT_MODE, "http");
   }
 
   public static void clearSslConfOverlay(Map<String, String> confOverlay) {

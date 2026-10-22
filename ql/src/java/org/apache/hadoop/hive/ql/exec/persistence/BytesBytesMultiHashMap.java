@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.persistence;
@@ -23,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.common.MemoryEstimate;
 import org.apache.hadoop.hive.ql.util.JavaDataModel;
 import org.slf4j.Logger;
@@ -608,7 +609,7 @@ public final class BytesBytesMultiHashMap implements MemoryEstimate {
     int newRefsCount = oldRefsCount + estimateNewRowCount;
     if (resizeThreshold <= newRefsCount) {
       newRefsCount =
-          (Long.bitCount(newRefsCount) == 1) ? estimateNewRowCount : nextHighestPowerOfTwo(newRefsCount);
+          (Long.bitCount(newRefsCount) == 1) ? newRefsCount : nextHighestPowerOfTwo(newRefsCount);
       expandAndRehashImpl(newRefsCount);
       LOG.info("Expand and rehash to " + newRefsCount + " from " + oldRefsCount);
     }
@@ -616,7 +617,7 @@ public final class BytesBytesMultiHashMap implements MemoryEstimate {
 
   private static void validateCapacity(long capacity) {
     if (Long.bitCount(capacity) != 1) {
-      throw new AssertionError("Capacity must be a power of two");
+      throw new AssertionError("Capacity must be a power of two but got " + capacity);
     }
     if (capacity <= 0) {
       throw new AssertionError("Invalid capacity " + capacity);
@@ -624,8 +625,8 @@ public final class BytesBytesMultiHashMap implements MemoryEstimate {
     if (capacity > Integer.MAX_VALUE) {
       throw new RuntimeException("Attempting to expand the hash table to " + capacity
           + " that overflows maximum array size. For this query, you may want to disable "
-          + ConfVars.HIVEDYNAMICPARTITIONHASHJOIN.varname + " or reduce "
-          + ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD.varname);
+          + ConfVars.HIVE_DYNAMIC_PARTITION_HASHJOIN.varname + " or reduce "
+          + ConfVars.HIVE_CONVERT_JOIN_NOCONDITIONAL_TASK_THRESHOLD.varname);
     }
   }
 
@@ -652,9 +653,7 @@ public final class BytesBytesMultiHashMap implements MemoryEstimate {
       slot = (int)(probeSlot & bucketMask);
     }
     if (largestNumberOfSteps < i) {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Probed " + i + " slots (the longest so far) to find space");
-      }
+      LOG.debug("Probed {} slots (the longest so far) to find space", i);
       largestNumberOfSteps = i;
       // debugDumpKeyProbe(keyOffset, keyLength, hashCode, slot);
     }

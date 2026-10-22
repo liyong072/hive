@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.security;
@@ -25,20 +26,22 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.codec.binary.Base64;
+import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier;
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenSecretManager;
 import org.apache.hadoop.security.token.delegation.DelegationKey;
 import org.apache.hadoop.security.token.delegation.MetastoreDelegationTokenSupport;
 import org.apache.hadoop.util.Daemon;
 import org.apache.hadoop.util.StringUtils;
+import org.apache.hadoop.util.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -103,6 +106,14 @@ public class TokenStoreDelegationTokenSecretManager extends DelegationTokenSecre
       if (info == null) {
           throw new InvalidToken("token expired or does not exist: " + identifier);
       }
+      try {
+        renewIfRequired(identifier, info);
+      } catch (InvalidToken e) {
+        LOGGER.warn("Failed to renew token: " + identifier, e);
+      }
+      // we have to fetch the token again as it has been renewed and info still contains the previous renew time.
+      info = this.tokenStore.getToken(identifier);
+
       // must reuse super as info.getPassword is not accessible
       synchronized (this) {
         try {
@@ -161,7 +172,14 @@ public class TokenStoreDelegationTokenSecretManager extends DelegationTokenSecre
     synchronized (this) {
       super.currentTokens.put(id,  tokenInfo);
       try {
-        return super.renewToken(token, renewer);
+        long res = super.renewToken(token, renewer);
+        this.tokenStore.removeToken(id);
+        DelegationTokenInformation updatedToken = super.currentTokens.get(id);
+        this.tokenStore.addToken(id, updatedToken);
+        LOGGER.info("Successfully renewed token : " + id + ", Renewal time now is: " +
+                Time.formatTime(updatedToken.getRenewDate()));
+        return res;
+
       } finally {
         super.currentTokens.remove(id);
       }
@@ -173,11 +191,11 @@ public class TokenStoreDelegationTokenSecretManager extends DelegationTokenSecre
     DataOutputStream dos = new DataOutputStream(bos);
     key.write(dos);
     dos.flush();
-    return Base64.encodeBase64URLSafeString(bos.toByteArray());
+    return Base64.getUrlEncoder().encodeToString(bos.toByteArray());
   }
 
   public static void decodeWritable(Writable w, String idStr) throws IOException {
-    DataInputStream in = new DataInputStream(new ByteArrayInputStream(Base64.decodeBase64(idStr)));
+    DataInputStream in = new DataInputStream(new ByteArrayInputStream(Base64.getUrlDecoder().decode(idStr)));
     w.readFields(in);
   }
 
@@ -195,6 +213,7 @@ public class TokenStoreDelegationTokenSecretManager extends DelegationTokenSecre
     String keyStr = encodeWritable(keyWithSeq);
     this.tokenStore.updateMasterKey(keySeq, keyStr);
     decodeWritable(key, keyStr);
+    setCurrentKeyId(key.getKeyId());
     LOGGER.info("New master key with key id={}", key.getKeyId());
     super.logUpdateMasterKey(key);
   }
@@ -232,22 +251,41 @@ public class TokenStoreDelegationTokenSecretManager extends DelegationTokenSecre
    * that cannot be reused due to private method access. Logic here can more efficiently
    * deal with external token store by only loading into memory the minimum data needed.
    */
-  protected void removeExpiredTokens() {
+  protected void renewOrRemoveExpiredTokens() {
     long now = System.currentTimeMillis();
-    Iterator<DelegationTokenIdentifier> i = tokenStore.getAllDelegationTokenIdentifiers()
-        .iterator();
-    while (i.hasNext()) {
-      DelegationTokenIdentifier id = i.next();
+    for (DelegationTokenIdentifier id : tokenStore.getAllDelegationTokenIdentifiers()) {
       if (now > id.getMaxDate()) {
+        LOGGER.info("Expiry Thread removing expired token: " + id);
         this.tokenStore.removeToken(id); // no need to look at token info
       } else {
         // get token info to check renew date
-        DelegationTokenInformation tokenInfo = tokenStore.getToken(id);
-        if (tokenInfo != null) {
-          if (now > tokenInfo.getRenewDate()) {
-            this.tokenStore.removeToken(id);
-          }
+        try {
+          renewIfRequired(id, tokenStore.getToken(id));
+        } catch (InvalidToken e) {
+          LOGGER.warn("Failed to renew token: " + id, e);
         }
+      }
+    }
+  }
+
+  public void renewIfRequired(DelegationTokenIdentifier id, DelegationTokenInformation tokenInfo)
+          throws InvalidToken {
+    long currentTime = System.currentTimeMillis();
+    if (tokenInfo != null) {
+      if (currentTime > tokenInfo.getRenewDate() && currentTime < id.getMaxDate()) {
+        // This will be the case when now > tokenInfo.getRenewDate() but less than the token expiration/max time.
+        LOGGER.info("Trying to renew the token: " + id);
+        try {
+          DelegationKey key = getDelegationKey(id.getMasterKeyId());
+          Token<DelegationTokenIdentifier> t = new Token<>(id.getBytes(), createPassword(id.getBytes(), key.getKey()),
+                  id.getKind(), new Text());
+          renewToken(t, getTokenIdentifier(t).getRenewer().toString());
+        } catch (IOException e) {
+          throw new InvalidToken("Unable to renew token: " + id + " due to " + e.getMessage());
+        }
+      } else if (currentTime > id.getMaxDate()) {
+        // In this case expiry time has passed and this token cannot be further renewed.
+        throw new InvalidToken("Expiration time passed. Cannot renew the token.");
       }
     }
   }
@@ -305,7 +343,7 @@ public class TokenStoreDelegationTokenSecretManager extends DelegationTokenSecre
             }
           }
           if (lastTokenCacheCleanup + tokenRemoverScanInterval < now) {
-            removeExpiredTokens();
+            renewOrRemoveExpiredTokens();
             lastTokenCacheCleanup = now;
           }
           try {

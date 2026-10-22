@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.security;
@@ -21,10 +22,10 @@ package org.apache.hadoop.hive.metastore.security;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
-import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.metastore.security.HadoopThriftAuthBridge.Server.ServerMode;
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenSecretManager.DelegationTokenInformation;
@@ -66,8 +67,8 @@ public class DBTokenStore implements DelegationTokenStore {
 
     try {
       String identifier = TokenStoreDelegationTokenSecretManager.encodeWritable(tokenIdentifier);
-      String tokenStr = Base64.encodeBase64URLSafeString(
-        MetastoreDelegationTokenSupport.encodeDelegationTokenInformation(token));
+      String tokenStr = Base64.getUrlEncoder()
+          .encodeToString(MetastoreDelegationTokenSupport.encodeDelegationTokenInformation(token));
       boolean result = (Boolean)invokeOnTokenStore("addToken", new Object[] {identifier, tokenStr},
         String.class, String.class);
       LOG.trace("addToken: tokenIdentifier = {}, added = {}", tokenIdentifier, result);
@@ -85,7 +86,7 @@ public class DBTokenStore implements DelegationTokenStore {
           TokenStoreDelegationTokenSecretManager.encodeWritable(tokenIdentifier)}, String.class);
       DelegationTokenInformation result = null;
       if (StringUtils.isNotEmpty(tokenStr)) {
-        result = MetastoreDelegationTokenSupport.decodeDelegationTokenInformation(Base64.decodeBase64(tokenStr));
+        result = MetastoreDelegationTokenSupport.decodeDelegationTokenInformation(Base64.getUrlDecoder().decode(tokenStr));
       }
       LOG.trace("getToken: tokenIdentifier = {}, result = {}", tokenIdentifier, result);
       return result;

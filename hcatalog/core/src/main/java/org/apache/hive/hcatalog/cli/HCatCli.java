@@ -36,7 +36,7 @@ import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.cli.Parser;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.common.io.SessionStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,9 +46,11 @@ import org.apache.hadoop.hive.common.LogUtils;
 import org.apache.hadoop.hive.common.LogUtils.LogInitializationException;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorException;
 import org.apache.hadoop.hive.ql.processors.DfsProcessor;
 import org.apache.hadoop.hive.ql.processors.SetProcessor;
 import org.apache.hadoop.hive.ql.session.SessionState;
+import org.apache.hadoop.util.ExitUtil;
 import org.apache.hive.hcatalog.cli.SemanticAnalysis.HCatSemanticAnalyzer;
 import org.apache.hive.hcatalog.common.HCatConstants;
 import org.apache.hive.hcatalog.common.HCatUtil;
@@ -73,7 +75,7 @@ public class HCatCli {
       ss.out = new SessionStream(System.out, true, "UTF-8");
       ss.err = new SessionStream(System.err, true, "UTF-8");
     } catch (UnsupportedEncodingException e) {
-      System.exit(1);
+      ExitUtil.terminate(1);
     }
 
     HiveConf conf = ss.getConf();
@@ -138,7 +140,7 @@ public class HCatCli {
       // Note, we print to System.err instead of ss.err, because if we can't parse our
       // commandline, we haven't even begun, and therefore cannot be expected to have
       // reasonably constructed or started the SessionState.
-      System.exit(1);
+      ExitUtil.terminate(1);
     }
 
     // -D : process these first, so that we can instantiate SessionState appropriately.
@@ -177,8 +179,11 @@ public class HCatCli {
     SessionState.start(ss);
 
     // all done parsing, let's run stuff!
-
     if (execString != null) {
+      // remove the leading and trailing quotes. hcatalog can miss on some cases.
+      if (execString.length() > 1 && execString.startsWith("\"") && execString.endsWith("\"")) {
+        execString = execString.substring(1, execString.length() - 1);
+      }
       sysExit(ss, processLine(execString));
     }
 
@@ -217,7 +222,7 @@ public class HCatCli {
       System.err.println(e.getMessage());
       e.printStackTrace(System.err);
     }
-    System.exit(retCode);
+    ExitUtil.terminate(retCode);
   }
 
   private static void setConfProperties(HiveConf conf, Properties props) {
@@ -281,20 +286,30 @@ public class HCatCli {
     String firstToken = cmd.split("\\s+")[0].trim();
 
     if (firstToken.equalsIgnoreCase("set")) {
-      return new SetProcessor().run(cmd.substring(firstToken.length()).trim()).getResponseCode();
+      try {
+        new SetProcessor().run(cmd.substring(firstToken.length()).trim());
+        return 0;
+      } catch (CommandProcessorException e) {
+        return e.getResponseCode();
+      }
     } else if (firstToken.equalsIgnoreCase("dfs")) {
-      return new DfsProcessor(ss.getConf()).run(cmd.substring(firstToken.length()).trim()).getResponseCode();
+      try {
+        new DfsProcessor(ss.getConf()).run(cmd.substring(firstToken.length()).trim());
+        return 0;
+      } catch (CommandProcessorException e) {
+        return e.getResponseCode();
+      }
     }
 
     HCatDriver driver = new HCatDriver(ss.getConf());
-
-    int ret = driver.run(cmd).getResponseCode();
-
-    if (ret != 0) {
+    try {
+      driver.run(cmd);
+    } catch (CommandProcessorException e) {
       driver.close();
-      sysExit(ss, ret);
+      sysExit(ss, e.getResponseCode());
     }
 
+    int ret = 0;
     ArrayList<String> res = new ArrayList<String>();
     try {
       while (driver.getResults(res)) {

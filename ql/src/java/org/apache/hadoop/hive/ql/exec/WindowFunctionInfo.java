@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -27,6 +28,8 @@ public class WindowFunctionInfo extends FunctionInfo {
   private final boolean supportsWindow;
   private final boolean pivotResult;
   private final boolean impliesOrder;
+  private final boolean orderedAggregate;
+  private final boolean supportsNullTreatment;
 
   public WindowFunctionInfo(FunctionType functionType, String functionName,
       GenericUDAFResolver resolver, FunctionResource[] resources) {
@@ -36,6 +39,8 @@ public class WindowFunctionInfo extends FunctionInfo {
     supportsWindow = def == null ? true : def.supportsWindow();
     pivotResult = def == null ? false : def.pivotResult();
     impliesOrder = def == null ? false : def.impliesOrder();
+    orderedAggregate = def == null ? false : def.orderedAggregate();
+    supportsNullTreatment = def == null ? false : def.supportsNullTreatment();
   }
 
   public boolean isSupportsWindow() {
@@ -46,7 +51,28 @@ public class WindowFunctionInfo extends FunctionInfo {
     return pivotResult;
   }
 
+  /**
+   * Property for indicating that the function is a window function and an OVER clause is required when invoked.
+   * example:
+   * SELECT val, rank() OVER (ORDER BY val DESC) FROM t_table;
+   * @return true if the function is a window function, false otherwise
+   */
   public boolean isImpliesOrder() {
     return impliesOrder;
+  }
+
+  /**
+   * Property for indicating that the function is an Ordered-Set Aggregate function.
+   * A WITHIN GROUP clause is required when invoked.
+   * example:
+   * SELECT rank(1) WITHIN GROUP (ORDER BY val) FROM t_table;
+   * @return true if the function is a an Ordered-Set Aggregate function, false otherwise
+   */
+  public boolean isOrderedAggregate() {
+    return orderedAggregate;
+  }
+
+  public boolean isSupportsNullTreatment() {
+    return supportsNullTreatment;
   }
 }

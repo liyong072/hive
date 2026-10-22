@@ -9,52 +9,29 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
-import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.ql.CompilationOpContext;
 import org.apache.hadoop.hive.ql.exec.MapJoinOperator;
-import org.apache.hadoop.hive.ql.exec.persistence.MapJoinBytesTableContainer;
-import org.apache.hadoop.hive.ql.exec.persistence.MapJoinObjectSerDeContext;
 import org.apache.hadoop.hive.ql.exec.persistence.MapJoinTableContainer;
 import org.apache.hadoop.hive.ql.exec.persistence.MapJoinTableContainerSerDe;
-import org.apache.hadoop.hive.ql.exec.util.collectoroperator.CollectorTestOperator;
 import org.apache.hadoop.hive.ql.exec.util.collectoroperator.CountCollectorTestOperator;
-import org.apache.hadoop.hive.ql.exec.util.collectoroperator.CountVectorCollectorTestOperator;
-import org.apache.hadoop.hive.ql.exec.util.collectoroperator.RowCollectorTestOperatorBase;
 import org.apache.hadoop.hive.ql.exec.util.rowobjects.RowTestObjects;
 import org.apache.hadoop.hive.ql.exec.util.rowobjects.RowTestObjectsMultiSet;
-import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
-import org.apache.hadoop.hive.ql.exec.vector.ColumnVector;
-import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
-import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
-import org.apache.hadoop.hive.ql.exec.vector.VectorBatchDebug;
-import org.apache.hadoop.hive.ql.exec.vector.VectorColumnOutputMapping;
-import org.apache.hadoop.hive.ql.exec.vector.VectorColumnSourceMapping;
 import org.apache.hadoop.hive.ql.exec.vector.VectorExtractRow;
-import org.apache.hadoop.hive.ql.exec.vector.VectorMapJoinOperator;
-import org.apache.hadoop.hive.ql.exec.vector.VectorMapJoinOuterFilteredOperator;
 import org.apache.hadoop.hive.ql.exec.vector.VectorRandomBatchSource;
-import org.apache.hadoop.hive.ql.exec.vector.VectorRandomRowSource;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizationContext;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizationContextRegion;
-import org.apache.hadoop.hive.ql.exec.vector.VectorizedBatchUtil;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
-import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatchCtx;
-import org.apache.hadoop.hive.ql.exec.vector.util.batchgen.VectorBatchGenerator;
-import org.apache.hadoop.hive.ql.exec.vector.util.batchgen.VectorBatchGenerator.GenerateType;
-import org.apache.hadoop.hive.ql.exec.vector.util.batchgen.VectorBatchGenerator.GenerateType.GenerateCategory;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.MapJoinTestConfig.CreateMapJoinResult;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.MapJoinTestConfig.MapJoinTestImplementation;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.MapJoinTestConfig.TestMultiSetCollectorOperator;
@@ -62,63 +39,20 @@ import org.apache.hadoop.hive.ql.exec.vector.mapjoin.MapJoinTestConfig.TestMulti
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.MapJoinTestDescription.MapJoinPlanVariation;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.MapJoinTestDescription.SmallTableGenerationParameters;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.MapJoinTestDescription.SmallTableGenerationParameters.ValueOption;
-import org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast.VectorMapJoinFastMultiKeyHashMap;
-import org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast.VectorMapJoinFastTableContainer;
-import org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast.VerifyFastRow;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
-import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
-import org.apache.hadoop.hive.ql.plan.JoinCondDesc;
-import org.apache.hadoop.hive.ql.plan.JoinDesc;
 import org.apache.hadoop.hive.ql.plan.MapJoinDesc;
-import org.apache.hadoop.hive.ql.plan.PlanUtils;
-import org.apache.hadoop.hive.ql.plan.TableDesc;
-import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc;
-import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableImplementationType;
-import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableKeyType;
-import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableKind;
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.VectorMapJoinVariation;
-import org.apache.hadoop.hive.ql.plan.VectorMapJoinInfo;
-import org.apache.hadoop.hive.ql.plan.api.OperatorType;
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqual;
-import org.apache.hadoop.hive.serde2.AbstractSerDe;
-import org.apache.hadoop.hive.serde2.ByteStream.Output;
-import org.apache.hadoop.hive.serde2.SerDeException;
-import org.apache.hadoop.hive.serde2.SerDeUtils;
-import org.apache.hadoop.hive.serde2.binarysortable.fast.BinarySortableSerializeWrite;
-import org.apache.hadoop.hive.serde2.lazybinary.fast.LazyBinarySerializeWrite;
-import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory;
-import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
-import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector.PrimitiveCategory;
-import org.apache.hadoop.hive.serde2.objectinspector.StandardStructObjectInspector;
-import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.DecimalTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
-import org.apache.hadoop.io.BytesWritable;
-import org.apache.hadoop.io.Writable;
-import org.apache.hive.common.util.HashCodeUtil;
-import org.apache.hive.common.util.ReflectionUtil;
 import org.junit.Test;
 import org.junit.Ignore;
 
-import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Random;
-import java.util.SortedMap;
-import java.util.TreeMap;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 
 public class TestMapJoinOperator {
 
@@ -160,6 +94,7 @@ public class TestMapJoinOperator {
       return (smallTableValueSize > 0);
     case INNER_BIG_ONLY:
     case LEFT_SEMI:
+    case LEFT_ANTI:
       return (smallTableValueSize == 0);
     case OUTER:
       return true;
@@ -196,7 +131,7 @@ public class TestMapJoinOperator {
       VectorMapJoinVariation vectorMapJoinVariation,
       MapJoinPlanVariation mapJoinPlanVariation) throws Exception {
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -274,7 +209,7 @@ public class TestMapJoinOperator {
       VectorMapJoinVariation vectorMapJoinVariation,
       MapJoinPlanVariation mapJoinPlanVariation) throws Exception {
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -353,7 +288,7 @@ public class TestMapJoinOperator {
       VectorMapJoinVariation vectorMapJoinVariation,
       MapJoinPlanVariation mapJoinPlanVariation) throws Exception {
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -431,7 +366,7 @@ public class TestMapJoinOperator {
       VectorMapJoinVariation vectorMapJoinVariation,
       MapJoinPlanVariation mapJoinPlanVariation) throws Exception {
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -509,7 +444,7 @@ public class TestMapJoinOperator {
       VectorMapJoinVariation vectorMapJoinVariation,
       MapJoinPlanVariation mapJoinPlanVariation) throws Exception {
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -588,7 +523,7 @@ public class TestMapJoinOperator {
       VectorMapJoinVariation vectorMapJoinVariation,
       MapJoinPlanVariation mapJoinPlanVariation) throws Exception {
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -668,7 +603,7 @@ public class TestMapJoinOperator {
       VectorMapJoinVariation vectorMapJoinVariation,
       MapJoinPlanVariation mapJoinPlanVariation) throws Exception {
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -745,7 +680,7 @@ public class TestMapJoinOperator {
       VectorMapJoinVariation vectorMapJoinVariation,
       MapJoinPlanVariation mapJoinPlanVariation) throws Exception {
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -824,7 +759,7 @@ public class TestMapJoinOperator {
       VectorMapJoinVariation vectorMapJoinVariation,
       MapJoinPlanVariation mapJoinPlanVariation) throws Exception {
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -881,6 +816,80 @@ public class TestMapJoinOperator {
     return false;
   }
 
+  @Test
+  public void testDate0() throws Exception {
+    long seed = 8322;
+    int rowCount = 10;
+
+    int hiveConfVariation = 0;
+    boolean hiveConfVariationsDone = false;
+    do {
+      for (VectorMapJoinVariation vectorMapJoinVariation : VectorMapJoinVariation.values()) {
+        hiveConfVariationsDone =
+            doTestDate0(
+                seed,
+                rowCount,
+                hiveConfVariation,
+                vectorMapJoinVariation,
+                MapJoinPlanVariation.DYNAMIC_PARTITION_HASH_JOIN);
+      }
+      seed++;
+      hiveConfVariation++;
+    } while (!hiveConfVariationsDone);
+  }
+
+  public boolean doTestDate0(
+      long seed,
+      int rowCount,
+      int hiveConfVariation,
+      VectorMapJoinVariation vectorMapJoinVariation,
+      MapJoinPlanVariation mapJoinPlanVariation)
+      throws Exception {
+
+    HiveConf hiveConf = getHiveConf();
+
+    if (!addLongHiveConfVariation(hiveConfVariation, hiveConf)) {
+      return true;
+    }
+
+    TypeInfo[] bigTableTypeInfos;
+    int[] bigTableKeyColumnNums;
+    TypeInfo[] smallTableValueTypeInfos;
+    int[] smallTableRetainKeyColumnNums;
+
+    SmallTableGenerationParameters smallTableGenerationParameters =
+        new SmallTableGenerationParameters();
+
+    MapJoinTestDescription testDesc;
+    MapJoinTestData testData;
+
+    // Big Table: date key; Small Table: key retained, string value
+    bigTableTypeInfos = new TypeInfo[] {TypeInfoFactory.dateTypeInfo};
+    bigTableKeyColumnNums = new int[] {0};
+    smallTableRetainKeyColumnNums = new int[] {0};
+    smallTableValueTypeInfos = new TypeInfo[] {TypeInfoFactory.stringTypeInfo};
+
+    testDesc =
+        new MapJoinTestDescription(
+            hiveConf,
+            vectorMapJoinVariation,
+            bigTableTypeInfos,
+            bigTableKeyColumnNums,
+            smallTableValueTypeInfos,
+            smallTableRetainKeyColumnNums,
+            smallTableGenerationParameters,
+            mapJoinPlanVariation);
+
+    if (!goodTestVariation(testDesc)) {
+      return false;
+    }
+
+    testData = new MapJoinTestData(rowCount, testDesc, seed);
+    executeTest(testDesc, testData, "testDate0");
+
+    return false;
+  }
+
   private boolean addNonLongHiveConfVariation(int hiveConfVariation, HiveConf hiveConf) {
 
     // Set defaults.
@@ -926,7 +935,7 @@ public class TestMapJoinOperator {
 
     int rowCount = 10;
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addNonLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -1005,7 +1014,7 @@ public class TestMapJoinOperator {
 
     int rowCount = 10;
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addNonLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -1086,7 +1095,7 @@ public class TestMapJoinOperator {
 
     int rowCount = 10;
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addNonLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -1168,7 +1177,7 @@ public class TestMapJoinOperator {
 
     int rowCount = 10;
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addNonLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -1249,7 +1258,7 @@ public class TestMapJoinOperator {
 
     int rowCount = 10;
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addNonLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -1329,7 +1338,7 @@ public class TestMapJoinOperator {
 
     int rowCount = 10;
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addNonLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -1415,7 +1424,7 @@ public class TestMapJoinOperator {
 
     int rowCount = 10;
 
-    HiveConf hiveConf = new HiveConf();
+    HiveConf hiveConf = getHiveConf();
 
     if (!addNonLongHiveConfVariation(hiveConfVariation, hiveConf)) {
       return true;
@@ -1590,6 +1599,7 @@ public class TestMapJoinOperator {
             break;
           case INNER_BIG_ONLY:
           case LEFT_SEMI:
+          case LEFT_ANTI:
             {
               Object[] outputObjects = new Object[testDesc.outputColumnNames.length];
 
@@ -1791,6 +1801,8 @@ public class TestMapJoinOperator {
       break;
     case FULL_OUTER:
       executeTestFullOuter(testDesc, testData, title);
+      break;
+    case LEFT_ANTI: //TODO
       break;
     default:
       throw new RuntimeException("Unexpected Vector MapJoin variation " +
@@ -2049,5 +2061,11 @@ public class TestMapJoinOperator {
           " for implementation " + mapJoinImplementation +
           " variation " + testDesc.vectorMapJoinVariation + option);
     }
+  }
+
+  private HiveConf getHiveConf() {
+    HiveConf hiveConf = new HiveConf();
+    hiveConf.set(HiveConf.ConfVars.HIVE_DEFAULT_NULLS_LAST.varname, "false");
+    return hiveConf;
   }
 }

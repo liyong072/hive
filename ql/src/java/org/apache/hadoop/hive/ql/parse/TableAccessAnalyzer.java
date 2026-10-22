@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse;
 
@@ -34,12 +35,12 @@ import org.apache.hadoop.hive.ql.exec.SelectOperator;
 import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
@@ -72,7 +73,7 @@ public class TableAccessAnalyzer {
   public TableAccessInfo analyzeTableAccess() throws SemanticException {
 
     // Set up the rules for the graph walker for group by and join operators
-    Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
+    Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
     opRules.put(new RuleRegExp("R1", GroupByOperator.getOperatorName() + "%"),
         new GroupByProcessor(pGraphContext));
     opRules.put(new RuleRegExp("R2", JoinOperator.getOperatorName() + "%"),
@@ -81,10 +82,10 @@ public class TableAccessAnalyzer {
         new JoinProcessor(pGraphContext));
 
     TableAccessCtx tableAccessCtx = new TableAccessCtx();
-    Dispatcher disp = new DefaultRuleDispatcher(getDefaultProc(), opRules, tableAccessCtx);
-    GraphWalker ogw = new DefaultGraphWalker(disp);
+    SemanticDispatcher disp = new DefaultRuleDispatcher(getDefaultProc(), opRules, tableAccessCtx);
+    SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
 
-    // Create a list of topop nodes and walk!
+    // Create a list of topOp nodes and walk!
     List<Node> topNodes = new ArrayList<Node>();
     topNodes.addAll(pGraphContext.getTopOps().values());
     ogw.startWalking(topNodes, null);
@@ -92,11 +93,11 @@ public class TableAccessAnalyzer {
     return tableAccessCtx.getTableAccessInfo();
   }
 
-  private NodeProcessor getDefaultProc() {
-    return new NodeProcessor() {
+  private SemanticNodeProcessor getDefaultProc() {
+    return new SemanticNodeProcessor() {
       @Override
       public Object process(Node nd, Stack<Node> stack,
-          NodeProcessorCtx procCtx, Object... nodeOutputs) throws SemanticException {
+                            NodeProcessorCtx procCtx, Object... nodeOutputs) throws SemanticException {
         return null;
       }
     };
@@ -105,7 +106,7 @@ public class TableAccessAnalyzer {
   /**
    * Processor for GroupBy operator
    */
-  public class GroupByProcessor implements NodeProcessor {
+  public class GroupByProcessor implements SemanticNodeProcessor {
     protected ParseContext pGraphContext;
 
     public GroupByProcessor(ParseContext pGraphContext) {
@@ -152,7 +153,7 @@ public class TableAccessAnalyzer {
   /**
    * Processor for Join operator.
    */
-  public class JoinProcessor implements NodeProcessor {
+  public class JoinProcessor implements SemanticNodeProcessor {
     protected ParseContext pGraphContext;
 
     public JoinProcessor(ParseContext pGraphContext) {

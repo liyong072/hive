@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
@@ -29,7 +30,6 @@ import org.apache.hadoop.hive.metastore.api.ThriftHiveMetastore;
 import org.apache.hadoop.hive.metastore.security.TUGIContainingTransport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hive.metastore.api.ThriftHiveMetastore.Iface;
 import org.apache.hadoop.hive.metastore.api.ThriftHiveMetastore.set_ugi_args;
 import org.apache.hadoop.hive.metastore.api.ThriftHiveMetastore.set_ugi_result;
@@ -70,71 +70,64 @@ public class TUGIBasedProcessor<I extends Iface> extends TSetIpAddressProcessor<
 
   @SuppressWarnings("unchecked")
   @Override
-  public boolean process(final TProtocol in, final TProtocol out) throws TException {
-    setIpAddress(in);
+  public void process(final TProtocol in, final TProtocol out) throws TException {
+   setIpAddress(in);
 
-    final TMessage msg = in.readMessageBegin();
-    final ProcessFunction<Iface, ? extends  TBase> fn = functions.get(msg.name);
-    if (fn == null) {
-      TProtocolUtil.skip(in, TType.STRUCT);
-      in.readMessageEnd();
-      TApplicationException x = new TApplicationException(TApplicationException.UNKNOWN_METHOD,
-          "Invalid method name: '"+msg.name+"'");
-      out.writeMessageBegin(new TMessage(msg.name, TMessageType.EXCEPTION, msg.seqid));
-      x.write(out);
-      out.writeMessageEnd();
-      out.getTransport().flush();
-      return true;
-    }
-    TUGIContainingTransport ugiTrans = (TUGIContainingTransport)in.getTransport();
-    // Store ugi in transport if the rpc is set_ugi
-    if (msg.name.equalsIgnoreCase("set_ugi")){
-      try {
-        handleSetUGI(ugiTrans, (ThriftHiveMetastore.Processor.set_ugi<Iface>)fn, msg, in, out);
-      } catch (TException e) {
-        throw e;
-      } catch (Exception e) {
-        throw new TException(e.getCause());
-      }
-      return true;
-    }
-    UserGroupInformation clientUgi = ugiTrans.getClientUGI();
-    if (null == clientUgi){
-      // At this point, transport must contain client ugi, if it doesn't then its an old client.
-      fn.process(msg.seqid, in, out, iface);
-      return true;
-    } else { // Found ugi, perform doAs().
-      PrivilegedExceptionAction<Void> pvea = new PrivilegedExceptionAction<Void>() {
-        @Override
-        public Void run() {
-          try {
-            fn.process(msg.seqid,in, out, iface);
-            return null;
-          } catch (TException te) {
-            throw new RuntimeException(te);
-          }
-        }
-      };
-      try {
-        clientUgi.doAs(pvea);
-        return true;
-      } catch (RuntimeException rte) {
-        if (rte.getCause() instanceof TException) {
-          throw (TException)rte.getCause();
-        }
-        throw rte;
-      } catch (InterruptedException ie) {
-        throw new RuntimeException(ie); // unexpected!
-      } catch (IOException ioe) {
-        throw new RuntimeException(ioe); // unexpected!
-      } finally {
-          try {
-            FileSystem.closeAllForUGI(clientUgi);
-          } catch (IOException e) {
-            LOG.error("Could not clean up file-system handles for UGI: " + clientUgi, e);
-          }
-      }
-    }
+   final TMessage msg = in.readMessageBegin();
+   final ProcessFunction<Iface, ? extends  TBase> fn = functions.get(msg.name);
+   if (fn == null) {
+     TProtocolUtil.skip(in, TType.STRUCT);
+     in.readMessageEnd();
+     TApplicationException x = new TApplicationException(TApplicationException.UNKNOWN_METHOD,
+         "Invalid method name: '"+msg.name+"'");
+     out.writeMessageBegin(new TMessage(msg.name, TMessageType.EXCEPTION, msg.seqid));
+     x.write(out);
+     out.writeMessageEnd();
+     out.getTransport().flush();
+     return;
+   }
+   TUGIContainingTransport ugiTrans = (TUGIContainingTransport)in.getTransport();
+   // Store ugi in transport if the rpc is set_ugi
+   if (msg.name.equalsIgnoreCase("set_ugi")){
+     try {
+       handleSetUGI(ugiTrans, (ThriftHiveMetastore.Processor.set_ugi<Iface>)fn, msg, in, out);
+     } catch (TException e) {
+       throw e;
+     } catch (Exception e) {
+       throw new TException(e.getCause());
+     }
+     return;
+   }
+   UserGroupInformation clientUgi = ugiTrans.getClientUGI();
+   if (null == clientUgi){
+     // At this point, transport must contain client ugi, if it doesn't then its an old client.
+     fn.process(msg.seqid, in, out, iface);
+     return;
+   } else { // Found ugi, perform doAs().
+     PrivilegedExceptionAction<Void> pvea = new PrivilegedExceptionAction<Void>() {
+       @Override
+       public Void run() {
+         try {
+           fn.process(msg.seqid,in, out, iface);
+           return null;
+         } catch (TException te) {
+           throw new RuntimeException(te);
+         }
+       }
+     };
+     try {
+       clientUgi.doAs(pvea);
+     } catch (RuntimeException rte) {
+       if (rte.getCause() instanceof TException) {
+         throw (TException)rte.getCause();
+       }
+       throw rte;
+     } catch (InterruptedException ie) {
+       throw new RuntimeException(ie); // unexpected!
+     } catch (IOException ioe) {
+       throw new RuntimeException(ioe); // unexpected!
+     }
+   }
   }
 
   private void handleSetUGI(TUGIContainingTransport ugiTrans,

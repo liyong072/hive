@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common;
@@ -117,7 +118,7 @@ public class CompressionUtils {
    * @throws IOException
    * @throws FileNotFoundException
    *
-   * @return The {@link List} of {@link File}s with the untared content.
+   * @return The {@link List} of {@link File}s with the untarred content.
    * @throws ArchiveException
    */
   public static List<File> unTar(final String inputFileName, final String outputDirName)
@@ -136,7 +137,7 @@ public class CompressionUtils {
    * @throws IOException
    * @throws FileNotFoundException
    *
-   * @return The {@link List} of {@link File}s with the untared content.
+   * @return The {@link List} of {@link File}s with the untarred content.
    * @throws ArchiveException
    */
   public static List<File> unTar(final String inputFileName, final String outputDirName,
@@ -145,64 +146,65 @@ public class CompressionUtils {
     File inputFile = new File(inputFileName);
     File outputDir = new File(outputDirName);
 
-    final List<File> untaredFiles = new LinkedList<File>();
-    final InputStream is;
+    final List<File> untarredFiles = new LinkedList<File>();
+    InputStream is = null;
 
-    if (inputFileName.endsWith(".gz")) {
-      is = new GzipCompressorInputStream(new FileInputStream(inputFile));
-    } else {
-      is = new FileInputStream(inputFile);
-    }
-
-    final TarArchiveInputStream debInputStream =
-        (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", is);
-    TarArchiveEntry entry = null;
-    while ((entry = (TarArchiveEntry) debInputStream.getNextEntry()) != null) {
-      final File outputFile = new File(outputDir, entry.getName());
-      if (!outputFile.toPath().toAbsolutePath().normalize()
-          .startsWith(outputDir.toPath().toAbsolutePath().normalize())) {
-        throw new IOException("Untarred file is not under the output directory");
-      }
-      if (entry.isDirectory()) {
-        if (flatten) {
-          // no sub-directories
-          continue;
-        }
-        LOG.debug(String.format("Attempting to write output directory %s.",
-            outputFile.getAbsolutePath()));
-        if (!outputFile.exists()) {
-          LOG.debug(String.format("Attempting to create output directory %s.",
-              outputFile.getAbsolutePath()));
-          if (!outputFile.mkdirs()) {
-            throw new IllegalStateException(String.format("Couldn't create directory %s.",
-                outputFile.getAbsolutePath()));
-          }
-        }
+    try {
+      if (inputFileName.endsWith(".gz")) {
+        is = new GzipCompressorInputStream(new FileInputStream(inputFile));
       } else {
-        final OutputStream outputFileStream;
-        if (flatten) {
-          File flatOutputFile = new File(outputDir, outputFile.getName());
-          LOG.debug(String.format("Creating flat output file %s.", flatOutputFile.getAbsolutePath()));
-          outputFileStream = new FileOutputStream(flatOutputFile);
-        } else if (!outputFile.getParentFile().exists()) {
-          LOG.debug(String.format("Attempting to create output directory %s.",
-              outputFile.getParentFile().getAbsoluteFile()));
-          if (!outputFile.getParentFile().getAbsoluteFile().mkdirs())  {
-            throw new IllegalStateException(String.format("Couldn't create directory %s.",
-                outputFile.getParentFile().getAbsolutePath()));
-          }
-          LOG.debug(String.format("Creating output file %s.", outputFile.getAbsolutePath()));
-          outputFileStream = new FileOutputStream(outputFile);
-        } else {
-          outputFileStream = new FileOutputStream(outputFile);
-        }
-        IOUtils.copy(debInputStream, outputFileStream);
-        outputFileStream.close();
+        is = new FileInputStream(inputFile);
       }
-      untaredFiles.add(outputFile);
-    }
-    debInputStream.close();
 
-    return untaredFiles;
+      final TarArchiveInputStream debInputStream =
+              (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", is);
+      TarArchiveEntry entry = null;
+      while ((entry = (TarArchiveEntry) debInputStream.getNextEntry()) != null) {
+        final File outputFile = new File(outputDir, entry.getName());
+        if (!outputFile.toPath().toAbsolutePath().normalize()
+                .startsWith(outputDir.toPath().toAbsolutePath().normalize())) {
+          throw new IOException("Untarred file is not under the output directory");
+        }
+        if (entry.isDirectory()) {
+          if (flatten) {
+            // no sub-directories
+            continue;
+          }
+          LOG.debug("Attempting to write output directory {}.", outputFile.getAbsolutePath());
+          if (!outputFile.exists()) {
+            LOG.debug("Attempting to create output directory {}.", outputFile.getAbsolutePath());
+            if (!outputFile.mkdirs()) {
+              throw new IllegalStateException("Couldn't create directory %s.".formatted(
+                  outputFile.getAbsolutePath()));
+            }
+          }
+        } else {
+          final OutputStream outputFileStream;
+          if (flatten) {
+            File flatOutputFile = new File(outputDir, outputFile.getName());
+            LOG.debug("Creating flat output file {}.", flatOutputFile.getAbsolutePath());
+            outputFileStream = new FileOutputStream(flatOutputFile);
+          } else if (!outputFile.getParentFile().exists()) {
+            LOG.debug("Attempting to create output directory {}.", outputFile.getParentFile().getAbsoluteFile());
+            if (!outputFile.getParentFile().getAbsoluteFile().mkdirs()) {
+              throw new IllegalStateException("Couldn't create directory %s.".formatted(
+                  outputFile.getParentFile().getAbsolutePath()));
+            }
+            LOG.debug("Creating output file {}.", outputFile.getAbsolutePath());
+            outputFileStream = new FileOutputStream(outputFile);
+          } else {
+            outputFileStream = new FileOutputStream(outputFile);
+          }
+          IOUtils.copy(debInputStream, outputFileStream);
+          outputFileStream.close();
+        }
+        untarredFiles.add(outputFile);
+      }
+      debInputStream.close();
+      return untarredFiles;
+
+    } finally {
+      if (is != null)  is.close();
+    }
   }
 }

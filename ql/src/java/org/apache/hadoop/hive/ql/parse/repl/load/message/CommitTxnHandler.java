@@ -9,17 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.load.message;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.metastore.api.WriteEventInfo;
 import org.apache.hadoop.hive.metastore.messaging.CommitTxnMessage;
+import org.apache.hadoop.hive.metastore.utils.StringUtils;
 import org.apache.hadoop.hive.ql.exec.repl.util.AddDependencyToLeaves;
 import org.apache.hadoop.hive.ql.exec.util.DAGTraversal;
 import org.apache.hadoop.hive.ql.metadata.Table;
@@ -33,6 +35,8 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * CommitTxnHandler
@@ -40,7 +44,7 @@ import java.util.List;
  */
 public class CommitTxnHandler extends AbstractMessageHandler {
   @Override
-  public List<Task<? extends Serializable>> handle(Context context)
+  public List<Task<?>> handle(Context context)
           throws SemanticException {
     if (!AcidUtils.isAcidEnabled(context.hiveConf)) {
       context.log.error("Cannot load transaction events as acid is not enabled");
@@ -49,13 +53,26 @@ public class CommitTxnHandler extends AbstractMessageHandler {
 
     CommitTxnMessage msg = deserializer.getCommitTxnMessage(context.dmd.getPayload());
     int numEntry = (msg.getTables() == null ? 0 : msg.getTables().size());
-    List<Task<? extends Serializable>> tasks = new ArrayList<>();
+    List<Task<?>> tasks = new ArrayList<>();
     String dbName = context.dbName;
     String tableNamePrev = null;
-    String tblName = context.tableName;
+    String tblName = null;
 
-    ReplTxnWork work = new ReplTxnWork(HiveUtils.getReplPolicy(context.dbName, context.tableName), context.dbName,
-      context.tableName, msg.getTxnId(), ReplTxnWork.OperationType.REPL_COMMIT_TXN, context.eventOnlyReplicationSpec());
+    // Saving the timestamp of all write commit txn in metric 'progress' to calculate lag between src and tgt
+    List<Long> writeIds = msg.getWriteIds();
+    List<String> databases = Optional.ofNullable(msg.getDatabases())
+                              .orElse(Collections.emptyList())
+                              .stream()
+                              .map(StringUtils::normalizeIdentifier)
+                              .toList();
+    if (databases.contains(dbName) && writeIds != null && !writeIds.isEmpty()) {
+      context.getMetricCollector().setSrcTimeInProgress(msg.getTimestamp());
+    }
+
+    ReplTxnWork work = new ReplTxnWork(HiveUtils.getReplPolicy(context.dbName), context.dbName,
+                                       null, msg.getTxnId(), ReplTxnWork.OperationType.REPL_COMMIT_TXN,
+                                        context.eventOnlyReplicationSpec(), context.getDumpDirectory(),
+                                        context.getMetricCollector());
 
     if (numEntry > 0) {
       context.log.debug("Commit txn handler for txnid " + msg.getTxnId() + " databases : " + msg.getDatabases() +
@@ -73,10 +90,11 @@ public class CommitTxnHandler extends AbstractMessageHandler {
       if (tableNamePrev == null || !(completeName.equals(tableNamePrev))) {
         // The data location is created by source, so the location should be formed based on the table name in msg.
         Path location = HiveUtils.getDumpPath(new Path(context.location), actualDBName, actualTblName);
-        tblName = context.isTableNameEmpty() ? actualTblName : context.tableName;
+        tblName = actualTblName;
         // for warehouse level dump, use db name from write event
         dbName = (context.isDbNameEmpty() ? actualDBName : context.dbName);
-        Context currentContext = new Context(context, dbName, tblName);
+        Context currentContext = new Context(context, dbName,
+                context.getDumpDirectory(), context.getMetricCollector());
         currentContext.setLocation(location.toUri().toString());
 
         // Piggybacking in Import logic for now
@@ -105,7 +123,7 @@ public class CommitTxnHandler extends AbstractMessageHandler {
     // For warehouse level dump, don't update the metadata of database as we don't know this txn is for which database.
     // Anyways, if this event gets executed again, it is taken care of.
     if (!context.isDbNameEmpty()) {
-      updatedMetadata.set(context.dmd.getEventTo().toString(), context.dbName, context.tableName, null);
+      updatedMetadata.set(context.dmd.getEventTo().toString(), context.dbName, null, null);
     }
     context.log.debug("Added Commit txn task : {}", commitTxnTask.getId());
     if (tasks.isEmpty()) {

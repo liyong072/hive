@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.correlation;
@@ -43,7 +44,6 @@ import org.apache.hadoop.hive.ql.exec.ScriptOperator;
 import org.apache.hadoop.hive.ql.exec.SelectOperator;
 import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.exec.Utilities;
-import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.optimizer.correlation.ReduceSinkDeDuplication.ReduceSinkDeduplicateProcCtx;
 import org.apache.hadoop.hive.ql.parse.ParseContext;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -384,7 +384,21 @@ public final class CorrelationUtilities {
   protected static SelectOperator replaceReduceSinkWithSelectOperator(ReduceSinkOperator childRS,
       ParseContext context, AbstractCorrelationProcCtx procCtx) throws SemanticException {
     RowSchema inputRS = childRS.getSchema();
-    SelectDesc select = new SelectDesc(childRS.getConf().getValueCols(), childRS.getConf().getOutputValueColumnNames());
+
+    List<String> columnNames = new ArrayList<String>();
+
+    for (String colName : childRS.getConf().getOutputValueColumnNames()) {
+      columnNames.add("VALUE." + colName);
+    }
+    for (String colName : childRS.getConf().getOutputKeyColumnNames()) {
+      columnNames.add("KEY." + colName);
+    }
+
+    List<ExprNodeDesc> colExprs = new ArrayList<ExprNodeDesc>();
+    colExprs.addAll(childRS.getConf().getKeyCols());
+    colExprs.addAll(childRS.getConf().getValueCols());
+
+    SelectDesc select = new SelectDesc(colExprs, columnNames);
 
     Operator<?> parent = getSingleParent(childRS);
     parent.removeChild(childRS);

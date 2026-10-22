@@ -9,41 +9,42 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse;
 
-import java.io.IOException;
+import org.apache.hadoop.hive.common.TableName;
+import org.apache.hadoop.hive.metastore.TableType;
+import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.ql.Context;
+import org.apache.hadoop.hive.ql.ErrorMsg;
+import org.apache.hadoop.hive.ql.QueryProperties;
+import org.apache.hadoop.hive.ql.QueryState;
+import org.apache.hadoop.hive.ql.hooks.Entity;
+import org.apache.hadoop.hive.ql.hooks.ReadEntity;
+import org.apache.hadoop.hive.ql.hooks.WriteEntity;
+import org.apache.hadoop.hive.ql.io.AcidUtils;
+import org.apache.hadoop.hive.ql.lib.Node;
+import org.apache.hadoop.hive.ql.metadata.Hive;
+import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.metadata.InvalidTableException;
+import org.apache.hadoop.hive.ql.metadata.Table;
+import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
+import org.apache.hadoop.hive.ql.parse.rewrite.Rewriter;
+import org.apache.hadoop.hive.ql.parse.rewrite.RewriterFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
-import org.apache.hadoop.hive.metastore.TableType;
-import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.ql.Context;
-import org.apache.hadoop.hive.ql.ErrorMsg;
-import org.apache.hadoop.hive.ql.QueryState;
-import org.apache.hadoop.hive.ql.hooks.Entity;
-import org.apache.hadoop.hive.ql.hooks.ReadEntity;
-import org.apache.hadoop.hive.ql.hooks.WriteEntity;
-import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.metadata.Hive;
-import org.apache.hadoop.hive.ql.metadata.HiveException;
-import org.apache.hadoop.hive.ql.metadata.HiveUtils;
-import org.apache.hadoop.hive.ql.metadata.InvalidTableException;
-import org.apache.hadoop.hive.ql.metadata.Table;
-import org.apache.hadoop.hive.ql.metadata.VirtualColumn;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 
 /**
  * A subclass of the {@link org.apache.hadoop.hive.ql.parse.SemanticAnalyzer} that just handles
@@ -51,13 +52,18 @@ import org.slf4j.LoggerFactory;
  * statements (since they are actually inserts) and then doing some patch up to make them work as
  * updates and deletes instead.
  */
-public abstract class RewriteSemanticAnalyzer extends SemanticAnalyzer {
+public abstract class RewriteSemanticAnalyzer<T> extends CalcitePlanner {
   protected static final Logger LOG = LoggerFactory.getLogger(RewriteSemanticAnalyzer.class);
 
+  private final RewriterFactory<T> rewriterFactory;
   protected boolean useSuper = false;
+  private ASTNode tableName;
+  private Table targetTable;
 
-  RewriteSemanticAnalyzer(QueryState queryState) throws SemanticException {
+
+  RewriteSemanticAnalyzer(QueryState queryState, RewriterFactory<T> rewriterFactory) throws SemanticException {
     super(queryState);
+    this.rewriterFactory = rewriterFactory;
   }
 
   @Override
@@ -65,35 +71,44 @@ public abstract class RewriteSemanticAnalyzer extends SemanticAnalyzer {
     if (useSuper) {
       super.analyzeInternal(tree);
     } else {
-      if (!getTxnMgr().supportsAcid()) {
-        throw new SemanticException(ErrorMsg.ACID_OP_ON_NONACID_TXNMGR.getMsg());
-      }
       analyze(tree);
       cleanUpMetaColumnAccessControl();
     }
   }
 
-  protected abstract void analyze(ASTNode tree) throws SemanticException;
+  protected abstract ASTNode getTargetTableNode(ASTNode tree);
 
-  /**
-   * Append list of partition columns to Insert statement, i.e. the 2nd set of partCol1,partCol2
-   * INSERT INTO T PARTITION(partCol1,partCol2...) SELECT col1, ... partCol1,partCol2...
-   * @param target target table
-   */
-  protected void addPartitionColsToSelect(List<FieldSchema> partCols, StringBuilder rewrittenQueryStr,
-                                        ASTNode target) throws SemanticException {
-    String targetName = target != null ? getSimpleTableName(target) : null;
+  private void analyze(ASTNode tree) throws SemanticException {
+    tableName = getTargetTableNode(tree);
+    targetTable = getTable(tableName, db, true);
+    validateTxnManager(targetTable);
+    validateTargetTable(targetTable);
+    analyze(tree, targetTable, tableName);
+  }
 
-    // If the table is partitioned, we need to select the partition columns as well.
-    if (partCols != null) {
-      for (FieldSchema fschema : partCols) {
-        rewrittenQueryStr.append(", ");
-        //would be nice if there was a way to determine if quotes are needed
-        if (targetName != null) {
-          rewrittenQueryStr.append(targetName).append('.');
-        }
-        rewrittenQueryStr.append(HiveUtils.unparseIdentifier(fschema.getName(), this.conf));
+  protected abstract void analyze(ASTNode tree, Table table, ASTNode tableName) throws SemanticException;
+
+  protected void rewriteAndAnalyze(T statementData, String subQueryAlias) throws SemanticException {
+    Rewriter<T> rewriter =
+        rewriterFactory.createRewriter(targetTable, getFullTableNameForSQL(tableName), subQueryAlias);
+
+    ParseUtils.ReparseResult rr = rewriter.rewrite(ctx, statementData);
+
+    Context rewrittenCtx = rr.rewrittenCtx;
+    ASTNode rewrittenTree = rr.rewrittenTree;
+
+    analyzeRewrittenTree(rewrittenTree, rewrittenCtx);
+  }
+
+  protected void analyzeRewrittenTree(ASTNode rewrittenTree, Context rewrittenCtx) throws SemanticException {
+    try {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Rewritten AST {}", rewrittenTree.dump());
       }
+      useSuper = true;
+      super.analyze(rewrittenTree, rewrittenCtx);
+    } finally {
+      useSuper = false;
     }
   }
 
@@ -103,19 +118,16 @@ public abstract class RewriteSemanticAnalyzer extends SemanticAnalyzer {
    */
   protected void checkValidSetClauseTarget(ASTNode colName, Table targetTable) throws SemanticException {
     String columnName = normalizeColName(colName.getText());
-
-    // Make sure this isn't one of the partitioning columns, that's not supported.
-    for (FieldSchema fschema : targetTable.getPartCols()) {
-      if (fschema.getName().equalsIgnoreCase(columnName)) {
-        throw new SemanticException(ErrorMsg.UPDATE_CANNOT_UPDATE_PART_VALUE.getMsg());
-      }
+    // Native partition columns cannot be updated; Iceberg partition columns are regular updatable columns.
+    if (!targetTable.hasNonNativePartitionSupport() && targetTable.isPartitionKey(columnName)) {
+      throw new SemanticException(ErrorMsg.UPDATE_CANNOT_UPDATE_PART_VALUE.getMsg());
     }
     //updating bucket column should move row from one file to another - not supported
     if (targetTable.getBucketCols() != null && targetTable.getBucketCols().contains(columnName)) {
       throw new SemanticException(ErrorMsg.UPDATE_CANNOT_UPDATE_BUCKET_VALUE, columnName);
     }
     boolean foundColumnInTargetTable = false;
-    for (FieldSchema col : targetTable.getCols()) {
+    for (FieldSchema col : targetTable.getAllCols()) {
       if (columnName.equalsIgnoreCase(col.getName())) {
         foundColumnInTargetTable = true;
         break;
@@ -167,17 +179,10 @@ public abstract class RewriteSemanticAnalyzer extends SemanticAnalyzer {
   }
 
   /**
-   * @return the Metastore representation of the target table
-   */
-  protected Table getTargetTable(ASTNode tabRef) throws SemanticException {
-    return getTable(tabRef, db, true);
-  }
-
-  /**
    * @param throwException if false, return null if table doesn't exist, else throw
    */
   protected static Table getTable(ASTNode tabRef, Hive db, boolean throwException) throws SemanticException {
-    String[] tableName;
+    TableName tableName;
     switch (tabRef.getType()) {
     case HiveParser.TOK_TABREF:
       tableName = getQualifiedTableName((ASTNode) tabRef.getChild(0));
@@ -191,12 +196,12 @@ public abstract class RewriteSemanticAnalyzer extends SemanticAnalyzer {
 
     Table mTable;
     try {
-      mTable = db.getTable(tableName[0], tableName[1], throwException);
+      mTable = db.getTable(tableName.getDb(), tableName.getTable(), tableName.getTableMetaRef(), throwException);
     } catch (InvalidTableException e) {
-      LOG.error("Failed to find table " + getDotName(tableName) + " got exception " + e.getMessage());
-      throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(getDotName(tableName)), e);
+      LOG.error("Failed to find table " + tableName.getNotEmptyDbTable() + " got exception " + e.getMessage());
+      throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tableName.getNotEmptyDbTable()), e);
     } catch (HiveException e) {
-      LOG.error("Failed to find table " + getDotName(tableName) + " got exception " + e.getMessage());
+      LOG.error("Failed to find table " + tableName.getNotEmptyDbTable() + " got exception " + e.getMessage());
       throw new SemanticException(e.getMessage(), e);
     }
     return mTable;
@@ -243,43 +248,10 @@ public abstract class RewriteSemanticAnalyzer extends SemanticAnalyzer {
     }
   }
 
-  /**
-   * Parse the newly generated SQL statement to get a new AST.
-   */
-  protected ReparseResult parseRewrittenQuery(StringBuilder rewrittenQueryStr, String originalQuery)
-      throws SemanticException {
-    // Set dynamic partitioning to nonstrict so that queries do not need any partition
-    // references.
-    // TODO: this may be a perf issue as it prevents the optimizer.. or not
-    HiveConf.setVar(conf, HiveConf.ConfVars.DYNAMICPARTITIONINGMODE, "nonstrict");
-    // Disable LLAP IO wrapper; doesn't propagate extra ACID columns correctly.
-    HiveConf.setBoolVar(conf, ConfVars.LLAP_IO_ROW_WRAPPER_ENABLED, false);
-    // Parse the rewritten query string
-    Context rewrittenCtx;
-    try {
-      rewrittenCtx = new Context(conf);
-      rewrittenCtx.setHDFSCleanup(true);
-      // We keep track of all the contexts that are created by this query
-      // so we can clear them when we finish execution
-      ctx.addRewrittenStatementContext(rewrittenCtx);
-    } catch (IOException e) {
-      throw new SemanticException(ErrorMsg.UPDATEDELETE_IO_ERROR.getMsg());
+  private void validateTxnManager(Table mTable) throws SemanticException {
+    if (!AcidUtils.acidTableWithoutTransactions(mTable) && !getTxnMgr().supportsAcid()) {
+      throw new SemanticException(ErrorMsg.ACID_OP_ON_NONACID_TXNMGR.getMsg());
     }
-    rewrittenCtx.setExplainConfig(ctx.getExplainConfig());
-    rewrittenCtx.setExplainPlan(ctx.isExplainPlan());
-    rewrittenCtx.setStatsSource(ctx.getStatsSource());
-    rewrittenCtx.setPlanMapper(ctx.getPlanMapper());
-    rewrittenCtx.setIsUpdateDeleteMerge(true);
-    rewrittenCtx.setCmd(rewrittenQueryStr.toString());
-
-    ASTNode rewrittenTree;
-    try {
-      LOG.info("Going to reparse <" + originalQuery + "> as \n<" + rewrittenQueryStr.toString() + ">");
-      rewrittenTree = ParseUtils.parse(rewrittenQueryStr.toString(), rewrittenCtx);
-    } catch (ParseException e) {
-      throw new SemanticException(ErrorMsg.UPDATEDELETE_PARSE_ERROR.getMsg(), e);
-    }
-    return new ReparseResult(rewrittenTree, rewrittenCtx);
   }
 
   /**
@@ -313,6 +285,10 @@ public abstract class RewriteSemanticAnalyzer extends SemanticAnalyzer {
     // not, recurse on any children
     if (node.getToken().getType() == HiveParser.TOK_TABLE_OR_COL) {
       ASTNode colName = (ASTNode)node.getChildren().get(0);
+      if (colName.getToken().getType() == HiveParser.TOK_DEFAULT_VALUE) {
+        return;
+      }
+
       assert colName.getToken().getType() == HiveParser.Identifier :
           "Expected column name";
       setRCols.add(normalizeColName(colName.getText()));
@@ -336,13 +312,13 @@ public abstract class RewriteSemanticAnalyzer extends SemanticAnalyzer {
    * SemanticAnalyzer will generate a WriteEntity for the target table since it doesn't know/check
    * if the read and write are of the same table in "insert ... select ....".  Since DbTxnManager
    * uses Read/WriteEntity objects to decide which locks to acquire, we get more concurrency if we
-   * have change the table WriteEntity to a set of partition WriteEntity objects based on
+   * have changed the table WriteEntity to a set of partition WriteEntity objects based on
    * ReadEntity objects computed for this table.
    */
   protected void updateOutputs(Table targetTable) {
     markReadEntityForUpdate();
 
-    if (targetTable.isPartitioned()) {
+    if (targetTable.isPartitioned() && !targetTable.hasNonNativePartitionSupport()) {
       List<ReadEntity> partitionsRead = getRestrictedPartitionSet(targetTable);
       if (!partitionsRead.isEmpty()) {
         // if there is WriteEntity with WriteType=UPDATE/DELETE for target table, replace it with
@@ -404,48 +380,15 @@ public abstract class RewriteSemanticAnalyzer extends SemanticAnalyzer {
    */
   private boolean isTargetTable(Entity entity, Table targetTable) {
     //todo: https://issues.apache.org/jira/browse/HIVE-15048
-    /**
-     * is this the right way to compare?  Should it just compare paths?
-     * equals() impl looks heavy weight
-     */
-    return targetTable.equals(entity.getTable());
+    // Since any DDL now advances the write id, we should ignore the write Id,
+    // while comparing two tables
+    return targetTable.equalsWithIgnoreWriteId(entity.getTable());
   }
 
-  /**
-   * Returns the table name to use in the generated query preserving original quotes/escapes if any.
-   * @see #getFullTableNameForSQL(ASTNode)
-   */
-  protected String getSimpleTableName(ASTNode n) throws SemanticException {
-    return HiveUtils.unparseIdentifier(getSimpleTableNameBase(n), this.conf);
-  }
 
-  protected String getSimpleTableNameBase(ASTNode n) throws SemanticException {
-    switch (n.getType()) {
-    case HiveParser.TOK_TABREF:
-      int aliasIndex = findTabRefIdxs(n)[0];
-      if (aliasIndex != 0) {
-        return n.getChild(aliasIndex).getText(); //the alias
-      }
-      return getSimpleTableNameBase((ASTNode) n.getChild(0));
-    case HiveParser.TOK_TABNAME:
-      if (n.getChildCount() == 2) {
-        //db.table -> return table
-        return n.getChild(1).getText();
-      }
-      return n.getChild(0).getText();
-    case HiveParser.TOK_SUBQUERY:
-      return n.getChild(1).getText(); //the alias
-    default:
-      throw raiseWrongType("TOK_TABREF|TOK_TABNAME|TOK_SUBQUERY", n);
-    }
-  }
-
-  protected static final class ReparseResult {
-    final ASTNode rewrittenTree;
-    final Context rewrittenCtx;
-    ReparseResult(ASTNode n, Context c) {
-      rewrittenTree = n;
-      rewrittenCtx = c;
-    }
+  @Override
+  public void setQueryType(ASTNode tree) {
+    // UPDATE/DELETE/MERGE queries are handled with RewriteSemanticAnalyzer
+    queryProperties.setQueryType(QueryProperties.QueryType.DML);
   }
 }

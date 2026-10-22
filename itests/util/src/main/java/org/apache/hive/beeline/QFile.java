@@ -9,18 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.beeline;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.hive.ql.QTestProcessExecResult;
-import org.apache.hadoop.hive.ql.QTestUtil;
+import org.apache.hadoop.hive.ql.dataset.QTestDatasetHandler;
 import org.apache.hadoop.util.Shell;
 import org.apache.hive.common.util.StreamPrinter;
 import org.apache.hive.beeline.ConvertedOutputFile.Converter;
@@ -43,7 +44,7 @@ import java.util.regex.Pattern;
  * input and output files, and provides methods for filtering the output of the runs.
  */
 public final class QFile {
-  private static final Set<String> srcTables = QTestUtil.getSrcTables();
+  private static final Set<String> srcTables = QTestDatasetHandler.getSrcTables();
   private static final String DEBUG_HINT =
       "The following files can help you identifying the problem:%n"
       + " - Query file: %1s%n"
@@ -271,7 +272,7 @@ public final class QFile {
     diffCommandArgs.add(getQuotedString(expectedOutputFile));
     diffCommandArgs.add(getQuotedString(outputFile));
 
-    System.out.println("Running: " + org.apache.commons.lang.StringUtils.join(diffCommandArgs,
+    System.out.println("Running: " + org.apache.commons.lang3.StringUtils.join(diffCommandArgs,
         ' '));
     Process executor = Runtime.getRuntime().exec(diffCommandArgs.toArray(
         new String[diffCommandArgs.size()]));

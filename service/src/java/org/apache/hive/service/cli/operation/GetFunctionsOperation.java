@@ -9,18 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service.cli.operation;
 
 import java.sql.DatabaseMetaData;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -101,7 +101,7 @@ public class GetFunctionsOperation extends MetadataOperation {
       }
       // authorize this call on the schema objects
       List<HivePrivilegeObject> privObjs = HivePrivilegeObjectUtils
-          .getHivePrivDbObjects(matchingDbs);
+          .getHivePrivDbObjects(catalogName, matchingDbs);
       String cmdStr = "catalog : " + catalogName + ", schemaPattern : " + schemaName;
       authorizeMetaGets(HiveOperationType.GET_FUNCTIONS, privObjs, cmdStr);
     }
@@ -147,7 +147,7 @@ public class GetFunctionsOperation extends MetadataOperation {
    */
   @Override
   public TableSchema getResultSetSchema() throws HiveSQLException {
-    assertState(new ArrayList<OperationState>(Arrays.asList(OperationState.FINISHED)));
+    assertState(Collections.singleton(OperationState.FINISHED));
     return RESULT_SET_SCHEMA;
   }
 
@@ -156,7 +156,7 @@ public class GetFunctionsOperation extends MetadataOperation {
    */
   @Override
   public RowSet getNextRowSet(FetchOrientation orientation, long maxRows) throws HiveSQLException {
-    assertState(new ArrayList<OperationState>(Arrays.asList(OperationState.FINISHED)));
+    assertState(Collections.singleton(OperationState.FINISHED));
     validateDefaultFetchOrientation(orientation);
     if (orientation.equals(FetchOrientation.FETCH_FIRST)) {
       rowSet.setStartOffset(0);

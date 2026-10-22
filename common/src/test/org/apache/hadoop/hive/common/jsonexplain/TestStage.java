@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common.jsonexplain;
@@ -87,8 +88,10 @@ public class TestStage {
 
   @Test
   public void testExtractVertexNonTez() throws Exception {
-    String jsonString = "{\"OperatorName\":{\"a\":\"A\",\"b\":\"B\"}," +
-            "\"attr1\":\"ATTR1\"}";
+    String jsonString = """
+            {"OperatorName":{"a":"A","b":"B"},\
+            "attr1":"ATTR1"}\
+            """;
     JSONObject object = new JSONObject(jsonString);
 
     uut.extractVertex(object);
@@ -104,52 +107,56 @@ public class TestStage {
     JSONObject object = new JSONObject(jsonString);
     uut.extractVertex(object);
 
-    assertEquals(1, uut.vertexs.size());
-    assertTrue(uut.vertexs.containsKey("v1"));
+    assertEquals(1, uut.vertices.size());
+    assertTrue(uut.vertices.containsKey("v1"));
   }
 
   @Test
   public void testExtractVertexTezWithOneEdge() throws Exception {
-    String jsonString = "{\"Tez\":{\"a\":\"A\"," +
-            "\"Vertices:\":{\"v1\":{},\"v2\":{}}," +
-            "\"Edges:\":{\"v2\":{\"parent\":\"v1\",\"type\":\"TYPE\"}}}}";
+    String jsonString = """
+            {"Tez":{"a":"A",\
+            "Vertices:":{"v1":{},"v2":{}},\
+            "Edges:":{"v2":{"parent":"v1","type":"TYPE"}}}}\
+            """;
     JSONObject object = new JSONObject(jsonString);
     uut.extractVertex(object);
 
-    assertEquals(2, uut.vertexs.size());
-    assertTrue(uut.vertexs.containsKey("v1"));
-    assertTrue(uut.vertexs.containsKey("v2"));
+    assertEquals(2, uut.vertices.size());
+    assertTrue(uut.vertices.containsKey("v1"));
+    assertTrue(uut.vertices.containsKey("v2"));
 
-    assertEquals(0, uut.vertexs.get("v1").parentConnections.size());
-    assertEquals(1, uut.vertexs.get("v2").parentConnections.size());
-    assertEquals("v1", uut.vertexs.get("v2").parentConnections.get(0).from.name);
-    assertEquals("TYPE", uut.vertexs.get("v2").parentConnections.get(0).type);
+    assertEquals(0, uut.vertices.get("v1").parentConnections.size());
+    assertEquals(1, uut.vertices.get("v2").parentConnections.size());
+    assertEquals("v1", uut.vertices.get("v2").parentConnections.get(0).from.name);
+    assertEquals("TYPE", uut.vertices.get("v2").parentConnections.get(0).type);
 
   }
 
 
   @Test
   public void testExtractVertexTezWithOneToManyEdge() throws Exception {
-    String jsonString = "{\"Tez\":{\"a\":\"A\"," +
-            "\"Vertices:\":{\"v1\":{},\"v2\":{},\"v3\":{}}," +
-            "\"Edges:\":{\"v1\":[{\"parent\":\"v2\",\"type\":\"TYPE1\"}," +
-            "{\"parent\":\"v3\",\"type\":\"TYPE2\"}]}}}";
+    String jsonString = """
+            {"Tez":{"a":"A",\
+            "Vertices:":{"v1":{},"v2":{},"v3":{}},\
+            "Edges:":{"v1":[{"parent":"v2","type":"TYPE1"},\
+            {"parent":"v3","type":"TYPE2"}]}}}\
+            """;
     JSONObject object = new JSONObject(jsonString);
 
     uut.extractVertex(object);
 
-    assertEquals(3, uut.vertexs.size());
-    assertTrue(uut.vertexs.containsKey("v1"));
-    assertTrue(uut.vertexs.containsKey("v2"));
-    assertTrue(uut.vertexs.containsKey("v3"));
+    assertEquals(3, uut.vertices.size());
+    assertTrue(uut.vertices.containsKey("v1"));
+    assertTrue(uut.vertices.containsKey("v2"));
+    assertTrue(uut.vertices.containsKey("v3"));
 
-    assertEquals(2, uut.vertexs.get("v1").parentConnections.size());
-    assertEquals(1, uut.vertexs.get("v2").children.size());
-    assertEquals(1, uut.vertexs.get("v3").children.size());
-    assertEquals("v1", uut.vertexs.get("v2").children.get(0).name);
-    assertEquals("v1", uut.vertexs.get("v3").children.get(0).name);
-    assertEquals("TYPE1", uut.vertexs.get("v1").parentConnections.get(0).type);
-    assertEquals("TYPE2", uut.vertexs.get("v1").parentConnections.get(1).type);
+    assertEquals(2, uut.vertices.get("v1").parentConnections.size());
+    assertEquals(1, uut.vertices.get("v2").children.size());
+    assertEquals(1, uut.vertices.get("v3").children.size());
+    assertEquals("v1", uut.vertices.get("v2").children.get(0).name);
+    assertEquals("v1", uut.vertices.get("v3").children.get(0).name);
+    assertEquals("TYPE1", uut.vertices.get("v1").parentConnections.get(0).type);
+    assertEquals("TYPE2", uut.vertices.get("v1").parentConnections.get(1).type);
 
   }
 
@@ -177,8 +184,10 @@ public class TestStage {
 
   @Test
   public void testExtract() throws Exception {
-    String jsonString = "{\"b\":{\"b2\":\"B2\",\"b1\":\"B1\"}," +
-            "\"Processor Tree:\":{\"a1\":{\"t1\":\"T1\"}}}";
+    String jsonString = """
+            {"b":{"b2":"B2","b1":"B1"},\
+            "Processor Tree:":{"a1":{"t1":"T1"}}}\
+            """;
     JSONObject object = new JSONObject(jsonString);
 
     Op result = uut.extractOp("op-name", object);

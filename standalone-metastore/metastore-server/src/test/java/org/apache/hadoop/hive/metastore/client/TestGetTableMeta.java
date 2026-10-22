@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.client;
@@ -25,21 +26,25 @@ import java.util.List;
 import java.util.Set;
 
 import com.google.common.collect.ImmutableSet;
-import org.apache.hadoop.hive.metastore.IMetaStoreClient;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.MetaStoreTestUtils;
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.annotation.MetastoreCheckinTest;
-import org.apache.hadoop.hive.metastore.annotation.MetastoreUnitTest;
 import org.apache.hadoop.hive.metastore.api.CreationMetadata;
 import org.apache.hadoop.hive.metastore.api.Catalog;
 import org.apache.hadoop.hive.metastore.api.Database;
+import org.apache.hadoop.hive.metastore.api.PrincipalType;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.TableMeta;
 import org.apache.hadoop.hive.metastore.client.builder.CatalogBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.DatabaseBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.TableBuilder;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf.ConfVars;
 import org.apache.hadoop.hive.metastore.minihms.AbstractMetaStoreService;
 import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
+
 import org.apache.thrift.TException;
 
 import com.google.common.collect.Lists;
@@ -62,11 +67,12 @@ import static org.junit.Assert.assertTrue;
 @Category(MetastoreCheckinTest.class)
 public class TestGetTableMeta extends MetaStoreClientTest {
   private AbstractMetaStoreService metaStore;
-  private IMetaStoreClient client;
-
+  private Configuration conf;
+  private HiveMetaStoreClient client;
   private static final String DB_NAME = "testpartdb";
   private static final String TABLE_NAME = "testparttable";
-
+  private static final String TABLE_OWNER = "testuser";
+  private static final PrincipalType TABLE_OWNER_TYPE = PrincipalType.USER;
   private List<TableMeta> expectedMetas = null;
 
   public TestGetTableMeta(String name, AbstractMetaStoreService metaStore) {
@@ -75,8 +81,16 @@ public class TestGetTableMeta extends MetaStoreClientTest {
 
   @Before
   public void setUp() throws Exception {
+    conf = MetastoreConf.newMetastoreConf();
+    // Directly set client capability since HiveConf is unaccessable through standalone-metastore
+    MetastoreConf.setBoolVar(conf, ConfVars.HIVE_IN_TEST, true);
+    MetaStoreTestUtils.setConfForStandloneMode(conf);
+
     // Get new client
     client = metaStore.getClient();
+    String[] clientCaps = new String[]{"HIVEMANAGEDINSERTWRITE","HIVEMANAGESTATS","HIVECACHEINVALIDATE",
+        "CONNECTORWRITE"};
+    client.setProcessorCapabilities(clientCaps);
 
     // Clean up
     client.dropDatabase(DB_NAME + "_one", true, true, true);
@@ -113,59 +127,73 @@ public class TestGetTableMeta extends MetaStoreClientTest {
     }
   }
 
-
   private void createDB(String dbName) throws TException {
     new DatabaseBuilder().
             setName(dbName).
             create(client, metaStore.getConf());
   }
 
-
-  private Table createTable(String dbName, String tableName, TableType type)
+  private Table createTable(String dbName, String tableName, TableType type, String owner, PrincipalType ownerType)
           throws Exception {
     TableBuilder builder = new TableBuilder()
             .setCatName("hive")
-            .setDbName(dbName)
-            .setTableName(tableName)
+            .setDbName(dbName) .setTableName(tableName)
+            .setOwner(owner)
+            .setOwnerType(ownerType)
             .addCol("id", "int")
             .addCol("name", "string")
             .setType(type.name());
 
-
     Table table = builder.build(metaStore.getConf());
-
 
     if (type == TableType.MATERIALIZED_VIEW) {
       CreationMetadata cm = new CreationMetadata(
           MetaStoreUtils.getDefaultCatalog(metaStore.getConf()), dbName, tableName, ImmutableSet.of());
+      cm.setSourceTables(Collections.emptyList());
       table.setCreationMetadata(cm);
     }
 
     if (type == TableType.EXTERNAL_TABLE) {
       table.getParameters().put("EXTERNAL", "true");
+    } else if (type == TableType.MANAGED_TABLE) {
+       // we do not want MANAGED tables to be converted to EXTERNAL
+      table.getParameters().put("transactional", "true");
+      table.getParameters().put("transactional_properties", "insert_only");
     }
-
     return table;
   }
 
-  private TableMeta createTestTable(String dbName, String tableName, TableType type, String comment)
-    throws Exception {
-    Table table  = createTable(dbName, tableName, type);
-    table.getParameters().put("comment", comment);
+  private class OwnerInfo {
+    String owner;
+    PrincipalType ownerType;
+  }
+
+  private TableMeta createTestTable(String dbName, String tableName, TableType type, String comment,
+      OwnerInfo ownerInfo) throws Exception {
+    String owner = ownerInfo == null ? TABLE_OWNER : ownerInfo.owner;
+    PrincipalType ownerType = ownerInfo == null ? TABLE_OWNER_TYPE : ownerInfo.ownerType;
+    Table table = createTable(dbName, tableName, type, owner, ownerType);
+    TableMeta expectedTableMeta = new TableMeta(dbName, tableName, type.toString());
+    if (comment != null) {
+      table.getParameters().put("comment", comment);
+      expectedTableMeta.setComments(comment);
+    }
+    expectedTableMeta.setOwnerName(owner);
+    expectedTableMeta.setOwnerType(ownerType);
+    expectedTableMeta.setCatName("hive");
     client.createTable(table);
-    TableMeta tableMeta = new TableMeta(dbName, tableName, type.name());
-    tableMeta.setComments(comment);
-    tableMeta.setCatName("hive");
-    return tableMeta;
+    return expectedTableMeta;
+
+  }
+
+  private TableMeta createTestTable(String dbName, String tableName, TableType type, String comment)
+      throws Exception {
+    return createTestTable(dbName, tableName, type, comment, null);
   }
 
   private TableMeta createTestTable(String dbName, String tableName, TableType type)
-          throws Exception {
-    Table table  = createTable(dbName, tableName, type);
-    client.createTable(table);
-    TableMeta tableMeta = new TableMeta(dbName, tableName, type.name());
-    tableMeta.setCatName("hive");
-    return tableMeta;
+      throws Exception {
+    return createTestTable(dbName, tableName, type, null, null);
   }
 
   private void assertTableMetas(int[] expected, List<TableMeta> actualTableMetas) {
@@ -182,7 +210,7 @@ public class TestGetTableMeta extends MetaStoreClientTest {
 
     Set<TableMeta> metas = new HashSet<>(actual);
     for (int i : expected){
-      assertTrue("Missing " + fullExpected.get(i), metas.remove(fullExpected.get(i)));
+      assertTrue("Missing " + fullExpected.get(i) + "" + actual, metas.remove(fullExpected.get(i)));
     }
 
     assertTrue("Unexpected tableMeta(s): " + metas, metas.isEmpty());
@@ -303,15 +331,22 @@ public class TestGetTableMeta extends MetaStoreClientTest {
       client.createTable(new TableBuilder()
           .inDb(db)
           .setTableName(tableNames[i])
+          .setOwner(TABLE_OWNER)
+          .setOwnerType(TABLE_OWNER_TYPE)
           .addCol("id", "int")
           .addCol("name", "string")
           .build(metaStore.getConf()));
-      TableMeta tableMeta = new TableMeta(dbName, tableNames[i], TableType.MANAGED_TABLE.name());
+      Table table = client.getTable(catName, dbName, tableNames[i]);
+      TableMeta tableMeta = new TableMeta(dbName, tableNames[i], table.getTableType());
       tableMeta.setCatName(catName);
+      tableMeta.setOwnerName(TABLE_OWNER);
+      tableMeta.setOwnerType(TABLE_OWNER_TYPE);
       expected.add(tableMeta);
     }
 
-    List<String> types = Collections.singletonList(TableType.MANAGED_TABLE.name());
+    List<String> typesList = Lists.newArrayList(TableType.MANAGED_TABLE.name(),
+        TableType.EXTERNAL_TABLE.name());
+    List<String> types = Collections.unmodifiableList(typesList);
     List<TableMeta> actual = client.getTableMeta(catName, dbName, "*", types);
     assertTableMetas(expected, actual, 0, 1, 2);
 
@@ -333,5 +368,4 @@ public class TestGetTableMeta extends MetaStoreClientTest {
     List<TableMeta> tableMetas = client.getTableMeta("h*", "*", "*", Lists.newArrayList());
     Assert.assertEquals(0, tableMetas.size());
   }
-
 }

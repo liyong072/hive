@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
 
@@ -27,21 +28,12 @@ public class IfExprColumnNull extends VectorExpression {
 
   private static final long serialVersionUID = 1L;
 
-  private final int arg1Column;
-  private final int arg2Column;
-
   public IfExprColumnNull(int arg1Column, int arg2Column, int outputColumnNum) {
-	super(outputColumnNum);
-    this.arg1Column = arg1Column;
-    this.arg2Column = arg2Column;
+	  super(arg1Column, arg2Column, outputColumnNum);
   }
 
   public IfExprColumnNull() {
     super();
-
-    // Dummy final assignments.
-    arg1Column = -1;
-    arg2Column = -1;
   }
 
   @Override
@@ -51,8 +43,8 @@ public class IfExprColumnNull extends VectorExpression {
       super.evaluateChildren(batch);
     }
 
-    final LongColumnVector arg1ColVector = (LongColumnVector) batch.cols[arg1Column];
-    final ColumnVector arg2ColVector = batch.cols[arg2Column];
+    final LongColumnVector arg1ColVector = (LongColumnVector) batch.cols[inputColumnNum[0]];
+    final ColumnVector arg2ColVector = batch.cols[inputColumnNum[1]];
     final ColumnVector outputColVector = batch.cols[outputColumnNum];
 
     final int[] sel = batch.selected;
@@ -201,7 +193,7 @@ public class IfExprColumnNull extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return getColumnParamString(0, arg1Column) + ", " + getColumnParamString(1, arg2Column) + ", null";
+    return getColumnParamString(0, inputColumnNum[0]) + ", " + getColumnParamString(1, inputColumnNum[1]) + ", null";
   }
 
   @Override

@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.service.cli.operation;
 
@@ -25,6 +26,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.ql.log.HushableRandomAccessFileAppender;
 import org.apache.hadoop.hive.ql.log.LogDivertAppender;
 import org.apache.hadoop.hive.ql.log.LogDivertAppenderForTest;
@@ -68,7 +70,7 @@ public class TestOperationLoggingLayout {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     tableName = "TestOperationLoggingLayout_table";
-    hiveConf = new HiveConf();
+    hiveConf = new HiveConfForTest(TestOperationLoggingLayout.class);
     hiveConf.set(HiveConf.ConfVars.HIVE_SERVER2_LOGGING_OPERATION_LEVEL.varname, "execution");
     miniHS2 = new MiniHS2(hiveConf);
     confOverlay = new HashMap<String, String>();
@@ -132,20 +134,48 @@ public class TestOperationLoggingLayout {
     }
   }
 
-  @Test
-  public void testSwitchLogLayout() throws Exception {
+  private void executeWithOperationLog(String query, boolean queryLogEnabled) throws Exception {
     // verify whether the sql operation log is generated and fetch correctly.
-    OperationHandle operationHandle = client.executeStatement(sessionHandle, sqlCntStar, null);
+    OperationHandle operationHandle = client.executeStatement(sessionHandle, query, null);
     RowSet rowSetLog = client.fetchResults(operationHandle, FetchOrientation.FETCH_FIRST, 1000,
-        FetchType.LOG);
-    String queryId = getQueryId(rowSetLog);
-    Assert.assertNotNull("Could not find query id, perhaps a logging message changed", queryId);
+            FetchType.LOG);
+    String queryId = "";
+    boolean expectedStopped = true;
+    if (queryLogEnabled) {
+      queryId = getQueryId(rowSetLog);
+      expectedStopped = false;
+      Assert.assertNotNull("Could not find query id, perhaps a logging message changed", queryId);
+    } else {
+      Assert.assertEquals("Operation log is generated even if query logging is disabled", rowSetLog.numRows(), 0);
+      Assert.assertNull("Query id present even if logging is disabled.", getQueryId(rowSetLog));
+    }
 
-    checkAppenderState("before operation close ", LogDivertAppender.QUERY_ROUTING_APPENDER, queryId, false);
-    checkAppenderState("before operation close ", LogDivertAppenderForTest.TEST_QUERY_ROUTING_APPENDER, queryId, false);
+    checkAppenderState("before operation close ", LogDivertAppender.QUERY_ROUTING_APPENDER, queryId, expectedStopped);
+    checkAppenderState("before operation close ", LogDivertAppenderForTest.TEST_QUERY_ROUTING_APPENDER, queryId, expectedStopped);
     client.closeOperation(operationHandle);
+    checkAppenderState("after operation close ", LogDivertAppender.QUERY_ROUTING_APPENDER, queryId, expectedStopped);
+    checkAppenderState("after operation close ", LogDivertAppenderForTest.TEST_QUERY_ROUTING_APPENDER, queryId, expectedStopped);
+    Thread.sleep(8000);
     checkAppenderState("after operation close ", LogDivertAppender.QUERY_ROUTING_APPENDER, queryId, true);
     checkAppenderState("after operation close ", LogDivertAppenderForTest.TEST_QUERY_ROUTING_APPENDER, queryId, true);
+  }
+
+  @Test
+  public void testSwitchLogLayout() throws Exception {
+    executeWithOperationLog(sqlCntStar, true);
+  }
+
+  @Test
+  public void testQueryLogDisabled() throws Exception {
+    OperationHandle operationHandle = client.executeStatement(sessionHandle,
+            "set hive.server2.logging.operation.enabled=false", null);
+    client.closeOperation(operationHandle);
+
+    executeWithOperationLog(sqlCntStar, false);
+
+    operationHandle = client.executeStatement(sessionHandle,
+            "set hive.server2.logging.operation.enabled=true", null);
+    client.closeOperation(operationHandle);
   }
 
   @Test
@@ -188,7 +218,7 @@ public class TestOperationLoggingLayout {
     Map<String, Appender> appendersMap = loggerConfig.getAppenders();
     RoutingAppender routingAppender = (RoutingAppender) appendersMap.get(routingAppenderName);
     Assert.assertNotNull(msg + "could not find routingAppender " + routingAppenderName, routingAppender);
-    Field defaultsField = RoutingAppender.class.getDeclaredField("appenders");
+    Field defaultsField = RoutingAppender.class.getDeclaredField("createdAppenders");
     defaultsField.setAccessible(true);
     ConcurrentHashMap appenders = (ConcurrentHashMap) defaultsField.get(routingAppender);
     AppenderControl appenderControl = (AppenderControl) appenders.get(queryId);
@@ -219,7 +249,7 @@ public class TestOperationLoggingLayout {
     Map<String, Appender> appendersMap = loggerConfig.getAppenders();
     RoutingAppender routingAppender = (RoutingAppender) appendersMap.get(routingAppenderName);
     Assert.assertNotNull("could not find routingAppender " + routingAppenderName, routingAppender);
-    Field defaultsField = RoutingAppender.class.getDeclaredField("appenders");
+    Field defaultsField = RoutingAppender.class.getDeclaredField("createdAppenders");
     defaultsField.setAccessible(true);
     ConcurrentHashMap appenders = (ConcurrentHashMap) defaultsField.get(routingAppender);
     AppenderControl appenderControl = (AppenderControl) appenders.get(queryId);

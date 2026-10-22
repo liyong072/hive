@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hive.common.util.HiveStringUtils;
 import org.slf4j.Logger;
@@ -51,10 +53,17 @@ public final class ColumnProjectionUtils {
     "hive.io.file.readNestedColumn.paths";
   public static final String READ_ALL_COLUMNS = "hive.io.file.read.all.columns";
   public static final String READ_COLUMN_NAMES_CONF_STR = "hive.io.file.readcolumn.names";
+  public static final String FETCH_VIRTUAL_COLUMNS_CONF_STR = "hive.io.file.fetch.virtual.columns";
   private static final String READ_COLUMN_IDS_CONF_STR_DEFAULT = "";
   private static final String READ_NESTED_COLUMN_PATH_CONF_STR_DEFAULT = "";
   private static final boolean READ_ALL_COLUMNS_DEFAULT = true;
   private static final Joiner CSV_JOINER = Joiner.on(",").skipNulls();
+  /**
+   * job config key for an ORC TypeDescription.toString().
+   * If set it will be favoured by ORC record readers over Hive schema literals such as
+   * IOConstants.SCHEMA_EVOLUTION_COLUMNS or IOConstants.SCHEMA_EVOLUTION_COLUMNS_TYPES
+   */
+  public static final String ORC_SCHEMA_STRING = "hive.orc.schema.string";
 
   /**
    * @deprecated for backwards compatibility with &lt;= 0.12, use setReadAllColumns
@@ -154,7 +163,7 @@ public final class ColumnProjectionUtils {
    * @param names Column names.
    */
   public static void appendReadColumns(
-      Configuration conf, List<Integer> ids, List<String> names, List<String> groupPaths) {
+      Configuration conf, List<Integer> ids, List<String> names, List<String> groupPaths, boolean fetchVirtualCols) {
     if (ids.size() != names.size()) {
       LOG.warn("Read column counts do not match: "
           + ids.size() + " ids, " + names.size() + " names");
@@ -162,6 +171,7 @@ public final class ColumnProjectionUtils {
     appendReadColumns(conf, ids);
     appendReadColumnNames(conf, names);
     appendNestedColumnPaths(conf, groupPaths);
+    conf.setBoolean(FETCH_VIRTUAL_COLUMNS_CONF_STR, fetchVirtualCols);
   }
 
   public static void appendReadColumns(
@@ -173,7 +183,7 @@ public final class ColumnProjectionUtils {
 
   /**
    * Returns an array of column ids(start from zero) which is set in the given
-   * parameter <tt>conf</tt>.
+   * parameter <pre>conf</pre>.
    */
   public static List<Integer> getReadColumnIDs(Configuration conf) {
     String skips = conf.get(READ_COLUMN_IDS_CONF_STR, READ_COLUMN_IDS_CONF_STR_DEFAULT);
@@ -202,7 +212,7 @@ public final class ColumnProjectionUtils {
   public static String[] getReadColumnNames(Configuration conf) {
     String colNames = conf.get(READ_COLUMN_NAMES_CONF_STR, READ_COLUMN_IDS_CONF_STR_DEFAULT);
     if (colNames != null && !colNames.isEmpty()) {
-      return colNames.split(",");
+      return colNames.split(conf.get(serdeConstants.COLUMN_NAME_DELIMITER, String.valueOf(SerDeUtils.COMMA)));
     }
     return new String[] {};
   }
@@ -228,17 +238,12 @@ public final class ColumnProjectionUtils {
 
   private static void appendReadColumnNames(Configuration conf, List<String> cols) {
     String old = conf.get(READ_COLUMN_NAMES_CONF_STR, "");
-    StringBuilder result = new StringBuilder(old);
-    boolean first = old.isEmpty();
-    for(String col: cols) {
-      if (first) {
-        first = false;
-      } else {
-        result.append(',');
-      }
-      result.append(col);
+    String delim = conf.get(serdeConstants.COLUMN_NAME_DELIMITER, String.valueOf(SerDeUtils.COMMA));
+    String result = String.join(delim, cols);
+    if (!old.isEmpty()) {
+      result = old + delim + result;
     }
-    conf.set(READ_COLUMN_NAMES_CONF_STR, result.toString());
+    conf.set(READ_COLUMN_NAMES_CONF_STR, result);
   }
 
   private static String toReadColumnIDString(List<Integer> ids) {

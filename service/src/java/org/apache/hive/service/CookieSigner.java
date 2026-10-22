@@ -9,19 +9,20 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 
-import org.apache.commons.codec.binary.Base64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +33,7 @@ import org.slf4j.LoggerFactory;
  */
 public class CookieSigner {
   private static final String SIGNATURE = "&s=";
-  private static final String SHA_STRING = "SHA-256";
+  private static final String SHA_STRING = "SHA-512";
   private byte[] secretBytes;
   private static final Logger LOG = LoggerFactory.getLogger(CookieSigner.class);
 
@@ -58,9 +59,7 @@ public class CookieSigner {
     }
     String signature = getSignature(str);
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Signature generated for " + str + " is " + signature);
-    }
+    LOG.debug("Signature generated for {} is {}", str, signature);
     return str + SIGNATURE + signature;
   }
 
@@ -78,12 +77,8 @@ public class CookieSigner {
     String rawValue = signedStr.substring(0, index);
     String currentSignature = getSignature(rawValue);
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Signature generated for " + rawValue + " inside verify is " + currentSignature);
-    }
-    if (!originalSignature.equals(currentSignature)) {
-      throw new IllegalArgumentException("Invalid sign, original = " + originalSignature +
-        " current = " + currentSignature);
+    if (!MessageDigest.isEqual(originalSignature.getBytes(), currentSignature.getBytes())) {
+      throw new IllegalArgumentException("Invalid sign= " + originalSignature);
     }
     return rawValue;
   }
@@ -99,7 +94,7 @@ public class CookieSigner {
       md.update(str.getBytes());
       md.update(secretBytes);
       byte[] digest = md.digest();
-      return new Base64(0).encodeToString(digest);
+      return Base64.getEncoder().encodeToString(digest);
     } catch (NoSuchAlgorithmException ex) {
       throw new RuntimeException("Invalid SHA digest String: " + SHA_STRING +
         " " + ex.getMessage(), ex);

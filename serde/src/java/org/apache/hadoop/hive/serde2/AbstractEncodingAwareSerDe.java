@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2;
@@ -25,8 +26,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.io.Writable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Charsets;
 
@@ -36,16 +35,16 @@ import com.google.common.base.Charsets;
  * transform data from UTF-8 to specified charset during deserialize.
  */
 public abstract class AbstractEncodingAwareSerDe extends AbstractSerDe {
-  private static final Logger LOG = LoggerFactory.getLogger(AbstractEncodingAwareSerDe.class);
+
   protected Charset charset;
 
   @Override
-  @Deprecated
-  public void initialize(Configuration conf, Properties tbl)
+  public void initialize(Configuration configuration, Properties tableProperties, Properties partitionProperties)
       throws SerDeException {
-    charset = Charset.forName(tbl.getProperty(serdeConstants.SERIALIZATION_ENCODING, "UTF-8"));
+    super.initialize(configuration, tableProperties, partitionProperties);
+    charset = Charset.forName(properties.getProperty(serdeConstants.SERIALIZATION_ENCODING, "UTF-8"));
     if (this.charset.equals(Charsets.ISO_8859_1) || this.charset.equals(Charsets.US_ASCII)) {
-      LOG.warn("The data may not be properly converted to target charset " + charset);
+      log.warn("{} The data may not be properly converted to target charset {}", getClass().getName(), charset);
     }
   }
 

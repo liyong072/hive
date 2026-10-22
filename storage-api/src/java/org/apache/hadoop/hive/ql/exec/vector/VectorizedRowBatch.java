@@ -9,20 +9,26 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.vector;
 
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.stream.IntStream;
 
+import org.apache.hadoop.hive.ql.io.filter.MutableFilterContext;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Writable;
+import org.apache.hive.common.util.SuppressFBWarnings;
 
 /**
  * A VectorizedRowBatch is a set of rows, organized with each column
@@ -31,7 +37,7 @@ import org.apache.hadoop.io.Writable;
  * The major fields are public by design to allow fast and convenient
  * access by the vectorized query execution code.
  */
-public class VectorizedRowBatch implements Writable {
+public class VectorizedRowBatch implements Writable, MutableFilterContext {
   public int numCols;           // number of columns
   public ColumnVector[] cols;   // a vector for each column
   public int size;              // number of rows that qualify (i.e. haven't been filtered out)
@@ -338,11 +344,24 @@ public class VectorizedRowBatch implements Writable {
    *  - resets each column
    *  - inits each column
    */
+  @Override
   public void reset() {
+    reset(cols);
+  }
+
+  public void reset(Collection<Integer> columnIndices) {
+    ColumnVector[] columnsToReset = columnIndices.stream()
+            .filter(index -> index < cols.length)
+            .map(x -> cols[x])
+            .toArray(ColumnVector[]::new);
+    reset(columnsToReset);
+  }
+
+  private void reset(ColumnVector[] columns) {
     selectedInUse = false;
     size = 0;
     endOfFile = false;
-    for (ColumnVector vc : cols) {
+    for (ColumnVector vc : columns) {
       if (vc != null) {
         vc.reset();
         vc.init();
@@ -358,5 +377,68 @@ public class VectorizedRowBatch implements Writable {
     for (ColumnVector col : cols) {
       col.ensureSize(rows, false);
     }
+    updateSelected(rows);
+  }
+
+  @Override
+  public boolean isSelectedInUse() {
+    return selectedInUse;
+  }
+
+  @Override
+  @SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "Expose internal rep for efficiency")
+  public int[] getSelected() {
+    return selected;
+  }
+
+  @Override
+  public int getSelectedSize() {
+    return size;
+  }
+
+  @Override
+  @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "Ref external obj for efficiency")
+  public void setFilterContext(boolean isSelectedInUse, int[] selected, int selectedSize) {
+    this.selectedInUse = isSelectedInUse;
+    this.selected = selected;
+    this.size = selectedSize;
+    // Avoid selected.length < selectedSize since we can borrow a larger array for selected
+    // Debug loop for selected array: use without assert when needed (asserts only fail in testing)
+    assert validateSelected() : "Selected array may not contain duplicates or unordered values";
+  }
+
+  @Override
+  public boolean validateSelected() {
+    for (int i = 1; i < size; i++) {
+      if (selected[i-1] >= selected[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @Override
+  @SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "Expose internal rep for efficiency")
+  public int[] updateSelected(int minCapacity) {
+    if (selected == null || selected.length < minCapacity) {
+      selected = new int[minCapacity];
+    }
+    return selected;
+  }
+
+  @Override
+  public void setSelectedInUse(boolean selectedInUse) {
+    this.selectedInUse = selectedInUse;
+  }
+
+  @Override
+  @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "Ref external obj for efficiency")
+  public void setSelected(int[] selectedArray) {
+    selected = selectedArray;
+  }
+
+  @Override
+  public void setSelectedSize(int selectedSize) {
+    size = selectedSize;
   }
 }

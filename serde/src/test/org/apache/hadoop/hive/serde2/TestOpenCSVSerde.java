@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
  
 package org.apache.hadoop.hive.serde2;
@@ -41,7 +42,7 @@ public class TestOpenCSVSerde {
 
   @Test
   public void testDeserialize() throws Exception {
-    csv.initialize(null, props);
+    csv.initialize(null, props, null);
     final Text in = new Text("hello,\"yes, okay\",1");
 
     final List<String> row = (List<String>) csv.deserialize(in);
@@ -57,7 +58,7 @@ public class TestOpenCSVSerde {
     props.setProperty(OpenCSVSerde.SEPARATORCHAR, "\t");
     props.setProperty(OpenCSVSerde.QUOTECHAR, "'");
 
-    csv.initialize(null, props);
+    csv.initialize(null, props, null);
 
     final Text in = new Text("hello\t'yes\tokay'\t1");
     final List<String> row = (List<String>) csv.deserialize(in);
@@ -72,7 +73,7 @@ public class TestOpenCSVSerde {
     props.setProperty(OpenCSVSerde.QUOTECHAR, "'");
     props.setProperty(OpenCSVSerde.ESCAPECHAR, "\\");
 
-    csv.initialize(null, props);
+    csv.initialize(null, props, null);
 
     final Text in = new Text("hello,'yes\\'okay',1");
     final List<String> row = (List<String>) csv.deserialize(in);

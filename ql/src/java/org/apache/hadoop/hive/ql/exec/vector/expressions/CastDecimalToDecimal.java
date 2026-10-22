@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -37,18 +38,12 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 public class CastDecimalToDecimal extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private final int inputColumn;
-
   public CastDecimalToDecimal(int inputColumn, int outputColumnNum) {
-    super(outputColumnNum);
-    this.inputColumn = inputColumn;
+    super(inputColumn, outputColumnNum);
   }
 
   public CastDecimalToDecimal() {
     super();
-
-    // Dummy final assignments.
-    inputColumn = -1;
   }
 
   /**
@@ -73,7 +68,7 @@ public class CastDecimalToDecimal extends VectorExpression {
       super.evaluateChildren(batch);
     }
 
-    DecimalColumnVector inputColVector = (DecimalColumnVector) batch.cols[inputColumn];
+    DecimalColumnVector inputColVector = (DecimalColumnVector) batch.cols[inputColumnNum[0]];
     int[] sel = batch.selected;
     int n = batch.size;
     DecimalColumnVector outputColVector = (DecimalColumnVector) batch.cols[outputColumnNum];
@@ -124,7 +119,7 @@ public class CastDecimalToDecimal extends VectorExpression {
       } else {
         if (!outputColVector.noNulls) {
 
-          // Assume it is almost always a performance win to fill all of isNull so we can
+          // Assume it is almost always a performance win to fill all of isNull, so we can
           // safely reset noNulls.
           Arrays.fill(outputIsNull, false);
           outputColVector.noNulls = true;
@@ -168,7 +163,7 @@ public class CastDecimalToDecimal extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return getColumnParamString(0, inputColumn);
+    return getColumnParamString(0, inputColumnNum[0]);
   }
 
   @Override

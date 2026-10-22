@@ -1,20 +1,3 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- * <p/>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p/>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package org.apache.hadoop.hive.llap.daemon.impl;
 
 import java.util.*;
@@ -23,19 +6,55 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+/*
+ * Copyright (c) 2007, Aviad Ben Dov
+ *
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or other
+ * materials provided with the distribution.
+ * 3. Neither the name of Infomancers, Ltd. nor the names of its contributors may be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
+
+
 /**
  * An optionally-bounded {@linkplain BlockingDeque blocking deque} based on
  * a navigable set.
- * <p/>
+ * <br>
  * <p> The optional capacity bound constructor argument serves as a
  * way to prevent excessive expansion. The capacity, if unspecified,
  * is equal to {@link Integer#MAX_VALUE}.
- * <p/>
+ * <br>
  * <p>This class and its iterator implement all of the
  * <em>optional</em> methods of the {@link Collection} and {@link
  * Iterator} interfaces.
- * <p/>
+ * <br>
  * This code is loosely based on the {@linkplain java.util.concurrent.LinkedBlockingDeque linked blocking deque} code.
+ *
+ * @author Aviad Ben Dov
+ * @param <E> the type of elements held in this collection
+ * @since 0.3
  */
 public class PriorityBlockingDeque<E>
     extends AbstractQueue<E>
@@ -64,7 +83,7 @@ public class PriorityBlockingDeque<E>
   private Comparator<E> comparator;
 
   /**
-   * Creates a <tt>PriorityBlockingDeque</tt> with a capacity of
+   * Creates a <pre>PriorityBlockingDeque</pre> with a capacity of
    * {@link Integer#MAX_VALUE}.
    */
   public PriorityBlockingDeque() {
@@ -72,10 +91,10 @@ public class PriorityBlockingDeque<E>
   }
 
   /**
-   * Creates a <tt>PriorityBlockingDeque</tt> with the given (fixed) capacity.
+   * Creates a <pre>PriorityBlockingDeque</pre> with the given (fixed) capacity.
    *
    * @param capacity the capacity of this deque
-   * @throws IllegalArgumentException if <tt>capacity</tt> is less than 1
+   * @throws IllegalArgumentException if <pre>capacity</pre> is less than 1
    */
   public PriorityBlockingDeque(int capacity) {
     this(null, capacity);
@@ -439,8 +458,8 @@ public class PriorityBlockingDeque<E>
    * Inserts the specified element to the deque unless it would
    * violate capacity restrictions.  When using a capacity-restricted deque,
    * it is generally preferable to use method {@link #offer(Object) offer}.
-   * <p/>
-   * <p>This method is equivalent to {@link #addLast}.
+   * <br>
+   * This method is equivalent to {@link #addLast}.
    *
    * @throws IllegalStateException if the element cannot be added at this
    *                               time due to capacity restrictions
@@ -481,8 +500,8 @@ public class PriorityBlockingDeque<E>
    * Retrieves and removes the head of the queue represented by this deque.
    * This method differs from {@link #poll poll} only in that it throws an
    * exception if this deque is empty.
-   * <p/>
-   * <p>This method is equivalent to {@link #removeFirst() removeFirst}.
+   * <br>
+   * This method is equivalent to {@link #removeFirst() removeFirst}.
    *
    * @return the head of the queue represented by this deque
    * @throws NoSuchElementException if this deque is empty
@@ -508,8 +527,8 @@ public class PriorityBlockingDeque<E>
    * Retrieves, but does not remove, the head of the queue represented by
    * this deque.  This method differs from {@link #peek peek} only in that
    * it throws an exception if this deque is empty.
-   * <p/>
-   * <p>This method is equivalent to {@link #getFirst() getFirst}.
+   * <br>
+   * This method is equivalent to {@link #getFirst() getFirst}.
    *
    * @return the head of the queue represented by this deque
    * @throws NoSuchElementException if this deque is empty
@@ -527,10 +546,10 @@ public class PriorityBlockingDeque<E>
    * Returns the number of additional elements that this deque can ideally
    * (in the absence of memory or resource constraints) accept without
    * blocking. This is always equal to the initial capacity of this deque
-   * less the current <tt>size</tt> of this deque.
-   * <p/>
-   * <p>Note that you <em>cannot</em> always tell if an attempt to insert
-   * an element will succeed by inspecting <tt>remainingCapacity</tt>
+   * less the current <pre>size</pre> of this deque.
+   * <br>
+   * Note that you <em>cannot</em> always tell if an attempt to insert
+   * an element will succeed by inspecting <pre>remainingCapacity</pre>
    * because it may be the case that another thread is about to
    * insert or remove an element.
    */
@@ -618,16 +637,16 @@ public class PriorityBlockingDeque<E>
   /**
    * Removes the first occurrence of the specified element from this deque.
    * If the deque does not contain the element, it is unchanged.
-   * More formally, removes the first element <tt>e</tt> such that
-   * <tt>o.equals(e)</tt> (if such an element exists).
-   * Returns <tt>true</tt> if this deque contained the specified element
+   * More formally, removes the first element <pre>e</pre> such that
+   * <pre>o.equals(e)</pre> (if such an element exists).
+   * Returns <pre>true</pre> if this deque contained the specified element
    * (or equivalently, if this deque changed as a result of the call).
-   * <p/>
-   * <p>This method is equivalent to
+   * <br>
+   * This method is equivalent to
    * {@link #removeFirstOccurrence(Object) removeFirstOccurrence}.
    *
    * @param o element to be removed from this deque, if present
-   * @return <tt>true</tt> if this deque changed as a result of the call
+   * @return <pre>true</pre> if this deque changed as a result of the call
    */
   @Override
   public boolean remove(Object o) {
@@ -650,12 +669,12 @@ public class PriorityBlockingDeque<E>
   }
 
   /**
-   * Returns <tt>true</tt> if this deque contains the specified element.
-   * More formally, returns <tt>true</tt> if and only if this deque contains
-   * at least one element <tt>e</tt> such that <tt>o.equals(e)</tt>.
+   * Returns <pre>true</pre> if this deque contains the specified element.
+   * More formally, returns <pre>true</pre> if and only if this deque contains
+   * at least one element <pre>e</pre> such that <pre>o.equals(e)</pre>.
    *
    * @param o object to be checked for containment in this deque
-   * @return <tt>true</tt> if this deque contains the specified element
+   * @return <pre>true</pre> if this deque contains the specified element
    */
   @Override
   public boolean contains(Object o) {
@@ -671,12 +690,12 @@ public class PriorityBlockingDeque<E>
   /**
    * Returns an array containing all of the elements in this deque, in
    * proper sequence (from first to last element).
-   * <p/>
+   * <br>
    * <p>The returned array will be "safe" in that no references to it are
    * maintained by this deque.  (In other words, this method must allocate
    * a new array).  The caller is thus free to modify the returned array.
-   * <p/>
-   * <p>This method acts as bridge between array-based and collection-based
+   * </p>
+   * <br>This method acts as bridge between array-based and collection-based
    * APIs.
    *
    * @return an array containing all of the elements in this deque
@@ -697,26 +716,24 @@ public class PriorityBlockingDeque<E>
    * the specified array.  If the deque fits in the specified array, it
    * is returned therein.  Otherwise, a new array is allocated with the
    * runtime type of the specified array and the size of this deque.
-   * <p/>
-   * <p>If this deque fits in the specified array with room to spare
+   * <br>
+   * If this deque fits in the specified array with room to spare
    * (i.e., the array has more elements than this deque), the element in
    * the array immediately following the end of the deque is set to
-   * <tt>null</tt>.
-   * <p/>
+   * <pre>null</pre>.
    * <p>Like the {@link #toArray()} method, this method acts as bridge between
    * array-based and collection-based APIs.  Further, this method allows
    * precise control over the runtime type of the output array, and may,
    * under certain circumstances, be used to save allocation costs.
-   * <p/>
-   * <p>Suppose <tt>x</tt> is a deque known to contain only strings.
+   * </p>
+   * Suppose <pre>x</pre> is a deque known to contain only strings.
    * The following code can be used to dump the deque into a newly
-   * allocated array of <tt>String</tt>:
-   * <p/>
+   * allocated array of <pre>String</pre>:
    * <pre>
    *     String[] y = x.toArray(new String[0]);</pre>
-   * <p/>
-   * Note that <tt>toArray(new Object[0])</tt> is identical in function to
-   * <tt>toArray()</tt>.
+   * <br>
+   * Note that <pre>toArray(new Object[0])</pre> is identical in function to
+   * <pre>toArray()</pre>.
    *
    * @param a the array into which the elements of the deque are to
    *          be stored, if it is big enough; otherwise, a new array of the

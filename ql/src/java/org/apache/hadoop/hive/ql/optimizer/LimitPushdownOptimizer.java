@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer;
@@ -28,16 +29,15 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.exec.GroupByOperator;
 import org.apache.hadoop.hive.ql.exec.LimitOperator;
 import org.apache.hadoop.hive.ql.exec.Operator;
-import org.apache.hadoop.hive.ql.exec.OperatorUtils;
 import org.apache.hadoop.hive.ql.exec.ReduceSinkOperator;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.parse.ParseContext;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -92,7 +92,7 @@ public class LimitPushdownOptimizer extends Transform {
 
   @Override
   public ParseContext transform(ParseContext pctx) throws SemanticException {
-    Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
+    Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
     opRules.put(new RuleRegExp("R1",
         ReduceSinkOperator.getOperatorName() + "%" +
         ".*" +
@@ -105,19 +105,19 @@ public class LimitPushdownOptimizer extends Transform {
         new TopNPropagator());
 
     LimitPushdownContext context = new LimitPushdownContext(pctx.getConf());
-    Dispatcher disp = new DefaultRuleDispatcher(null, opRules, context);
-    GraphWalker ogw = new DefaultGraphWalker(disp);
+    SemanticDispatcher disp = new DefaultRuleDispatcher(null, opRules, context);
+    SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
 
     List<Node> topNodes = new ArrayList<Node>(pctx.getTopOps().values());
     ogw.startWalking(topNodes, null);
     return pctx;
   }
 
-  private static class TopNReducer implements NodeProcessor {
+  private static class TopNReducer implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack,
-        NodeProcessorCtx procCtx, Object... nodeOutputs) throws SemanticException {
+                          NodeProcessorCtx procCtx, Object... nodeOutputs) throws SemanticException {
       ReduceSinkOperator rs = null;
       for (int i = stack.size() - 2 ; i >= 0; i--) {
         Operator<?> operator = (Operator<?>) stack.get(i);
@@ -158,14 +158,18 @@ public class LimitPushdownOptimizer extends Transform {
     }
   }
 
-  private static class TopNPropagator implements NodeProcessor {
+  private static class TopNPropagator implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack,
-        NodeProcessorCtx procCtx, Object... nodeOutputs) throws SemanticException {
+                          NodeProcessorCtx procCtx, Object... nodeOutputs) throws SemanticException {
       ReduceSinkOperator cRS = (ReduceSinkOperator) nd;
       if (cRS.getConf().getTopN() == -1) {
         // No limit, nothing to propagate, we just bail out
+        return false;
+      }
+      if (cRS.getConf().isPTFReduceSink()) {
+        // Limit per partition key not supported yet
         return false;
       }
       ReduceSinkOperator pRS = null;
@@ -248,10 +252,10 @@ public class LimitPushdownOptimizer extends Transform {
     private final float threshold;
 
     public LimitPushdownContext(HiveConf conf) throws SemanticException {
-      threshold = conf.getFloatVar(HiveConf.ConfVars.HIVELIMITPUSHDOWNMEMORYUSAGE);
+      threshold = conf.getFloatVar(HiveConf.ConfVars.HIVE_LIMIT_PUSHDOWN_MEMORY_USAGE);
       if (threshold <= 0 || threshold >= 1) {
         throw new SemanticException("Invalid memory usage value " + threshold +
-            " for " + HiveConf.ConfVars.HIVELIMITPUSHDOWNMEMORYUSAGE);
+            " for " + HiveConf.ConfVars.HIVE_LIMIT_PUSHDOWN_MEMORY_USAGE);
       }
     }
   }

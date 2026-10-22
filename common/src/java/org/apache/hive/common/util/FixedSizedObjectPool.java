@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.common.util;
 
@@ -152,6 +153,13 @@ public class FixedSizedObjectPool<T> implements Pool<T> {
     if (t == null || pool.length == 0) return false; // 0 size means no-pooling case - passthru.
     helper.resetBeforeOffer(t);
     return offerImpl(t);
+  }
+
+  @Override public void clear() {
+    T result = takeImpl();
+    while (result != null) {
+      result = takeImpl();
+    }
   }
 
   private T takeImpl() {
@@ -303,7 +311,7 @@ public class FixedSizedObjectPool<T> implements Pool<T> {
     public synchronized void dumpLog(boolean doSleep) {
       if (doSleep) {
         try {
-          Thread.sleep(100);
+          this.wait(100);
         } catch (InterruptedException e) {
         }
       }

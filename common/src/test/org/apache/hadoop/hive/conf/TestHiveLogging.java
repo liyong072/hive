@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.conf;
 
@@ -23,7 +24,11 @@ import org.apache.hadoop.hive.common.LogUtils;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hive.common.util.HiveTestUtils;
 
-import junit.framework.TestCase;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import org.junit.Test;
 
 /**
  * TestHiveLogging
@@ -31,7 +36,7 @@ import junit.framework.TestCase;
  * Test cases for HiveLogging, which is initialized in HiveConf.
  * Loads configuration files located in common/src/test/resources.
  */
-public class TestHiveLogging extends TestCase {
+public class TestHiveLogging {
   public TestHiveLogging() {
     super();
   }
@@ -74,6 +79,7 @@ public class TestHiveLogging extends TestCase {
     assertTrue(logFile + " should exist", logFile.exists());
   }
 
+  @Test
   public void testHiveLogging() throws Exception {
     // customized log4j config log file to be: /${test.tmp.dir}/TestHiveLogging/hiveLog4jTest.log
     File customLogPath = new File(new File(System.getProperty("test.tmp.dir")),

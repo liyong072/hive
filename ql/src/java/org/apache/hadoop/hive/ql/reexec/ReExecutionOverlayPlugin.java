@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.reexec;
@@ -26,6 +27,7 @@ import org.apache.hadoop.hive.ql.hooks.ExecuteWithHookContext;
 import org.apache.hadoop.hive.ql.hooks.HookContext;
 import org.apache.hadoop.hive.ql.hooks.HookContext.HookType;
 import org.apache.hadoop.hive.ql.plan.mapper.PlanMapper;
+import org.apache.tez.dag.api.TezConfiguration;
 
 /**
  * Re-Executes a query only adding an extra overlay
@@ -55,6 +57,12 @@ public class ReExecutionOverlayPlugin implements IReExecutionPlugin {
     this.driver = driver;
     driver.getHookRunner().addOnFailureHook(new LocalHook());
     HiveConf conf = driver.getConf();
+    // we unset the queue name intentionally in TezSessionState#startSessionAndContainers
+    // as a result reexec create new session in the default queue and create problem
+    String queueName = conf.get(TezConfiguration.TEZ_QUEUE_NAME);
+    if (queueName != null) {
+      conf.set("reexec.overlay.tez.queue.name", queueName);
+    }
     subtree = conf.subtree("reexec.overlay");
   }
 
@@ -72,16 +80,7 @@ public class ReExecutionOverlayPlugin implements IReExecutionPlugin {
   }
 
   @Override
-  public boolean shouldReExecute(int executionNum, PlanMapper pm1, PlanMapper pm2) {
+  public boolean shouldReExecuteAfterCompile(int executionNum, PlanMapper pm1, PlanMapper pm2) {
     return executionNum == 1;
   }
-
-  @Override
-  public void beforeExecute(int executionIndex, boolean explainReOptimization) {
-  }
-
-  @Override
-  public void afterExecute(PlanMapper planMapper, boolean success) {
-  }
-
 }

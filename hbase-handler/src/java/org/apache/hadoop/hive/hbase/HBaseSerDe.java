@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.hbase;
@@ -30,10 +31,8 @@ import org.apache.hadoop.hive.hbase.ColumnMappings.ColumnMapping;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
-import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeSpec;
-import org.apache.hadoop.hive.serde2.SerDeStats;
 import org.apache.hadoop.hive.serde2.lazy.LazySerDeParameters;
 import org.apache.hadoop.hive.serde2.lazy.objectinspector.LazySimpleStructObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -112,30 +111,22 @@ public class HBaseSerDe extends AbstractSerDe {
     return getClass() + "[" + serdeParams + "]";
   }
 
-  public HBaseSerDe() throws SerDeException {
-  }
-
-  /**
-   * Initialize the SerDe given parameters.
-   * @see AbstractSerDe#initialize(Configuration, Properties)
-   */
   @Override
-  public void initialize(Configuration conf, Properties tbl)
+  public void initialize(Configuration configuration, Properties tableProperties, Properties partitionProperties)
       throws SerDeException {
-    serdeParams = new HBaseSerDeParameters(conf, tbl, getClass().getName());
+    super.initialize(configuration, tableProperties, partitionProperties);
 
-    cachedObjectInspector =
-        HBaseLazyObjectFactory.createLazyHBaseStructInspector(serdeParams, tbl);
+    serdeParams = new HBaseSerDeParameters(configuration, tableProperties, getClass().getName());
 
-    cachedHBaseRow = new LazyHBaseRow(
-        (LazySimpleStructObjectInspector) cachedObjectInspector, serdeParams);
+    cachedObjectInspector = HBaseLazyObjectFactory.createLazyHBaseStructInspector(serdeParams, tableProperties);
+
+    cachedHBaseRow = new LazyHBaseRow((LazySimpleStructObjectInspector) cachedObjectInspector, serdeParams);
 
     serializer = new HBaseRowSerializer(serdeParams);
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("HBaseSerDe initialized with : " + serdeParams);
-    }
+    LOG.debug("HBaseSerDe initialized with : {}", serdeParams);
   }
+
 
   public static ColumnMappings parseColumnsMapping(String columnsMappingSpec)
       throws SerDeException {
@@ -154,7 +145,7 @@ public class HBaseSerDe extends AbstractSerDe {
    * @param columnsMappingSpec string hbase.columns.mapping specified when creating table
    * @param doColumnRegexMatching whether to do a regex matching on the columns or not
    * @param hideColumnPrefix whether to hide a prefix of column mapping in key name in a map (works only if @doColumnRegexMatching is true)
-   * @return List<ColumnMapping> which contains the column mapping information by position
+   * @return List&lt;ColumnMapping&gt; which contains the column mapping information by position
    * @throws org.apache.hadoop.hive.serde2.SerDeException
    */
   public static ColumnMappings parseColumnsMapping(
@@ -300,12 +291,6 @@ public class HBaseSerDe extends AbstractSerDe {
     } catch (Exception e) {
       throw new SerDeException(e);
     }
-  }
-
-  @Override
-  public SerDeStats getSerDeStats() {
-    // no support for statistics
-    return null;
   }
 
   public HBaseKeyFactory getKeyFactory() {

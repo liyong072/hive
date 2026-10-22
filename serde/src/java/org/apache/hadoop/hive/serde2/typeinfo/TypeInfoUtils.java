@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.typeinfo;
 
@@ -22,14 +23,18 @@ import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.common.type.HiveVarchar;
 import org.apache.hadoop.hive.serde.serdeConstants;
@@ -292,6 +297,14 @@ public final class TypeInfoUtils {
       return Character.isLetterOrDigit(c) || c == '_' || c == '.' || c == ' ' || c == '$';
     }
 
+    private static Token createToken(String typeInfoString, int start, int end) {
+      Token t = new Token();
+      t.position = start;
+      t.text = typeInfoString.substring(start, end).trim();
+      t.isType = isTypeChar(typeInfoString.charAt(start));
+      return t;
+    }
+
     /**
      * Tokenize the typeInfoString. The rule is simple: all consecutive
      * alphadigits and '_', '.' are in one token, and all other characters are
@@ -329,17 +342,14 @@ public final class TypeInfoUtils {
         if (end == typeInfoString.length()
             || !isTypeChar(typeInfoString.charAt(end - 1))
             || !isTypeChar(typeInfoString.charAt(end))) {
-          Token t = new Token();
-          t.position = begin;
-          t.text = typeInfoString.substring(begin, end);
-          t.isType = isTypeChar(typeInfoString.charAt(begin));
-          tokens.add(t);
+          tokens.add(createToken(typeInfoString, begin, end));
           begin = end;
         }
         end++;
       }
       return tokens;
     }
+
 
     public TypeInfoParser(String typeInfoString) {
       this.typeInfoString = typeInfoString;
@@ -395,6 +405,8 @@ public final class TypeInfoUtils {
             && !serdeConstants.MAP_TYPE_NAME.equals(t.text)
             && !serdeConstants.STRUCT_TYPE_NAME.equals(t.text)
             && !serdeConstants.UNION_TYPE_NAME.equals(t.text)
+            && !serdeConstants.VARIANT_TYPE_NAME.equals(t.text)
+            && !serdeConstants.UNKNOWN_TYPE_NAME.equals(t.text)
             && null == PrimitiveObjectInspectorUtils
             .getTypeEntryFromTypeName(t.text)
             && !t.text.equals(alternative)) {
@@ -438,6 +450,31 @@ public final class TypeInfoUtils {
       }
 
       return params.toArray(new String[params.size()]);
+    }
+
+    private static boolean isStructFieldNameEnd(Token t) {
+      return t == null || t.text.equals(":") || t.text.equals(">") || t.text.equals(",");
+    }
+
+    /**
+     * A struct field name can be split across multiple tokens, e.g. an Iceberg
+     * partition column name like "gpa_!@#$%^&amp;*()" is tokenized as "gpa_", "!",
+     * "@", ... since only letters/digits/'_'/'.'/' '/'$' form a single token.
+     * Consume tokens until the next structural delimiter: ":" ends the name,
+     * while ">" or "," with nothing consumed means there was no name (end of
+     * struct, or a trailing separator before the close).
+     */
+    private String parseStructFieldName() {
+      StringBuilder fieldName = new StringBuilder();
+      for (Token next = peek(); !isStructFieldNameEnd(next); next = peek()) {
+        fieldName.append(next.text);
+        iToken++;
+      }
+      if (fieldName.isEmpty()) {
+        expect(">");
+        return null;
+      }
+      return fieldName.toString();
     }
 
     private TypeInfo parseType() {
@@ -494,6 +531,10 @@ public final class TypeInfoUtils {
           }
           return TypeInfoFactory.getDecimalTypeInfo(precision, scale);
 
+          case TIMESTAMP:
+            return TypeInfoFactory.getTimestampTypeInfo(getTimestampPrecision(params));
+          case TIMESTAMPLOCALTZ:
+            return TypeInfoFactory.getTimestampTZTypeInfo(ZoneId.systemDefault(), getTimestampPrecision(params));
         default:
           return TypeInfoFactory.getPrimitiveTypeInfo(typeEntry.typeName);
         }
@@ -533,11 +574,11 @@ public final class TypeInfoUtils {
               break;
             }
           }
-          Token name = expect("name",">");
-          if (name.text.equals(">")) {
+          String fieldName = parseStructFieldName();
+          if (fieldName == null) {
             break;
           }
-          fieldNames.add(name.text);
+          fieldNames.add(fieldName);
           expect(":");
           fieldTypeInfos.add(parseType());
         } while (true);
@@ -565,8 +606,30 @@ public final class TypeInfoUtils {
         return TypeInfoFactory.getUnionTypeInfo(objectTypeInfos);
       }
 
+      // Is this a variant type?
+      if (serdeConstants.VARIANT_TYPE_NAME.equals(t.text)) {
+        return TypeInfoFactory.getVariantTypeInfo();
+      }
+
+      // Is this an unknown type?
+      if (serdeConstants.UNKNOWN_TYPE_NAME.equals(t.text)) {
+        return TypeInfoFactory.getUnknownTypeInfo();
+      }
+
       throw new RuntimeException("Internal error parsing position "
           + t.position + " of '" + typeInfoString + "'");
+    }
+
+    private static int getTimestampPrecision(String[] params) {
+      int prec = 6;
+      if (params != null) {
+        if (params.length == 1) {
+          prec = Integer.parseInt(params[0]);
+        } else if (params.length > 1) {
+          throw new IllegalArgumentException("Timestamp takes only one parameter, but " + params.length + " is seen");
+        }
+      }
+      return prec;
     }
 
     public PrimitiveParts parsePrimitiveParts() {
@@ -657,6 +720,14 @@ public final class TypeInfoUtils {
             fieldObjectInspectors);
         break;
       }
+      case VARIANT: {
+        result = ObjectInspectorFactory.getVariantObjectInspector();
+        break;
+      }
+      case UNKNOWN: {
+        result = ObjectInspectorFactory.getUnknownObjectInspector();
+        break;
+      }
 
       default: {
         result = null;
@@ -709,9 +780,9 @@ public final class TypeInfoUtils {
         break;
       }
       case STRUCT: {
-        StructTypeInfo strucTypeInfo = (StructTypeInfo) typeInfo;
-        List<String> fieldNames = strucTypeInfo.getAllStructFieldNames();
-        List<TypeInfo> fieldTypeInfos = strucTypeInfo
+        StructTypeInfo structTypeInfo = (StructTypeInfo) typeInfo;
+        List<String> fieldNames = structTypeInfo.getAllStructFieldNames();
+        List<TypeInfo> fieldTypeInfos = structTypeInfo
             .getAllStructFieldTypeInfos();
         List<ObjectInspector> fieldObjectInspectors = new ArrayList<ObjectInspector>(
             fieldTypeInfos.size());
@@ -737,6 +808,14 @@ public final class TypeInfoUtils {
         }
         result = ObjectInspectorFactory.getStandardUnionObjectInspector(
             fieldObjectInspectors);
+        break;
+      }
+      case VARIANT: {
+        result = ObjectInspectorFactory.getVariantObjectInspector();
+        break;
+      }
+      case UNKNOWN: {
+        result = ObjectInspectorFactory.getUnknownObjectInspector();
         break;
       }
      default: {
@@ -811,6 +890,14 @@ public final class TypeInfoUtils {
       result = TypeInfoFactory.getUnionTypeInfo(objectTypeInfos);
       break;
     }
+    case VARIANT: {
+      result = TypeInfoFactory.getVariantTypeInfo();
+      break;
+    }
+    case UNKNOWN: {
+      result = TypeInfoFactory.getUnknownTypeInfo();
+      break;
+    }
     default: {
       throw new RuntimeException("Unknown ObjectInspector category!");
     }
@@ -883,6 +970,33 @@ public final class TypeInfoUtils {
     }
 
     return true;
+  }
+
+  private static final Set<Set<PrimitiveCategory>> LOSSY_TYPE_CONVERSIONS =
+      ImmutableSet.<Set<PrimitiveCategory>>builder()
+          .add(EnumSet.of(PrimitiveCategory.DECIMAL, PrimitiveCategory.CHAR))
+          .add(EnumSet.of(PrimitiveCategory.DECIMAL, PrimitiveCategory.VARCHAR))
+          .add(EnumSet.of(PrimitiveCategory.DECIMAL, PrimitiveCategory.STRING))
+          .add(EnumSet.of(PrimitiveCategory.DOUBLE, PrimitiveCategory.LONG))
+          .add(EnumSet.of(PrimitiveCategory.LONG, PrimitiveCategory.CHAR))
+          .add(EnumSet.of(PrimitiveCategory.LONG, PrimitiveCategory.VARCHAR))
+          .add(EnumSet.of(PrimitiveCategory.LONG, PrimitiveCategory.STRING))
+          .build();
+
+  /**
+   * Returns true if the conversion between the types is lossy (i.e., it can lead to loss of information), and false
+   * otherwise.
+   * TODO Not all cases are covered 
+   * Note that the method does not imply anything about the coercibility of types; use 
+   * {@link #isConversionRequiredForComparison(TypeInfo, TypeInfo)} to determine if a conversion is possible.
+   */
+  public static boolean isConversionLossy(TypeInfo t1, TypeInfo t2) {
+    if (t1 instanceof PrimitiveTypeInfo && t2 instanceof PrimitiveTypeInfo) {
+      PrimitiveTypeInfo pt1 = (PrimitiveTypeInfo) t1;
+      PrimitiveTypeInfo pt2 = (PrimitiveTypeInfo) t2;
+      return LOSSY_TYPE_CONVERSIONS.contains(EnumSet.of(pt1.getPrimitiveCategory(), pt2.getPrimitiveCategory()));
+    }
+    return false;
   }
 
   /**
@@ -961,11 +1075,25 @@ public final class TypeInfoUtils {
   }
 
   /**
+   * Returns whether a NULL literal (void) can be assigned to the target type.
+   * Iceberg unknown columns only accept NULL values.
+   */
+  public static boolean isVoidCompatibleTarget(TypeInfo from, TypeInfo to) {
+    return from.getCategory() == Category.PRIMITIVE
+        && ((PrimitiveTypeInfo) from).getPrimitiveCategory() == PrimitiveCategory.VOID
+        && to.getCategory() == Category.UNKNOWN;
+  }
+
+  /**
    * Returns whether it is possible to implicitly convert an object of Class
    * from to Class to.
    */
   public static boolean implicitConvertible(TypeInfo from, TypeInfo to) {
     if (from.equals(to)) {
+      return true;
+    }
+
+    if (isVoidCompatibleTarget(from, to)) {
       return true;
     }
 
@@ -978,5 +1106,37 @@ public final class TypeInfoUtils {
           ((PrimitiveTypeInfo) to).getPrimitiveCategory());
     }
     return false;
+  }
+
+  public static String convertStringToLiteralForSQL(String value, PrimitiveCategory category) {
+    if (shouldEncloseQuotes(category)) {
+      return "'" + value.replace("'", "\\'") + "'";
+    }
+    return value;
+  }
+
+  private static boolean shouldEncloseQuotes(PrimitiveCategory category) {
+    switch(category) {
+      case STRING:
+      case DATE:
+      case TIMESTAMP:
+      case TIMESTAMPLOCALTZ:
+      case BINARY:
+      case INTERVAL_DAY_TIME:
+      case INTERVAL_YEAR_MONTH:
+        return true;
+      case VOID:
+      case BOOLEAN:
+      case BYTE:
+      case SHORT:
+      case INT:
+      case LONG:
+      case FLOAT:
+      case DOUBLE:
+      case DECIMAL:
+      case UNKNOWN:
+      default:
+        return false;
+    }
   }
 }

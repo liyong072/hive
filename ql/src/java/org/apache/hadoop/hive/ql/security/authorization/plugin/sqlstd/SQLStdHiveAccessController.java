@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd;
 
@@ -31,7 +32,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
-import org.apache.hadoop.hive.metastore.HiveMetaStore;
+import org.apache.hadoop.hive.metastore.HMSHandler;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.GetPrincipalsInRoleRequest;
 import org.apache.hadoop.hive.metastore.api.GetPrincipalsInRoleResponse;
@@ -121,7 +122,7 @@ public class SQLStdHiveAccessController implements HiveAccessController {
       getAllRoleAncestors(name2Rolesmap, roles);
       List<HiveRoleGrant> currentRoles = new ArrayList<HiveRoleGrant>(roles.size());
       for (HiveRoleGrant role : name2Rolesmap.values()) {
-        if (!HiveMetaStore.ADMIN.equalsIgnoreCase(role.getRoleName())) {
+        if (!HMSHandler.ADMIN.equalsIgnoreCase(role.getRoleName())) {
           currentRoles.add(role);
         } else {
           this.adminRole = role;
@@ -429,8 +430,9 @@ public class SQLStdHiveAccessController implements HiveAccessController {
         }
 
         HivePrivilegeObject resPrivObj = new HivePrivilegeObject(
-            getPluginPrivilegeObjType(msObjRef.getObjectType()), msObjRef.getDbName(),
-            msObjRef.getObjectName(), msObjRef.getPartValues(), msObjRef.getColumnName());
+            getPluginPrivilegeObjType(msObjRef.getObjectType()), msObjRef.getCatName(), msObjRef.getDbName(),
+            msObjRef.getObjectName(), msObjRef.getPartValues(),
+            msObjRef.isSetColumnName() ? Arrays.asList(msObjRef.getColumnName()) : null);
 
         // result grantor principal
         HivePrincipal grantorPrincipal = new HivePrincipal(msGrantInfo.getGrantor(),
@@ -541,7 +543,7 @@ public class SQLStdHiveAccessController implements HiveAccessController {
       }
     }
     // set to ADMIN role, if user belongs there.
-    if (HiveMetaStore.ADMIN.equalsIgnoreCase(roleName) && null != this.adminRole) {
+    if (HMSHandler.ADMIN.equalsIgnoreCase(roleName) && null != this.adminRole) {
       currentRoles.clear();
       currentRoles.add(adminRole);
       return;
@@ -565,7 +567,7 @@ public class SQLStdHiveAccessController implements HiveAccessController {
     List<HiveRoleGrant> roles;
     roles = getCurrentRoles();
     for (HiveRoleGrant role : roles) {
-      if (role.getRoleName().equalsIgnoreCase(HiveMetaStore.ADMIN)) {
+      if (role.getRoleName().equalsIgnoreCase(HMSHandler.ADMIN)) {
         return true;
       }
     }
@@ -628,15 +630,15 @@ public class SQLStdHiveAccessController implements HiveAccessController {
     if (sessionCtx.getClientType() == CLIENT_TYPE.HIVESERVER2
         && hiveConf.getBoolVar(ConfVars.HIVE_AUTHORIZATION_ENABLED)) {
 
-      // Configure PREEXECHOOKS with DisallowTransformHook to disallow transform queries
-      String hooks = hiveConf.getVar(ConfVars.PREEXECHOOKS).trim();
+      // Configure PRE_EXEC_HOOKS with DisallowTransformHook to disallow transform queries
+      String hooks = hiveConf.getVar(ConfVars.PRE_EXEC_HOOKS).trim();
       if (hooks.isEmpty()) {
         hooks = DisallowTransformHook.class.getName();
       } else {
         hooks = hooks + "," + DisallowTransformHook.class.getName();
       }
       LOG.debug("Configuring hooks : " + hooks);
-      hiveConf.setVar(ConfVars.PREEXECHOOKS, hooks);
+      hiveConf.setVar(ConfVars.PRE_EXEC_HOOKS, hooks);
 
       SettableConfigUpdater.setHiveConfWhiteList(hiveConf);
 

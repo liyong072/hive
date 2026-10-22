@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 /*
@@ -44,6 +45,7 @@ import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -52,6 +54,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.hadoop.hive.common.cli.ShellCmdExecutor;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -65,6 +69,8 @@ import org.apache.hive.jdbc.HiveStatement;
 import org.apache.hive.jdbc.Utils;
 import org.apache.hive.jdbc.Utils.JdbcConnectionParams;
 import org.apache.hive.jdbc.logs.InPlaceUpdateStream;
+import org.jline.reader.History;
+import org.jline.reader.impl.LineReaderImpl;
 
 public class Commands {
 
@@ -145,7 +151,7 @@ public class Commands {
   public boolean addlocaldrivername(String line) {
     String driverName = arg1(line, "driver class name");
     try {
-      beeLine.setDrivers(Arrays.asList(beeLine.scanDrivers(false)));
+      beeLine.setDrivers(beeLine.scanDrivers());
     } catch (IOException e) {
       beeLine.error("Fail to scan drivers due to the exception:" + e);
       beeLine.error(e);
@@ -169,13 +175,13 @@ public class Commands {
       return false;
     }
 
-    URLClassLoader classLoader = (URLClassLoader) Thread.currentThread().getContextClassLoader();
+    ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
     try {
       beeLine.debug(jarPath + " is added to the local beeline.");
       URLClassLoader newClassLoader = new URLClassLoader(new URL[]{p.toURL()}, classLoader);
 
       Thread.currentThread().setContextClassLoader(newClassLoader);
-      beeLine.setDrivers(Arrays.asList(beeLine.scanDrivers(false)));
+      beeLine.setDrivers(beeLine.scanDrivers());
     } catch (Exception e) {
       beeLine.error("Fail to add local jar due to the exception:" + e);
       beeLine.error(e);
@@ -184,13 +190,9 @@ public class Commands {
   }
 
   public boolean history(String line) {
-    Iterator hist = beeLine.getConsoleReader().getHistory().entries();
-    String[] tmp;
-    while(hist.hasNext()){
-      tmp = hist.next().toString().split(":", 2);
-      tmp[0] = Integer.toString(Integer.parseInt(tmp[0]) + 1);
-      beeLine.output(beeLine.getColorBuffer().pad(tmp[0], 6)
-          .append(":" + tmp[1]));
+    for (History.Entry entry : beeLine.getLineReader().getHistory()) {
+      beeLine.output(beeLine.getColorBuffer().pad(Integer.toString(entry.index() + 1), 6)
+          .append(": " + entry.line()));
     }
     return true;
   }
@@ -209,7 +211,7 @@ public class Commands {
         return def;
       }
       throw new IllegalArgumentException(beeLine.loc("arg-usage",
-          new Object[] {ret.length == 0 ? "" : ret[0],
+          new Object[] {ret == null || ret.length == 0 ? "" : ret[0],
               paramname}));
     }
     return ret[1];
@@ -289,7 +291,7 @@ public class Commands {
       return beeLine.error(beeLine.loc("no-current-connection"));
     }
     try {
-      if (!(beeLine.getConsoleReader().readLine(beeLine.loc("really-drop-all")).equals("y"))) {
+      if (!(beeLine.getLineReader().readLine(beeLine.loc("really-drop-all")).equals("y"))) {
         return beeLine.error("abort-drop-all");
       }
 
@@ -340,47 +342,47 @@ public class Commands {
     return true;
   }
 
-
   public boolean scan(String line) throws IOException {
-    TreeSet<String> names = new TreeSet<String>();
-
     if (beeLine.getDrivers() == null) {
-      beeLine.setDrivers(Arrays.asList(beeLine.scanDrivers(line)));
+      beeLine.setDrivers(beeLine.scanDrivers());
     }
 
-    beeLine.info(beeLine.loc("drivers-found-count", beeLine.getDrivers().size()));
+    // Use a TreeSet to get a unique, sorted list of drivers by class name.
+    Set<Driver> drivers =
+        new TreeSet<>(Comparator.comparing(d -> d.getClass().getName()));
+    drivers.addAll(beeLine.getDrivers());
 
-    // unique the list
-    for (Iterator<Driver> i = beeLine.getDrivers().iterator(); i.hasNext();) {
-      names.add(i.next().getClass().getName());
-    }
+    // Get count of the unique driver in classpath
+    beeLine.info(beeLine.loc("drivers-found-count", drivers.size()));
 
-    beeLine.output(beeLine.getColorBuffer()
-        .bold(beeLine.getColorBuffer().pad(beeLine.loc("compliant"), 10).getMono())
-        .bold(beeLine.getColorBuffer().pad(beeLine.loc("jdbc-version"), 8).getMono())
-        .bold(beeLine.getColorBuffer(beeLine.loc("driver-class")).getMono()));
+    beeLine.output(
+        beeLine
+            .getColorBuffer()
+            .bold(beeLine.getColorBuffer().pad(beeLine.loc("compliant"), 10).getMono())
+            .bold(beeLine.getColorBuffer().pad(beeLine.loc("jdbc-version"), 8).getMono())
+            .bold(beeLine.getColorBuffer(beeLine.loc("driver-class")).getMono()));
 
-    for (Iterator<String> i = names.iterator(); i.hasNext();) {
-      String name = i.next().toString();
+    for (Driver driver : drivers) {
+      String name = driver.getClass().getName();
       try {
-        Driver driver = (Driver) Class.forName(name).newInstance();
-        ColorBuffer msg = beeLine.getColorBuffer()
-            .pad(driver.jdbcCompliant() ? "yes" : "no", 10)
-            .pad(driver.getMajorVersion() + "."
-                + driver.getMinorVersion(), 8)
-            .append(name);
+        // Use the driver instance that ServiceLoader already created for us.
+        ColorBuffer msg =
+            beeLine
+                .getColorBuffer()
+                .pad(driver.jdbcCompliant() ? "yes" : "no", 10)
+                .pad(driver.getMajorVersion() + "." + driver.getMinorVersion(), 8)
+                .append(name);
         if (driver.jdbcCompliant()) {
           beeLine.output(msg);
         } else {
           beeLine.output(beeLine.getColorBuffer().red(msg.getMono()));
         }
       } catch (Throwable t) {
-        beeLine.output(beeLine.getColorBuffer().red(name)); // error with driver
+        beeLine.error("Error processing driver " + name);
       }
     }
     return true;
   }
-
 
   public boolean save(String line) throws IOException {
     beeLine.info(beeLine.loc("saving-options", beeLine.getOpts().getPropertiesFile()));
@@ -1026,8 +1028,10 @@ public class Commands {
               int count = beeLine.print(rs);
               long end = System.currentTimeMillis();
 
-              beeLine.info(
-                  beeLine.loc("rows-selected", count) + " " + beeLine.locElapsedTime(end - start));
+              if (showReport()) {
+                beeLine.output(beeLine.loc("rows-selected", count) + " " + beeLine.locElapsedTime(end - start),
+                    true, beeLine.getErrorStream());
+              }
             } finally {
               if (logThread != null) {
                 logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
@@ -1043,8 +1047,11 @@ public class Commands {
         } else {
           int count = stmnt.getUpdateCount();
           long end = System.currentTimeMillis();
-          beeLine.info(
-              beeLine.loc("rows-affected", count) + " " + beeLine.locElapsedTime(end - start));
+
+          if (showReport()) {
+            beeLine.output(beeLine.loc("rows-affected", count) + " " + beeLine.locElapsedTime(end - start),
+                true, beeLine.getErrorStream());
+          }
         }
       } finally {
         if (logThread != null) {
@@ -1052,7 +1059,9 @@ public class Commands {
             logThread.interrupt();
           }
           logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
-          showRemainingLogsIfAny(stmnt);
+          if (stmnt != null) {
+            showRemainingLogsIfAny(stmnt);
+          }
         }
         if (stmnt != null) {
           stmnt.close();
@@ -1068,14 +1077,20 @@ public class Commands {
     return true;
   }
 
+  private boolean showReport() {
+    if (beeLine.getOpts().isReport() != null) {
+      return beeLine.getOpts().isReport();
+    }
+    return !beeLine.getOpts().isSilent();
+  }
+
   /*
    * Check if the input line is a multi-line command which needs to read further
    */
-  public String handleMultiLineCmd(String line) throws IOException {
-    int[] startQuote = {-1};
-    line = HiveStringUtils.removeComments(line, startQuote);
+  public String handleMultiLineCmd(String line) {
+    line = HiveStringUtils.removeComments(line);
     Character mask = (System.getProperty("jline.terminal", "").equals("jline.UnsupportedTerminal")) ? null
-                       : jline.console.ConsoleReader.NULL_MASK;
+                       : LineReaderImpl.NULL_MASK;
 
     while (isMultiLine(line) && beeLine.getOpts().isAllowMultiLineCommand()) {
       StringBuilder prompt = new StringBuilder(beeLine.getPrompt());
@@ -1086,22 +1101,20 @@ public class Commands {
           }
         }
       }
-      String extra;
+
       //avoid NPE below if for some reason -e argument has multi-line command
-      if (beeLine.getConsoleReader() == null) {
+      if (beeLine.getLineReader() == null) {
         throw new RuntimeException("Console reader not initialized. This could happen when there "
             + "is a multi-line command using -e option and which requires further reading from console");
       }
-      if (beeLine.getOpts().isSilent() && beeLine.getOpts().getScriptFile() != null) {
-        extra = beeLine.getConsoleReader().readLine(null, mask);
-      } else {
-        extra = beeLine.getConsoleReader().readLine(prompt.toString());
-      }
+
+      String extra = (beeLine.getOpts().isSilent() && beeLine.getOpts().getScriptFile() != null) ?
+          beeLine.readLine(null, mask) : beeLine.readLine(prompt.toString(), null);
 
       if (extra == null) { //it happens when using -f and the line of cmds does not end with ;
         break;
       }
-      extra = HiveStringUtils.removeComments(extra, startQuote);
+      extra = HiveStringUtils.removeComments(extra);
       if (extra != null && !extra.isEmpty()) {
         line += "\n" + extra;
       }
@@ -1206,70 +1219,92 @@ public class Commands {
     return true;
   }
 
+  private enum SectionType {
+    SINGLE_QUOTED, DOUBLE_QUOTED, LINE_COMMENT, BLOCK_COMMENT
+  }
+
   /**
    * Helper method to parse input from Beeline and convert it to a {@link List} of commands that
    * can be executed. This method contains logic for handling delimiters that are placed within
    * quotations. It iterates through each character in the line and checks to see if it is the delimiter, ',
    * or "
    */
-  private List<String> getCmdList(String line, boolean entireLineAsCommand) {
-    List<String> cmdList = new ArrayList<String>();
+  List<String> getCmdList(String line, boolean entireLineAsCommand) {
     if (entireLineAsCommand) {
-      cmdList.add(line);
-    } else {
-      StringBuilder command = new StringBuilder();
+      return Stream.of(line).collect(Collectors.toList());
+    }
+    List<String> cmdList = new ArrayList<String>();
+    StringBuilder command = new StringBuilder();
 
-      // Marker to track if there is starting double quote without an ending double quote
-      boolean hasUnterminatedDoubleQuote = false;
+    // Marker to track if there is a special section open
+    SectionType sectionType = null;
 
-      // Marker to track if there is starting single quote without an ending double quote
-      boolean hasUnterminatedSingleQuote = false;
+    // Index of the last seen delimiter in the given line
+    int lastDelimiterIndex = 0;
 
-      // Index of the last seen delimiter in the given line
-      int lastDelimiterIndex = 0;
+    // Marker to track if the previous character was an escape character
+    boolean wasPrevEscape = false;
 
-      // Marker to track if the previous character was an escape character
-      boolean wasPrevEscape = false;
+    int index = 0;
 
-      int index = 0;
-
-      // Iterate through the line and invoke the addCmdPart method whenever the delimiter is seen that is not inside a
-      // quoted string
-      for (; index < line.length();) {
-        if (line.startsWith("\'", index)) {
-          // If a single quote is seen and the index is not inside a double quoted string and the previous character
-          // was not an escape, then update the hasUnterminatedSingleQuote flag
-          if (!hasUnterminatedDoubleQuote && !wasPrevEscape) {
-            hasUnterminatedSingleQuote = !hasUnterminatedSingleQuote;
-          }
-          wasPrevEscape = false;
-          index++;
-        } else if (line.startsWith("\"", index)) {
-          // If a double quote is seen and the index is not inside a single quoted string and the previous character
-          // was not an escape, then update the hasUnterminatedDoubleQuote flag
-          if (!hasUnterminatedSingleQuote && !wasPrevEscape) {
-            hasUnterminatedDoubleQuote = !hasUnterminatedDoubleQuote;
-          }
-          wasPrevEscape = false;
-          index++;
-        } else if (line.startsWith(beeLine.getOpts().getDelimiter(), index)) {
-          // If the delimiter is seen, and the line isn't inside a quoted string, then treat
-          // line[lastDelimiterIndex] to line[index] as a single command
-          if (!hasUnterminatedDoubleQuote && !hasUnterminatedSingleQuote) {
-            addCmdPart(cmdList, command, line.substring(lastDelimiterIndex, index));
-            lastDelimiterIndex = index + beeLine.getOpts().getDelimiter().length();
-          }
-          wasPrevEscape = false;
-          index += beeLine.getOpts().getDelimiter().length();
-        } else {
-          wasPrevEscape = line.startsWith("\\", index) && !wasPrevEscape;
-          index++;
-        }
-      }
-      // If the line doesn't end with the delimiter or if the line is empty, add the cmd part
-      if (lastDelimiterIndex != index || line.length() == 0) {
+    // Iterate through the line and invoke the addCmdPart method whenever the delimiter is seen that is not inside a
+    // quoted string
+    for (; index < line.length();) {
+      if (!wasPrevEscape && sectionType == null && line.startsWith("'", index)) {
+        // Opening non-escaped single quote
+        sectionType = SectionType.SINGLE_QUOTED;
+        index++;
+      } else if (!wasPrevEscape && sectionType == SectionType.SINGLE_QUOTED && line.startsWith("'", index)) {
+        // Closing non-escaped single quote
+        sectionType = null;
+        index++;
+      } else if (!wasPrevEscape && sectionType == null && line.startsWith("\"", index)) {
+        // Opening non-escaped double quote
+        sectionType = SectionType.DOUBLE_QUOTED;
+        index++;
+      } else if (!wasPrevEscape && sectionType == SectionType.DOUBLE_QUOTED && line.startsWith("\"", index)) {
+        // Closing non-escaped double quote
+        sectionType = null;
+        index++;
+      } else if (sectionType == null && line.startsWith("--", index)) {
+        // Opening line comment with (non-escapable?) double-dash
+        sectionType = SectionType.LINE_COMMENT;
+        wasPrevEscape = false;
+        index += 2;
+      } else if (sectionType == SectionType.LINE_COMMENT && line.startsWith("\n", index)) {
+        // Closing line comment with (non-escapable?) newline
+        sectionType = null;
+        wasPrevEscape = false;
+        index++;
+      } else if (sectionType == null && line.startsWith("/*", index)) {
+        // Opening block comment with (non-escapable?) /*
+        sectionType = SectionType.BLOCK_COMMENT;
+        wasPrevEscape = false;
+        index += 2;
+      } else if (sectionType == SectionType.BLOCK_COMMENT && line.startsWith("*/", index)) {
+        // Closing line comment with (non-escapable?) newline
+        sectionType = null;
+        wasPrevEscape = false;
+        index += 2;
+      } else if (line.startsWith("\\", index)) {
+        // Escape character seen (anywhere)
+        wasPrevEscape = !wasPrevEscape;
+        index++;
+      } else if (sectionType == null && line.startsWith(beeLine.getOpts().getDelimiter(), index)) {
+        // If the delimiter is seen, and the line isn't inside a section, then treat
+        // line[lastDelimiterIndex] to line[index] as a single command
         addCmdPart(cmdList, command, line.substring(lastDelimiterIndex, index));
+        index += beeLine.getOpts().getDelimiter().length();
+        lastDelimiterIndex = index;
+        wasPrevEscape = false;
+      } else {
+        wasPrevEscape = false;
+        index++;
       }
+    }
+    // If the line doesn't end with the delimiter or if the line is empty, add the cmd part
+    if (lastDelimiterIndex != index || line.length() == 0) {
+      addCmdPart(cmdList, command, line.substring(lastDelimiterIndex, index));
     }
     return cmdList;
   }
@@ -1622,22 +1657,22 @@ public class Commands {
     }
 
     beeLine.info("Connecting to " + url);
-    if (Utils.parsePropertyFromUrl(url, JdbcConnectionParams.AUTH_PRINCIPAL) == null) {
+    if (Utils.parsePropertyFromUrl(url, JdbcConnectionParams.AUTH_PRINCIPAL) == null
+        && !JdbcConnectionParams.AUTH_SSO_BROWSER_MODE.equals(auth)) {
       String urlForPrompt = url.substring(0, url.contains(";") ? url.indexOf(';') : url.length());
       if (username == null) {
-        username = beeLine.getConsoleReader().readLine("Enter username for " + urlForPrompt + ": ");
+        username = beeLine.readLine("Enter username for " + urlForPrompt + ": ", null);
       }
       props.setProperty(JdbcConnectionParams.AUTH_USER, username);
       if (password == null) {
-        password = beeLine.getConsoleReader().readLine("Enter password for " + urlForPrompt + ": ",
-          new Character('*'));
+        password = beeLine.readLine("Enter password for " + urlForPrompt + ": ", '*');
       }
       props.setProperty(JdbcConnectionParams.AUTH_PASSWD, password);
     }
 
     try {
       beeLine.getDatabaseConnections().setConnection(
-          new DatabaseConnection(beeLine, driver, url, props));
+          new DatabaseConnection(beeLine, url, props));
       beeLine.getDatabaseConnection().getConnection();
 
       if (!beeLine.isBeeLine()) {
@@ -1925,7 +1960,7 @@ public class Commands {
 
       // silly little pager
       if (index % (beeLine.getOpts().getMaxHeight() - 1) == 0) {
-        String ret = beeLine.getConsoleReader().readLine(beeLine.loc("enter-for-more"));
+        String ret = beeLine.getLineReader().readLine(beeLine.loc("enter-for-more"));
         if (ret != null && ret.startsWith("q")) {
           break;
         }

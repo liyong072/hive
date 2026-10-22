@@ -9,18 +9,25 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
@@ -30,9 +37,12 @@ import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.hep.HepPlanner;
 import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.Project;
+import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.tools.RelBuilder;
@@ -44,10 +54,10 @@ import org.apache.hadoop.hive.ql.plan.ColStatistics;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Matchers;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 
 import com.google.common.collect.Lists;
 
@@ -84,9 +94,11 @@ public class TestHiveReduceExpressionsWithStatsRule {
     final RelOptCluster optCluster = RelOptCluster.create(planner, rexBuilder);
     RelDataType rowTypeMock = typeFactory.createStructType(MyRecord.class);
     Mockito.doReturn(rowTypeMock).when(tableMock).getRowType();
-    Mockito.doReturn(tableMock).when(schemaMock).getTableForMember(Matchers.any());
+    LogicalTableScan tableScan = LogicalTableScan.create(optCluster, tableMock, Collections.emptyList());
+    doReturn(tableScan).when(tableMock).toRel(any());
+    Mockito.doReturn(tableMock).when(schemaMock).getTableForMember(any());
     statObj = new ColStatistics("_int", "int");
-    Mockito.doReturn(Lists.newArrayList(statObj)).when(tableMock).getColStat(Matchers.anyListOf(Integer.class), Matchers.eq(false));
+    Mockito.doReturn(Lists.newArrayList(statObj)).when(tableMock).getColStat(anyList(), eq(false));
     Mockito.doReturn(hiveTableMDMock).when(tableMock).getHiveTableMD();
     Mockito.doReturn(tableParams).when(hiveTableMDMock).getParameters();
 
@@ -114,10 +126,9 @@ public class TestHiveReduceExpressionsWithStatsRule {
     statObj.setRange(100, 200);
     planner.setRoot(basePlan);
     RelNode optimizedRelNode = planner.findBestExp();
-    assertEquals("missing literal", SqlKind.LITERAL, optimizedRelNode.getChildExps().get(0).getKind());
-    RexLiteral val = (RexLiteral) optimizedRelNode.getChildExps().get(0);
-    assertEquals(true, val.getValue());
-
+    final String expected = "HiveFilter(condition=[true])\n" +
+      "  LogicalTableScan(table=[[]])\n";
+    assertEquals("missing literal", expected, RelOptUtil.toString(optimizedRelNode));
   }
 
   @Test
@@ -139,10 +150,9 @@ public class TestHiveReduceExpressionsWithStatsRule {
     System.out.println(RelOptUtil.toString(basePlan));
     RelNode optimizedRelNode = planner.findBestExp();
     System.out.println(RelOptUtil.toString(optimizedRelNode));
-    assertEquals("missing literal", SqlKind.LITERAL, optimizedRelNode.getChildExps().get(0).getKind());
-    RexLiteral val = (RexLiteral) optimizedRelNode.getChildExps().get(0);
-    assertEquals(false, val.getValue());
-
+    final String expected = "HiveFilter(condition=[false])\n" +
+      "  LogicalTableScan(table=[[]])\n";
+    assertEquals("missing literal", expected, RelOptUtil.toString(optimizedRelNode));
   }
 
   @Test
@@ -164,7 +174,9 @@ public class TestHiveReduceExpressionsWithStatsRule {
     System.out.println(RelOptUtil.toString(basePlan));
     RelNode optimizedRelNode = planner.findBestExp();
     System.out.println(RelOptUtil.toString(optimizedRelNode));
-    assertNotEquals("should not be a literal", SqlKind.LITERAL, optimizedRelNode.getChildExps().get(0).getKind());
+    final String expected = "HiveFilter(condition=[IS NULL($1)])\n" +
+      "  LogicalTableScan(table=[[]])\n";
+    assertEquals("should not be a literal", expected, RelOptUtil.toString(optimizedRelNode));
   }
 
   @Test
@@ -186,10 +198,9 @@ public class TestHiveReduceExpressionsWithStatsRule {
     System.out.println(RelOptUtil.toString(basePlan));
     RelNode optimizedRelNode = planner.findBestExp();
     System.out.println(RelOptUtil.toString(optimizedRelNode));
-    assertEquals("missing literal", SqlKind.LITERAL, optimizedRelNode.getChildExps().get(0).getKind());
-    RexLiteral val = (RexLiteral) optimizedRelNode.getChildExps().get(0);
-    assertEquals(true, val.getValue());
-
+    final String expected = "HiveFilter(condition=[true])\n" +
+      "  LogicalTableScan(table=[[]])\n";
+    assertEquals("missing literal", expected, RelOptUtil.toString(optimizedRelNode));
   }
 
   @Test
@@ -211,10 +222,9 @@ public class TestHiveReduceExpressionsWithStatsRule {
     System.out.println(RelOptUtil.toString(basePlan));
     RelNode optimizedRelNode = planner.findBestExp();
     System.out.println(RelOptUtil.toString(optimizedRelNode));
-    assertEquals("missing literal", SqlKind.LITERAL, optimizedRelNode.getChildExps().get(0).getKind());
-    RexLiteral val = (RexLiteral) optimizedRelNode.getChildExps().get(0);
-    assertEquals(true, val.getValue());
-
+    final String expected = "HiveFilter(condition=[true])\n" +
+      "  LogicalTableScan(table=[[]])\n";
+    assertEquals("missing literal", expected, RelOptUtil.toString(optimizedRelNode));
   }
 
 }

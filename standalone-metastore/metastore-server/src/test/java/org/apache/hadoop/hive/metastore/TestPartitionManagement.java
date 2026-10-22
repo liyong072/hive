@@ -6,14 +6,15 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore;
 
@@ -36,6 +37,7 @@ import java.util.concurrent.Future;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.common.repl.ReplConst;
 import org.apache.hadoop.hive.metastore.annotation.MetastoreUnitTest;
 import org.apache.hadoop.hive.metastore.api.Catalog;
 import org.apache.hadoop.hive.metastore.api.Database;
@@ -47,10 +49,20 @@ import org.apache.hadoop.hive.metastore.client.builder.DatabaseBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.PartitionBuilder;
 import org.apache.hadoop.hive.metastore.client.builder.TableBuilder;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf.ConfVars;
+import org.apache.hadoop.hive.metastore.leader.HouseKeepingTasks;
+import org.apache.hadoop.hive.metastore.leader.StaticLeaderElection;
 import org.apache.hadoop.hive.metastore.security.HadoopThriftAuthBridge;
-import org.apache.hadoop.hive.metastore.txn.TxnDbUtil;
+import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
+import org.apache.hadoop.hive.metastore.utils.TestTxnDbUtil;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.LoggerConfig;
+import org.apache.logging.log4j.core.test.appender.ListAppender;
 import org.apache.thrift.TException;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -67,11 +79,13 @@ public class TestPartitionManagement {
     conf = MetastoreConf.newMetastoreConf();
     conf.setClass(MetastoreConf.ConfVars.EXPRESSION_PROXY_CLASS.getVarname(),
       MsckPartitionExpressionProxy.class, PartitionExpressionProxy.class);
+    MetastoreConf.setVar(conf, ConfVars.METASTORE_METADATA_TRANSFORMER_CLASS, " ");
     MetaStoreTestUtils.setConfForStandloneMode(conf);
-    conf.setBoolean(MetastoreConf.ConfVars.MULTITHREADED.getVarname(), false);
+    conf.setBoolean(ConfVars.MULTITHREADED.getVarname(), false);
+    conf.setBoolean(ConfVars.HIVE_IN_TEST.getVarname(), true);
     MetaStoreTestUtils.startMetaStoreWithRetry(HadoopThriftAuthBridge.getBridge(), conf);
-    TxnDbUtil.setConfValues(conf);
-    TxnDbUtil.prepDb(conf);
+    TestTxnDbUtil.setConfValues(conf);
+    TestTxnDbUtil.prepDb(conf);
     client = new HiveMetaStoreClient(conf);
   }
 
@@ -231,7 +245,7 @@ public class TestPartitionManagement {
   }
 
   @Test
-  public void testPartitionDiscoveryEnabledBothTableTypes() throws TException, IOException {
+  public void testPartitionDiscoveryEnabledBothTableTypes() throws Exception {
     String dbName = "db2";
     String tableName = "tbl2";
     Map<String, Column> colMap = buildAllColumns();
@@ -297,6 +311,43 @@ public class TestPartitionManagement {
     runPartitionManagementTask(conf);
     partitions = client.listPartitions(dbName, tableName, (short) -1);
     assertEquals(3, partitions.size());
+
+    // only MANAGED table type
+    conf.set(MetastoreConf.ConfVars.PARTITION_MANAGEMENT_TABLE_TYPES.getVarname(), TableType.MANAGED_TABLE.name());
+    table.getParameters().remove("EXTERNAL");
+    table.setTableType(TableType.MANAGED_TABLE.name());
+    client.alter_table(dbName, tableName, table);
+    Assert.assertTrue(fs.mkdirs(newPart1));
+    Assert.assertTrue(fs.mkdirs(newPart2));
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(5, partitions.size());
+    Assert.assertTrue(fs.delete(newPart1, true));
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(4, partitions.size());
+
+    // disable partition management task by default. Currently, there are 4 directories
+    // this test adds two additional paths and verifies that partitions are not added to
+    // metastore when partition management task is disabled.
+    Assert.assertTrue(fs.mkdirs(new Path(tablePath, "state=AZ/dt=2025-07-01")));
+    Assert.assertTrue(fs.mkdirs(new Path(tablePath, "state=NV/dt=2025-07-02")));
+    assertEquals(6, fs.listStatus(tablePath).length);
+    conf.set(MetastoreConf.ConfVars.PARTITION_MANAGEMENT_TASK_FREQUENCY.getVarname(), "0");
+    conf.set(MetastoreConf.ConfVars.TASK_THREADS_REMOTE_ONLY.getVarname(),
+        "org.apache.hadoop.hive.metastore.PartitionManagementTask");
+    HouseKeepingTasks listener = new HouseKeepingTasks(conf, true);
+    StaticLeaderElection election = new StaticLeaderElection();
+    election.setName("TestPartitionManagement");
+    listener.takeLeadership(election);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(4, partitions.size());
+
+    // Re-enable PMT and verify 6 partitions
+    conf.set(MetastoreConf.ConfVars.PARTITION_MANAGEMENT_TASK_FREQUENCY.getVarname(), "1");
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(6, partitions.size());
   }
 
   @Test
@@ -376,6 +427,16 @@ public class TestPartitionManagement {
     runPartitionManagementTask(conf);
     partitions = client.listPartitions(dbName, tableName, (short) -1);
     assertEquals(5, partitions.size());
+
+    fs.mkdirs(new Path(tablePath, "state=MG/dt=2021-28-05"));
+    assertEquals(6, fs.listStatus(tablePath).length);
+    Database db = client.getDatabase(table.getDbName());
+    //PartitionManagementTask would not run for the database which is being failed over.
+    db.putToParameters(ReplConst.REPL_FAILOVER_ENDPOINT, MetaStoreUtils.FailoverEndpoint.SOURCE.toString());
+    client.alterDatabase(dbName, db);
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(5, partitions.size());
   }
 
   @Test
@@ -418,7 +479,7 @@ public class TestPartitionManagement {
   }
 
   @Test
-  public void testPartitionDiscoveryTransactionalTable()
+  public void testPartitionDiscoveryTransactionalTableConcurrent()
     throws TException, IOException, InterruptedException, ExecutionException {
     String dbName = "db6";
     String tableName = "tbl6";
@@ -448,45 +509,70 @@ public class TestPartitionManagement {
       TransactionalValidationListener.INSERTONLY_TRANSACTIONAL_PROPERTY);
     client.alter_table(dbName, tableName, table);
 
-    runPartitionManagementTask(conf);
-    partitions = client.listPartitions(dbName, tableName, (short) -1);
-    assertEquals(5, partitions.size());
+    final String appenderName = "testPartitionDiscoveryTransactionalTableConcurrentAppender";
+    LoggerContext loggerContext = (LoggerContext) LogManager.getContext(false);
+    LoggerConfig rootLoggerConfig = loggerContext.getConfiguration().getLoggerConfig("");
+    ListAppender skipAppender = new ListAppender(appenderName);
+    skipAppender.start();
+    rootLoggerConfig.addAppender(skipAppender, Level.INFO, null);
+    try {
+      runPartitionManagementTask(conf);
+      partitions = client.listPartitions(dbName, tableName, (short) -1);
+      assertEquals(5, partitions.size());
 
-    // only one partition discovery task is running, there will be no skipped attempts
-    assertEquals(0, PartitionManagementTask.getSkippedAttempts());
+      // only one partition discovery task is running, there will be no skipped attempts
+      assertEquals(0, countSkipMessages(skipAppender));
+      assertEquals(1, countDiscoveryEntries(skipAppender));
 
-    // delete a partition from fs, and submit 3 tasks at the same time each of them trying to acquire X lock on the
-    // same table, only one of them will run other attempts will be skipped
-    boolean deleted = fs.delete(newPart1.getParent(), true);
-    assertTrue(deleted);
-    assertEquals(4, fs.listStatus(tablePath).length);
+      // delete a partition from fs, and submit 3 tasks at the same time each of them trying to acquire X lock on the
+      // same table, only one of them will run other attempts will be skipped
+      boolean deleted = fs.delete(newPart1.getParent(), true);
+      assertTrue(deleted);
+      assertEquals(4, fs.listStatus(tablePath).length);
 
-    // 3 tasks are submitted at the same time, only one will eventually lock the table and only one get to run at a time
-    // This is to simulate, skipping partition discovery task attempt when previous attempt is still incomplete
-    PartitionManagementTask partitionDiscoveryTask1 = new PartitionManagementTask();
-    partitionDiscoveryTask1.setConf(conf);
-    PartitionManagementTask partitionDiscoveryTask2 = new PartitionManagementTask();
-    partitionDiscoveryTask2.setConf(conf);
-    PartitionManagementTask partitionDiscoveryTask3 = new PartitionManagementTask();
-    partitionDiscoveryTask3.setConf(conf);
-    List<PartitionManagementTask> tasks = Lists
-      .newArrayList(partitionDiscoveryTask1, partitionDiscoveryTask2, partitionDiscoveryTask3);
-    ExecutorService executorService = Executors.newFixedThreadPool(3);
-    int successBefore = PartitionManagementTask.getCompletedAttempts();
-    int skippedBefore = PartitionManagementTask.getSkippedAttempts();
-    List<Future<?>> futures = new ArrayList<>();
-    for (PartitionManagementTask task : tasks) {
-      futures.add(executorService.submit(task));
+      // 3 tasks are submitted at the same time, only one will eventually lock the table and only one
+      // get to run at a time. This is to simulate, skipping partition discovery task attempt when
+      // previous attempt is still incomplete
+      PartitionManagementTask partitionDiscoveryTask1 = new PartitionManagementTask();
+      partitionDiscoveryTask1.setConf(conf);
+      PartitionManagementTask partitionDiscoveryTask2 = new PartitionManagementTask();
+      partitionDiscoveryTask2.setConf(conf);
+      PartitionManagementTask partitionDiscoveryTask3 = new PartitionManagementTask();
+      partitionDiscoveryTask3.setConf(conf);
+      List<PartitionManagementTask> tasks = Lists
+        .newArrayList(partitionDiscoveryTask1, partitionDiscoveryTask2, partitionDiscoveryTask3);
+      ExecutorService executorService = Executors.newFixedThreadPool(3);
+      List<Future<?>> futures = new ArrayList<>();
+      for (PartitionManagementTask task : tasks) {
+        futures.add(executorService.submit(task));
+      }
+      for (Future<?> future : futures) {
+        future.get();
+      }
+      long skips = countSkipMessages(skipAppender);
+      long discoveries = countDiscoveryEntries(skipAppender);
+      assertEquals(4, skips + discoveries);
+      assertTrue("at least one more task should have entered the work path during the race", discoveries >= 2);
+    } finally {
+      rootLoggerConfig.removeAppender(appenderName);
+      skipAppender.stop();
     }
-    for (Future<?> future : futures) {
-      future.get();
-    }
-    int successAfter = PartitionManagementTask.getCompletedAttempts();
-    int skippedAfter = PartitionManagementTask.getSkippedAttempts();
-    assertEquals(1, successAfter - successBefore);
-    assertEquals(2, skippedAfter - skippedBefore);
     partitions = client.listPartitions(dbName, tableName, (short) -1);
     assertEquals(4, partitions.size());
+  }
+
+  private static long countSkipMessages(ListAppender appender) {
+    return appender.getEvents().stream()
+        .map(e -> e.getMessage().getFormattedMessage())
+        .filter(m -> m.equals("Lock is held by some other partition discovery task. Skipping this attempt."))
+        .count();
+  }
+
+  private static long countDiscoveryEntries(ListAppender appender) {
+    return appender.getEvents().stream()
+        .map(e -> e.getMessage().getFormattedMessage())
+        .filter(m -> m.equals("Found 1 candidate tables for partition discovery"))
+        .count();
   }
 
   @Test
@@ -520,6 +606,18 @@ public class TestPartitionManagement {
     runPartitionManagementTask(conf);
     partitions = client.listPartitions(dbName, tableName, (short) -1);
     assertEquals(5, partitions.size());
+
+    Database db = client.getDatabase(table.getDbName());
+    db.putToParameters(ReplConst.REPL_FAILOVER_ENDPOINT, MetaStoreUtils.FailoverEndpoint.SOURCE.toString());
+    client.alterDatabase(table.getDbName(), db);
+    // PartitionManagementTask would not do anything because the db is being failed over.
+    Thread.sleep(30 * 1000);
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(5, partitions.size());
+
+    db.putToParameters(ReplConst.REPL_FAILOVER_ENDPOINT, "");
+    client.alterDatabase(table.getDbName(), db);
 
     // after 30s all partitions should have been gone
     Thread.sleep(30 * 1000);
@@ -563,6 +661,154 @@ public class TestPartitionManagement {
     assertEquals(4, partitions.size());
   }
 
+  @Test
+  public void testNoPartitionDiscoveryForReplTable() throws Exception {
+    String dbName = "db_repl1";
+    String tableName = "tbl_repl1";
+    Map<String, Column> colMap = buildAllColumns();
+    List<String> partKeys = Lists.newArrayList("state", "dt");
+    List<String> partKeyTypes = Lists.newArrayList("string", "date");
+    List<List<String>> partVals = Lists.newArrayList(
+            Lists.newArrayList("__HIVE_DEFAULT_PARTITION__", "1990-01-01"),
+            Lists.newArrayList("CA", "1986-04-28"),
+            Lists.newArrayList("MN", "2018-11-31"));
+    createMetadata(DEFAULT_CATALOG_NAME, dbName, tableName, partKeys, partKeyTypes, partVals, colMap, false);
+    Table table = client.getTable(dbName, tableName);
+    List<Partition> partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(3, partitions.size());
+    String tableLocation = table.getSd().getLocation();
+    URI location = URI.create(tableLocation);
+    Path tablePath = new Path(location);
+    FileSystem fs = FileSystem.get(location, conf);
+    Path newPart1 = new Path(tablePath, "state=WA/dt=2018-12-01");
+    Path newPart2 = new Path(tablePath, "state=UT/dt=2018-12-02");
+    fs.mkdirs(newPart1);
+    fs.mkdirs(newPart2);
+    assertEquals(5, fs.listStatus(tablePath).length);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(3, partitions.size());
+
+    // table property is set to true, but the table is marked as replication target. The new
+    // partitions should not be created
+    table.getParameters().put(PartitionManagementTask.DISCOVER_PARTITIONS_TBLPROPERTY, "true");
+    Database db = client.getDatabase(table.getDbName());
+    db.putToParameters(ReplConst.TARGET_OF_REPLICATION, "true");
+    client.alterDatabase(table.getDbName(), db);
+    client.alter_table(dbName, tableName, table);
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(3, partitions.size());
+
+    // change table type to external, delete a partition directory and make sure partition discovery works
+    table.getParameters().put("EXTERNAL", "true");
+    table.setTableType(TableType.EXTERNAL_TABLE.name());
+    client.alter_table(dbName, tableName, table);
+    // Delete location of one of the partitions. The partition discovery task should not drop
+    // that partition.
+    boolean deleted = fs.delete((new Path(URI.create(partitions.get(0).getSd().getLocation()))).getParent(),
+                    true);
+    assertTrue(deleted);
+    assertEquals(4, fs.listStatus(tablePath).length);
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(3, partitions.size());
+
+    //Check that partition Discovery works for database with repl.background.enable as true.
+    db = client.getDatabase(table.getDbName());
+    db.putToParameters(ReplConst.REPL_ENABLE_BACKGROUND_THREAD, ReplConst.TRUE);
+    client.alterDatabase(table.getDbName(), db);
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(4, partitions.size());
+  }
+
+  @Test
+  public void testNoPartitionRetentionForReplTarget() throws TException, InterruptedException {
+    String dbName = "db_repl2";
+    String tableName = "tbl_repl2";
+    Map<String, Column> colMap = buildAllColumns();
+    List<String> partKeys = Lists.newArrayList("state", "dt");
+    List<String> partKeyTypes = Lists.newArrayList("string", "date");
+    List<List<String>> partVals = Lists.newArrayList(
+            Lists.newArrayList("__HIVE_DEFAULT_PARTITION__", "1990-01-01"),
+            Lists.newArrayList("CA", "1986-04-28"),
+            Lists.newArrayList("MN", "2018-11-31"));
+    // Check for the existence of partitions 10 seconds after the partition retention period has
+    // elapsed. Gives enough time for the partition retention task to work.
+    long partitionRetentionPeriodMs = 20000;
+    long waitingPeriodForTest = partitionRetentionPeriodMs + 10 * 1000;
+    createMetadata(DEFAULT_CATALOG_NAME, dbName, tableName, partKeys, partKeyTypes, partVals, colMap, false);
+    Table table = client.getTable(dbName, tableName);
+    List<Partition> partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(3, partitions.size());
+
+    table.getParameters().put(PartitionManagementTask.DISCOVER_PARTITIONS_TBLPROPERTY, "true");
+    table.getParameters().put(PartitionManagementTask.PARTITION_RETENTION_PERIOD_TBLPROPERTY,
+            partitionRetentionPeriodMs + "ms");
+    client.alter_table(dbName, tableName, table);
+    Database db = client.getDatabase(table.getDbName());
+    db.putToParameters(ReplConst.TARGET_OF_REPLICATION, "true");
+    client.alterDatabase(table.getDbName(), db);
+
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(3, partitions.size());
+
+    // after 30s all partitions should remain in-tact for a table which is target of replication.
+    Thread.sleep(waitingPeriodForTest);
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(3, partitions.size());
+
+    //Check that partition retention works for database with repl.background.enable as true.
+    db = client.getDatabase(table.getDbName());
+    db.putToParameters(ReplConst.REPL_ENABLE_BACKGROUND_THREAD, ReplConst.TRUE);
+    client.alterDatabase(table.getDbName(), db);
+
+    Thread.sleep(waitingPeriodForTest);
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(0, partitions.size());
+  }
+
+  @Test
+  public void testPartitionExprFilter() throws TException, IOException {
+    String dbName = "db10";
+    String tableName = "tbl10";
+    Map<String, Column> colMap = buildAllColumns();
+    List<String> partKeys = Lists.newArrayList("state", "dt", "modts");
+    List<String> partKeyTypes = Lists.newArrayList("string", "date", "timestamp");
+
+    List<List<String>> partVals = Lists.newArrayList(
+        Lists.newArrayList("__HIVE_DEFAULT_PARTITION__", "1990-01-01", "__HIVE_DEFAULT_PARTITION__"),
+        Lists.newArrayList("CA", "1986-04-28", "2020-02-21 08:30:01"),
+        Lists.newArrayList("MN", "2018-11-31", "2020-02-21 08:19:01"));
+    createMetadata(DEFAULT_CATALOG_NAME, dbName, tableName, partKeys, partKeyTypes, partVals, colMap, false);
+    Table table = client.getTable(dbName, tableName);
+
+    table.getParameters().put(PartitionManagementTask.DISCOVER_PARTITIONS_TBLPROPERTY, "true");
+    table.getParameters().put("EXTERNAL", "true");
+    table.setTableType(TableType.EXTERNAL_TABLE.name());
+    client.alter_table(dbName, tableName, table);
+
+    List<Partition> partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(3, partitions.size());
+
+    String tableLocation = table.getSd().getLocation();
+    URI location = URI.create(tableLocation);
+    Path tablePath = new Path(location);
+    FileSystem fs = FileSystem.get(location, conf);
+    String partPath = partitions.get(1).getSd().getLocation();
+    Path newPart1 = new Path(tablePath, partPath);
+    fs.delete(newPart1);
+
+    conf.set(MetastoreConf.ConfVars.PARTITION_MANAGEMENT_DATABASE_PATTERN.getVarname(), "*db10*");
+    conf.set(ConfVars.PARTITION_MANAGEMENT_TABLE_TYPES.getVarname(), TableType.EXTERNAL_TABLE.name());
+    runPartitionManagementTask(conf);
+    partitions = client.listPartitions(dbName, tableName, (short) -1);
+    assertEquals(2, partitions.size());
+  }
+
   private void runPartitionManagementTask(Configuration conf) {
     PartitionManagementTask task = new PartitionManagementTask();
     task.setConf(conf);
@@ -578,4 +824,6 @@ public class TestPartitionManagement {
       this.colType = colType;
     }
   }
+
+
 }

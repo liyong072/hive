@@ -9,27 +9,36 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
 
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.metastore.api.CompactionType;
+import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
+import org.apache.hadoop.hive.ql.Context;
+import org.apache.hadoop.hive.ql.ddl.DDLUtils;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.optimizer.signature.Signature;
 import org.apache.hadoop.hive.ql.plan.Explain.Level;
 import org.apache.hadoop.hive.ql.plan.Explain.Vectorization;
+
+import static org.apache.hadoop.hive.ql.io.AcidUtils.COMPACTOR_TABLE_PROPERTY;
 
 /**
  * FileSinkDesc.
@@ -60,11 +69,12 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
   // bucketed or sorted table/partition they cannot be merged.
   private boolean canBeMerged;
   private int     totalFiles;
-  private ArrayList<ExprNodeDesc> partitionCols;
+  private List<ExprNodeDesc> partitionCols;
   private int     numFiles;
   private DynamicPartitionCtx dpCtx;
   private String staticSpec; // static partition spec ends with a '/'
   private boolean gatherStats;
+  private String moveTaskId;
 
   // Consider a query like:
   // insert overwrite table T3 select ... from T1 join T2 on T1.key = T2.key;
@@ -93,17 +103,23 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
 
   // Record what type of write this is.  Default is non-ACID (ie old style).
   private AcidUtils.Operation writeType = AcidUtils.Operation.NOT_ACID;
+  private Context.Operation writeOperation = Context.Operation.OTHER;
   private long tableWriteId = 0;  // table write id for this operation
   private int statementId = -1;
+  private int maxStmtId = -1;
 
   private transient Table table;
   private Path destPath;
   private boolean isHiveServerQuery;
-  private Long mmWriteId;
   private boolean isMerge;
+  private boolean copyOnWrite = false;
   private boolean isMmCtas;
 
   private Set<FileStatus> filesToFetch = null;
+
+  // contains the partition values for each dynamic Partition written by this FileSink
+  // and the committed files for each partition
+  private Map<String, List<Path>> dynPartitionValues = new HashMap<>();
 
   /**
    * Whether is a HiveServer query, and the destination table is
@@ -113,7 +129,14 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
 
   private boolean isInsertOverwrite = false;
 
+  private boolean isDirectInsert = false;
+
+  private AcidUtils.Operation acidOperation = null;
+  private boolean deleteOfSplitUpdate;
+
   private boolean isQuery = false;
+
+  private boolean isCTASorCM = false;
 
   public FileSinkDesc() {
   }
@@ -121,14 +144,13 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
   /**
    * @param destPath - the final destination for data
    */
-  public FileSinkDesc(final Path dirName, final TableDesc tableInfo,
-      final boolean compressed, final int destTableId, final boolean multiFileSpray,
-      final boolean canBeMerged, final int numFiles, final int totalFiles,
-      final ArrayList<ExprNodeDesc> partitionCols, final DynamicPartitionCtx dpCtx, Path destPath,
-      Long mmWriteId, boolean isMmCtas, boolean isInsertOverwrite, boolean isQuery) {
-
+  public FileSinkDesc(final Path dirName, final TableDesc tableInfo, final boolean compressed, final int destTableId,
+      final boolean multiFileSpray, final boolean canBeMerged, final int numFiles, final int totalFiles,
+      final List<ExprNodeDesc> partitionCols, final DynamicPartitionCtx dpCtx, Path destPath,
+      boolean isMmCtas, boolean isInsertOverwrite, boolean isQuery, boolean isCTASorCM, boolean isDirectInsert,
+      AcidUtils.Operation acidOperation, boolean deleteOfSplitUpdate) {
     this.dirName = dirName;
-    this.tableInfo = tableInfo;
+    setTableInfo(tableInfo);
     this.compressed = compressed;
     this.destTableId = destTableId;
     this.multiFileSpray = multiFileSpray;
@@ -139,17 +161,20 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
     this.dpCtx = dpCtx;
     this.dpSortState = DPSortState.NONE;
     this.destPath = destPath;
-    this.mmWriteId = mmWriteId;
     this.isMmCtas = isMmCtas;
     this.isInsertOverwrite = isInsertOverwrite;
     this.isQuery = isQuery;
+    this.isCTASorCM = isCTASorCM;
+    this.isDirectInsert = isDirectInsert;
+    this.acidOperation = acidOperation;
+    this.deleteOfSplitUpdate = deleteOfSplitUpdate;
   }
 
   public FileSinkDesc(final Path dirName, final TableDesc tableInfo,
       final boolean compressed) {
 
     this.dirName = dirName;
-    this.tableInfo = tableInfo;
+    setTableInfo(tableInfo);
     this.compressed = compressed;
     destTableId = 0;
     this.multiFileSpray = false;
@@ -162,9 +187,9 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
 
   @Override
   public Object clone() throws CloneNotSupportedException {
-    FileSinkDesc ret = new FileSinkDesc(dirName, tableInfo, compressed,
-        destTableId, multiFileSpray, canBeMerged, numFiles, totalFiles,
-        partitionCols, dpCtx, destPath, mmWriteId, isMmCtas, isInsertOverwrite, isQuery);
+    FileSinkDesc ret = new FileSinkDesc(dirName, tableInfo, compressed, destTableId, multiFileSpray, canBeMerged,
+        numFiles, totalFiles, partitionCols, dpCtx, destPath, isMmCtas, isInsertOverwrite, isQuery,
+        isCTASorCM, isDirectInsert, acidOperation, deleteOfSplitUpdate);
     ret.setCompressCodec(compressCodec);
     ret.setCompressType(compressType);
     ret.setGatherStats(gatherStats);
@@ -175,17 +200,27 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
     ret.setStatsReliable(statsReliable);
     ret.setDpSortState(dpSortState);
     ret.setWriteType(writeType);
+    ret.setWriteOperation(writeOperation);
+    ret.setCopyOnWrite(copyOnWrite);
     ret.setTableWriteId(tableWriteId);
     ret.setStatementId(statementId);
     ret.setStatsTmpDir(statsTmpDir);
     ret.setIsMerge(isMerge);
     ret.setFilesToFetch(filesToFetch);
     ret.setIsQuery(isQuery);
+    ret.setIsCTASorCM(isCTASorCM);
+    ret.setIsDirectInsert(isDirectInsert);
+    ret.setAcidOperation(acidOperation);
+    ret.setMoveTaskId(moveTaskId);
     return ret;
   }
 
   public void setFilesToFetch(Set<FileStatus> filesToFetch) {
     this.filesToFetch = filesToFetch;
+  }
+
+  public void setIsCTASorCM(boolean isCTASorCM) {
+    this.isCTASorCM = isCTASorCM;
   }
 
   public void setIsQuery(boolean isQuery) {
@@ -214,6 +249,26 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
 
   public void setIsUsingBatchingSerDe(boolean isUsingBatchingSerDe) {
     this.isUsingBatchingSerDe = isUsingBatchingSerDe;
+  }
+
+  public void setIsDirectInsert(boolean isDirectInsert) {
+    this.isDirectInsert = isDirectInsert;
+  }
+
+  public boolean isDirectInsert() {
+    return this.isDirectInsert;
+  }
+
+  public void setAcidOperation(AcidUtils.Operation acidOperation) {
+    this.acidOperation = acidOperation;
+  }
+
+  public AcidUtils.Operation getAcidOperation() {
+   return acidOperation;
+  }
+
+  public boolean isDeleteOfSplitUpdate() {
+    return deleteOfSplitUpdate;
   }
 
   @Explain(displayName = "directory", explainLevels = { Level.EXTENDED })
@@ -251,6 +306,7 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
 
   public void setTableInfo(final TableDesc tableInfo) {
     this.tableInfo = tableInfo;
+    bucketingVersion = tableInfo.getBucketingVersion();
   }
 
   @Explain(displayName = "compressed")
@@ -318,6 +374,14 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
     this.temporary = temporary;
   }
 
+  public boolean isIcebergTable() {
+    if (getTable() != null) {
+      return DDLUtils.isIcebergTable(table);
+    } else { 
+      return MetaStoreUtils.isIcebergTable(getTableInfo().getProperties());
+    }
+  }
+
   public boolean isMmTable() {
     if (getTable() != null) {
       return AcidUtils.isInsertOnlyTable(table.getParameters());
@@ -325,6 +389,7 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
       return AcidUtils.isInsertOnlyTable(getTableInfo().getProperties());
     }
   }
+
   public boolean isFullAcidTable() {
     if(getTable() != null) {
       return AcidUtils.isFullAcidTable(table);
@@ -332,6 +397,25 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
       return AcidUtils.isTablePropertyTransactional(getTableInfo().getProperties()) &&
           !AcidUtils.isInsertOnlyTable(getTableInfo().getProperties());
     }
+  }
+
+  /**
+   * @return true, if the table is used during compaction
+   */
+  public boolean isCompactionTable() {
+    return getTable() != null ? AcidUtils.isCompactionTable(table.getParameters())
+        : AcidUtils.isCompactionTable(getTableInfo().getProperties());
+  }
+
+  /**
+   * @return true if the compaction type is 'REBALANCE', false otherwise.
+   */
+  public boolean isRebalanceRequested() {
+    String compactionType = getTable() != null
+        ? table.getParameters().get(COMPACTOR_TABLE_PROPERTY)
+        : getTableInfo().getProperties().getProperty(COMPACTOR_TABLE_PROPERTY);
+    return StringUtils.isNotBlank(compactionType) &&
+        CompactionType.valueOf(compactionType).equals(CompactionType.REBALANCE);
   }
 
   public boolean isMaterialization() {
@@ -371,14 +455,14 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
   /**
    * @return the partitionCols
    */
-  public ArrayList<ExprNodeDesc> getPartitionCols() {
+  public List<ExprNodeDesc> getPartitionCols() {
     return partitionCols;
   }
 
   /**
    * @param partitionCols the partitionCols to set
    */
-  public void setPartitionCols(ArrayList<ExprNodeDesc> partitionCols) {
+  public void setPartitionCols(List<ExprNodeDesc> partitionCols) {
     this.partitionCols = partitionCols;
   }
 
@@ -442,7 +526,7 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
    */
   @Override
   @Explain(displayName = "Stats Publishing Key Prefix", explainLevels = { Level.EXTENDED })
-  // FIXME: including this in the signature will almost certenly differ even if the operator is doing the same
+  // FIXME: including this in the signature will almost certainly differ even if the operator is doing the same
   // there might be conflicting usages of logicalCompare?
   @Signature
   public String getStatsAggPrefix() {
@@ -533,6 +617,15 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
   public AcidUtils.Operation getWriteType() {
     return writeType;
   }
+
+  public void setWriteOperation(Context.Operation writeOperation) {
+    this.writeOperation = writeOperation;
+  }
+
+  public Context.Operation getWriteOperation() {
+    return writeOperation;
+  }
+
   @Explain(displayName = "Write Type")
   public String getWriteTypeString() {
     return getWriteType() == AcidUtils.Operation.NOT_ACID ? null : getWriteType().toString();
@@ -553,6 +646,15 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
   public int getStatementId() {
     return statementId;
   }
+
+  public void setMaxStmtId(int maxStmtId) {
+    this.maxStmtId = maxStmtId;
+  }
+
+  public int getMaxStmtId() {
+    return maxStmtId;
+  }
+
   public Path getDestPath() {
     return destPath;
   }
@@ -575,10 +677,6 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
     this.statsTmpDir = statsCollectionTempDir;
   }
 
-  public void setMmWriteId(Long mmWriteId) {
-    this.mmWriteId = mmWriteId;
-  }
-
   public void setIsMerge(boolean b) {
     this.isMerge = b;
   }
@@ -589,6 +687,27 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
 
   public boolean isMmCtas() {
     return isMmCtas;
+  }
+
+  public void setCopyOnWrite(boolean copyOnWrite) {
+    this.copyOnWrite = copyOnWrite;
+  }
+
+  public boolean isCopyOnWrite() {
+    return copyOnWrite;
+  }
+
+  @Explain(displayName = "bucketingVersion", explainLevels = { Level.EXTENDED })
+  public int getBucketingVersionForExplain() {
+    return getBucketingVersion();
+  }
+  /**
+   * Whether this is CREATE TABLE SELECT or CREATE MATERIALIZED VIEW statement
+   * Set by semantic analyzer this is required because CTAS/CM requires some special logic
+   * in mvFileToFinalPath
+   */
+  public boolean isCTASorCM() {
+    return isCTASorCM;
   }
 
   public class FileSinkOperatorExplainVectorization extends OperatorExplainVectorization {
@@ -632,6 +751,22 @@ public class FileSinkDesc extends AbstractOperatorDesc implements IStatsGatherDe
           Objects.equals(getStatsAggPrefix(), otherDesc.getStatsAggPrefix());
     }
     return false;
+  }
+
+  public String getMoveTaskId() {
+    return moveTaskId;
+  }
+
+  public void setMoveTaskId(String moveTaskId) {
+    this.moveTaskId = moveTaskId;
+  }
+
+  public Map<String, List<Path>> getDynPartitionValues() {
+    return dynPartitionValues;
+  }
+
+  public void setDynPartitionValues(Map<String, List<Path>> dynPartitionValues) {
+    this.dynPartitionValues = dynPartitionValues;
   }
 
 }

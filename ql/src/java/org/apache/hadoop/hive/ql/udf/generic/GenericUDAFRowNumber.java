@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
@@ -37,15 +38,13 @@ import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectIn
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.io.IntWritable;
 
+@Description(
+        name = "row_number",
+        value = "_FUNC_() - The ROW_NUMBER function assigns a unique number (sequentially, starting "
+                + "from 1, as defined by ORDER BY) to each row within the partition.")
 @WindowFunctionDescription(
-  description = @Description(
-    name = "row_number",
-    value = "_FUNC_() - The ROW_NUMBER function assigns a unique number (sequentially, starting "
-            + "from 1, as defined by ORDER BY) to each row within the partition."
-  ),
-  supportsWindow = false,
-  pivotResult = true
-)
+        supportsWindow = false,
+        pivotResult = true)
 public class GenericUDAFRowNumber extends AbstractGenericUDAFResolver {
 
   static final Logger LOG = LoggerFactory.getLogger(GenericUDAFRowNumber.class.getName());

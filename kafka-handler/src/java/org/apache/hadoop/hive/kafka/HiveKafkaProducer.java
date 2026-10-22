@@ -9,16 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.kafka;
 
 import com.google.common.base.Preconditions;
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -32,6 +34,7 @@ import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.Uuid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,11 +42,11 @@ import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Kafka Producer with public methods to extract the producer state then resuming transaction in another process.
@@ -64,6 +67,11 @@ class HiveKafkaProducer<K, V> implements Producer<K, V> {
   HiveKafkaProducer(Properties properties) {
     transactionalId = properties.getProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG);
     kafkaProducer = new KafkaProducer<>(properties);
+  }
+
+  @Override
+  public Uuid clientInstanceId(Duration timeout) {
+    throw new UnsupportedOperationException();
   }
 
   @Override public void initTransactions() {
@@ -87,6 +95,11 @@ class HiveKafkaProducer<K, V> implements Producer<K, V> {
     kafkaProducer.sendOffsetsToTransaction(offsets, consumerGroupId);
   }
 
+  @Override public void sendOffsetsToTransaction(Map<TopicPartition, OffsetAndMetadata> offsets, ConsumerGroupMetadata groupMetadata)
+      throws ProducerFencedException {
+    kafkaProducer.sendOffsetsToTransaction(offsets, groupMetadata);
+  }
+
   @Override public Future<RecordMetadata> send(ProducerRecord<K, V> record) {
     return kafkaProducer.send(record);
   }
@@ -107,8 +120,8 @@ class HiveKafkaProducer<K, V> implements Producer<K, V> {
     kafkaProducer.close();
   }
 
-  @Override public void close(long timeout, TimeUnit unit) {
-    kafkaProducer.close(timeout, unit);
+  @Override public void close(Duration duration) {
+    kafkaProducer.close(duration);
   }
 
   @Override public void flush() {
@@ -132,15 +145,11 @@ class HiveKafkaProducer<K, V> implements Producer<K, V> {
 
     Object transactionManager = getValue(kafkaProducer, "transactionManager");
 
-    Object nextSequence = getValue(transactionManager, "nextSequence");
-    Object lastAckedSequence = getValue(transactionManager, "lastAckedSequence");
-
+    Object txnPartitionMap = getValue(transactionManager, "txnPartitionMap");
     invoke(transactionManager,
         "transitionTo",
         getEnum("org.apache.kafka.clients.producer.internals.TransactionManager$State.INITIALIZING"));
-    invoke(nextSequence, "clear");
-    invoke(lastAckedSequence, "clear");
-
+    invoke(txnPartitionMap, "reset");
     Object producerIdAndEpoch = getValue(transactionManager, "producerIdAndEpoch");
     setValue(producerIdAndEpoch, "producerId", producerId);
     setValue(producerIdAndEpoch, "epoch", epoch);
@@ -187,14 +196,35 @@ class HiveKafkaProducer<K, V> implements Producer<K, V> {
 
   private synchronized TransactionalRequestResult enqueueNewPartitions() {
     Object transactionManager = getValue(kafkaProducer, "transactionManager");
-    Object txnRequestHandler = invoke(transactionManager, "addPartitionsToTransactionHandler");
-    invoke(transactionManager,
-        "enqueueRequest",
-        new Class[] {txnRequestHandler.getClass().getSuperclass()},
-        new Object[] {txnRequestHandler});
-    return (TransactionalRequestResult) getValue(txnRequestHandler,
-        txnRequestHandler.getClass().getSuperclass(),
-        "result");
+    synchronized (transactionManager) {
+      Object newPartitionsInTransaction =
+              getValue(transactionManager, "newPartitionsInTransaction");
+      Object newPartitionsInTransactionIsEmpty =
+              invoke(newPartitionsInTransaction, "isEmpty");
+      TransactionalRequestResult result;
+      if (newPartitionsInTransactionIsEmpty instanceof Boolean
+              && !((Boolean) newPartitionsInTransactionIsEmpty)) {
+        Object txnRequestHandler =
+                invoke(transactionManager, "addPartitionsToTransactionHandler");
+        invoke(
+                transactionManager,
+                "enqueueRequest",
+                new Class[]{txnRequestHandler.getClass().getSuperclass()},
+                new Object[]{txnRequestHandler});
+
+        result = (TransactionalRequestResult)
+                getValue(
+                        txnRequestHandler,
+                        txnRequestHandler.getClass().getSuperclass(),
+                        "result");
+      } else {
+        // we don't have an operation but this operation string is also used in
+        // addPartitionsToTransactionHandler.
+        result = new TransactionalRequestResult("AddPartitionsToTxn");
+        result.done();
+      }
+      return result;
+    }
   }
 
   @SuppressWarnings("unchecked") private static Enum<?> getEnum(String enumFullName) {

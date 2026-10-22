@@ -69,6 +69,18 @@
         <!-- allows null is true to keep backwards compatibility with old releases -->
         <column name="CREATE_TIME" jdbc-type="integer" allows-null="true"/>
       </field>
+      <field name="managedLocationUri">
+        <column name="DB_MANAGED_LOCATION_URI" length="4000" jdbc-type="VARCHAR" allows-null="true"/>
+      </field>
+      <field name="type">
+        <column name="TYPE" length="128" jdbc-type="VARCHAR" allows-null="true"/>
+      </field>
+      <field name="connectorName">
+        <column name="DATACONNECTOR_NAME" length="128" jdbc-type="VARCHAR" allows-null="true"/>
+      </field>
+      <field name="remoteDatabaseName">
+        <column name="REMOTE_DBNAME" length="128" jdbc-type="VARCHAR" allows-null="true"/>
+      </field>
     </class>
 
     <class name="MCatalog" identity-type="datastore" table="CTLGS" detachable="true">
@@ -89,6 +101,18 @@
         <!-- allows null is true to keep backwards compatibility with old releases -->
         <column name="CREATE_TIME" jdbc-type="integer" allows-null="true"/>
       </field>
+      <field name="parameters" table="CATALOG_PARAMS">
+        <map key-type="java.lang.String" value-type="java.lang.String"/>
+         <join>
+           <column name="CTLG_ID"/>
+         </join>
+         <key>
+           <column name="PARAM_KEY" length="180" jdbc-type="VARCHAR"/>
+         </key>
+         <value>
+          <column name="PARAM_VALUE" length="4000" jdbc-type="VARCHAR"/>
+         </value>
+      </field>
     </class>
 
     <class name="MFieldSchema" embedded-only="true" table="TYPE_FIELDS" detachable="true">
@@ -100,6 +124,22 @@
       </field>
       <field name="comment" >
         <column name="FCOMMENT" length="4000" jdbc-type="VARCHAR" allows-null="true"/>
+      </field>
+    </class>
+
+    <class name="MColumn" identity-type="application" table="COLUMNS_V2" detachable="true" objectid-class="MColumn$PK">
+      <foreign-key name="CD_ID" delete-action="cascade"/>
+      <field name="cd" primary-key="true">
+        <column name="CD_ID"/>
+      </field>
+      <field name="name" primary-key="true">
+        <column name="COLUMN_NAME" length="767" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+      <field name="type">
+        <column name="TYPE_NAME" length="32672" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+      <field name="comment">
+        <column name="COMMENT" length="256" jdbc-type="VARCHAR" allows-null="true"/>
       </field>
     </class>
 
@@ -139,7 +179,7 @@
       </field>
     </class>
 
-    <class name="MTable" table="TBLS" identity-type="application" detachable="true">
+    <class name="MTable" table="TBLS" identity-type="application" detachable="true" objectid-class="MTable$PK">
       <field name="id" primary-key="true" value-strategy="native">
         <column name="TBL_ID" jdbc-type="BIGINT" />
       </field>
@@ -228,10 +268,10 @@
       </fetch-group>
     </class>
 
-    <class name="MCreationMetadata" identity-type="datastore" table="MV_CREATION_METADATA" detachable="true">
-      <datastore-identity>
+    <class name="MCreationMetadata" identity-type="application" table="MV_CREATION_METADATA" detachable="true" objectid-class="MCreationMetadata$PK">
+      <field name="id" primary-key="true" value-strategy="native">
         <column name="MV_CREATION_METADATA_ID"/>
-      </datastore-identity>
+      </field>
       <field name="catalogName">
         <column name="CAT_NAME" length="256" jdbc-type="VARCHAR"/>
       </field>
@@ -241,15 +281,30 @@
       <field name="tblName">
         <column name="TBL_NAME" length="256" jdbc-type="VARCHAR"/>
       </field>
-      <field name="tables" table="MV_TABLES_USED">
-        <collection element-type="MTable"/>
-        <join>
-          <column name="MV_CREATION_METADATA_ID"/>
-        </join>
-        <element column="TBL_ID"/>
+      <field name="tables" mapped-by="creationMetadata" dependent-element="true">
+        <collection element-type="MMVSource" dependent-element="true" />
+        <foreign-key name="MV_TABLES_USED_FK1" delete-action="cascade"/>
       </field>
       <field name="txnList">
-        <column name="TXN_LIST" jdbc-type="CLOB" allows-null="true"/>
+        <column name="TXN_LIST" length="32672" jdbc-type="VARCHAR" allows-null="true"/>
+      </field>
+    </class>
+
+    <class name="MMVSource" identity-type="application" table="MV_TABLES_USED" detachable="true" objectid-class="MMVSource$PK">
+      <field name="table" primary-key="true">
+        <column name="TBL_ID"/>
+      </field>
+      <field name="creationMetadata" primary-key="true">
+        <column name="MV_CREATION_METADATA_ID"/>
+      </field>
+      <field name="insertedCount">
+        <column name="INSERTED_COUNT"/>
+      </field>
+      <field name="updatedCount">
+        <column name="UPDATED_COUNT"/>
+      </field>
+      <field name="deletedCount">
+        <column name="DELETED_COUNT"/>
       </field>
     </class>
 
@@ -273,9 +328,9 @@
         <column name="PARENT_CD_ID"/>
       </field>
       <field name="parentIntegerIndex">
-    <column name="PARENT_INTEGER_IDX"/>
+        <column name="PARENT_INTEGER_IDX"/>
       </field>
-      <field name="parentTable">
+      <field name="parentTable" primary-key="true">
         <column name="PARENT_TBL_ID"/>
       </field>
       <field name="constraintType">
@@ -337,32 +392,15 @@
       </field>
     </class>
 
-    <class name="MColumnDescriptor" identity-type="datastore" table="CDS" detachable="true">
-      <datastore-identity>
-        <column name="CD_ID"/>
-      </datastore-identity>
-      <field name="cols" table="COLUMNS_V2" >
-        <collection element-type="MFieldSchema"/>
-        <join>
-          <primary-key name="COLUMNS_PK">
-            <column name="COLUMN_NAME"/>
-          </primary-key>
-          <column name="CD_ID"/>
-        </join>
-        <element>
-          <embedded>
-            <field name="name">
-              <column name="COLUMN_NAME" length="767" jdbc-type="VARCHAR"/>
-              </field>
-            <field name="type">
-              <column name="TYPE_NAME" length="32672" jdbc-type="VARCHAR" allows-null="false"/>
-            </field>
-            <field name="comment">
-              <column name="COMMENT" length="256" jdbc-type="VARCHAR" allows-null="true"/>
-            </field>
-          </embedded>
-        </element>
+    <class name="MColumnDescriptor" identity-type="application" table="CDS" detachable="true">
+      <field name="id" primary-key="true" value-strategy="native">
+        <column name="CD_ID" jdbc-type="BIGINT" />
       </field>
+      <field name="fields" mapped-by="cd">
+        <order column="INTEGER_IDX"/>
+        <collection element-type="MColumn" dependent-element="true" />
+      </field>
+      <field name="columns" persistence-modifier="none" />
     </class>
 
    <class name="MStringList" identity-type="datastore" table="Skewed_STRING_LIST" detachable="true">
@@ -379,6 +417,8 @@
    </class>
 
     <class name="MStorageDescriptor" identity-type="datastore" table="SDS" detachable="true">
+      <foreign-key name="SDS_FK1" delete-action="cascade"/>
+      <foreign-key name="SDS_FK2" delete-action="cascade"/>
       <datastore-identity>
         <column name="SD_ID"/>
       </datastore-identity>
@@ -407,6 +447,7 @@
         <column name="SERDE_ID"/>
       </field>
       <field name="bucketCols" table="BUCKETING_COLS">
+        <foreign-key name="BUCKETING_COLS_FK1" delete-action="cascade"/>
         <collection element-type="java.lang.String"/>
         <join>
           <column name="SD_ID"/>
@@ -414,6 +455,7 @@
         <element column="BUCKET_COL_NAME"/>
       </field>
       <field name="sortCols" table="SORT_COLS">
+        <foreign-key name="SORT_COLS_FK1" delete-action="cascade"/>
         <collection element-type="MOrder"/>
         <join>
           <column name="SD_ID"/>
@@ -430,6 +472,7 @@
         </element>
       </field>
       <field name="parameters" table="SD_PARAMS">
+        <foreign-key name="SD_PARAMS_FK1" delete-action="cascade"/>
         <map key-type="java.lang.String" value-type="java.lang.String"/>
         <join>
           <column name="SD_ID"/>
@@ -463,14 +506,15 @@
       </field>
     </class>
 
-    <class name="MPartition" table="PARTITIONS" identity-type="datastore" detachable="true">
+    <class name="MPartition" table="PARTITIONS" identity-type="application" detachable="true">
+      <foreign-key name="PARTITIONS_FK1" delete-action="cascade"/>
       <index name="UniquePartition" unique="true">
         <column name="PART_NAME"/>
         <column name="TBL_ID"/>
       </index>
-      <datastore-identity>
-        <column name="PART_ID"/>
-      </datastore-identity>
+      <field name="id" primary-key="true" value-strategy="native">
+         <column name="PART_ID" jdbc-type="BIGINT" />
+      </field>
       <field name="partitionName">
         <column name="PART_NAME" length="767" jdbc-type="VARCHAR"/>
       </field>
@@ -484,6 +528,7 @@
         <column name="LAST_ACCESS_TIME" jdbc-type="integer"/>
       </field>
       <field name="values" table="PARTITION_KEY_VALS">
+        <foreign-key name="PARTITION_KEY_VALS_FK1" delete-action="cascade"/>
         <collection element-type="java.lang.String"/>
         <join>
           <column name="PART_ID"/>
@@ -495,6 +540,7 @@
       </field>
       <field name="parameters" table="PARTITION_PARAMS">
         <map key-type="java.lang.String" value-type="java.lang.String"/>
+        <foreign-key name="PARTITION_PARAMS_FK1" delete-action="cascade"/>
         <join>
           <column name="PART_ID"/>
         </join>
@@ -502,7 +548,7 @@
            <column name="PARAM_KEY" length="256" jdbc-type="VARCHAR"/>
         </key>
         <value>
-           <column name="PARAM_VALUE" jdbc-type="CLOB"/>
+           <column name="PARAM_VALUE" length="32672" jdbc-type="VARCHAR"/>
         </value>
       </field>
       <field name="writeId">
@@ -510,53 +556,6 @@
       </field>
     </class>
     
-    <class name="MIndex" table="IDXS" identity-type="datastore" detachable="true">
-      <index name="UniqueINDEX" unique="true">
-        <column name="INDEX_NAME"/>
-        <column name="ORIG_TBL_ID"/>
-      </index>
-      
-      <datastore-identity>
-        <column name="INDEX_ID"/>
-      </datastore-identity>
-      <field name="indexName">
-        <column name="INDEX_NAME" length="128" jdbc-type="VARCHAR"/>
-      </field>
-      <field name="origTable">
-        <column name="ORIG_TBL_ID"/>
-      </field>
-      <field name="indexTable">
-        <column name="INDEX_TBL_ID"/>
-      </field>
-      <field name="indexHandlerClass">
-        <column name="INDEX_HANDLER_CLASS" length="4000" jdbc-type="VARCHAR"/>
-      </field>
-      <field name="deferredRebuild">
-        <column name="DEFERRED_REBUILD"/>
-      </field>
-      <field name="createTime">
-        <column name="CREATE_TIME" jdbc-type="integer"/>
-      </field>
-      <field name="lastAccessTime">
-        <column name="LAST_ACCESS_TIME" jdbc-type="integer"/>
-      </field>
-      <field name="sd" dependent="true">
-        <column name="SD_ID"/>
-      </field>
-      <field name="parameters" table="INDEX_PARAMS">
-        <map key-type="java.lang.String" value-type="java.lang.String"/>
-        <join>
-          <column name="INDEX_ID"/>
-        </join>
-        <key>
-           <column name="PARAM_KEY" length="256" jdbc-type="VARCHAR"/>
-        </key>
-        <value>
-           <column name="PARAM_VALUE" jdbc-type="CLOB"/>
-        </value>
-      </field>
-    </class>
-
     <class name="MRole" table="ROLES" identity-type="datastore" detachable="true">
 
       <index name="RoleEntityINDEX" unique="true">
@@ -747,6 +746,7 @@
 
     <class name="MPartitionPrivilege" table="PART_PRIVS" identity-type="datastore" detachable="true">
     
+      <foreign-key name="PART_PRIVS_FK1" delete-action="cascade"/>
       <index name="PartPrivilegeIndex" unique="false">
         <column name="AUTHORIZER"/>
         <column name="PART_ID"/>
@@ -840,6 +840,7 @@
     </class>
 
     <class name="MPartitionColumnPrivilege" table="PART_COL_PRIVS" identity-type="datastore" detachable="true">
+     <foreign-key name="PART_COL_PRIVS_FK1" delete-action="cascade"/>
     
      <index name="PartitionColumnPrivilegeIndex" unique="false">
         <column name="AUTHORIZER"/>
@@ -943,142 +944,88 @@
             
     </class>    
 
+    <class name="MColumnStatistics">
+      <inheritance strategy="subclass-table"/>
+
+      <field name="colName">
+        <column name="COLUMN_NAME" length="767" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+      <field name="colType">
+        <column name="COLUMN_TYPE" length="128" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+      <field name="longLowValue">
+        <column name="LONG_LOW_VALUE"  jdbc-type="BIGINT" allows-null="true"/>
+      </field>
+      <field name="longHighValue">
+        <column name="LONG_HIGH_VALUE" jdbc-type="BIGINT" allows-null="true"/>
+      </field>
+       <field name="doubleLowValue">
+        <column name="DOUBLE_LOW_VALUE"  jdbc-type="DOUBLE" allows-null="true"/>
+      </field>
+      <field name="doubleHighValue">
+        <column name="DOUBLE_HIGH_VALUE" jdbc-type="DOUBLE" allows-null="true"/>
+      </field>
+      <field name="decimalLowValue">
+        <column name="BIG_DECIMAL_LOW_VALUE"  jdbc-type="VARCHAR" allows-null="true"/>
+      </field>
+      <field name="decimalHighValue">
+        <column name="BIG_DECIMAL_HIGH_VALUE" jdbc-type="VARCHAR" allows-null="true"/>
+      </field>
+      <field name="numNulls">
+        <column name="NUM_NULLS" jdbc-type="BIGINT" allows-null="false"/>
+      </field>
+      <field name="numDVs">
+        <column name="NUM_DISTINCTS" jdbc-type="BIGINT" allows-null="true"/>
+      </field>
+      <field name="bitVector">
+        <column name="BIT_VECTOR" jdbc-type="BLOB" allows-null="true"/>
+      </field>
+      <field name="histogram">
+        <column name="HISTOGRAM" jdbc-type="BLOB" allows-null="true"/>
+      </field>
+      <field name="avgColLen">
+        <column name="AVG_COL_LEN" jdbc-type="DOUBLE" allows-null="true"/>
+      </field>
+      <field name="maxColLen">
+        <column name="MAX_COL_LEN" jdbc-type="BIGINT" allows-null="true"/>
+      </field>
+      <field name="numTrues">
+        <column name="NUM_TRUES" jdbc-type="BIGINT" allows-null="true"/>
+      </field>
+      <field name="numFalses">
+        <column name="NUM_FALSES" jdbc-type="BIGINT" allows-null="true"/>
+      </field>
+      <field name="lastAnalyzed">
+        <column name="LAST_ANALYZED" jdbc-type="BIGINT" allows-null="false"/>
+      </field>
+      <field name="engine">
+        <column name="ENGINE" length="128" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+    </class>
+
     <class name="MTableColumnStatistics" table="TAB_COL_STATS" identity-type="datastore" detachable="true">
       <datastore-identity>
         <column name="CS_ID"/>
       </datastore-identity>
+      <!-- inherits fields from MColumnStatistics -->
 
-      <field name ="catName">
-        <column name="CAT_NAME" length="256" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
-      <field name ="dbName">
-        <column name="DB_NAME" length="128" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
-      <field name="tableName">
-        <column name="TABLE_NAME" length="256" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
       <field name="table">
         <column name="TBL_ID"/>
-      </field>
-      <field name="colName">
-        <column name="COLUMN_NAME" length="767" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
-      <field name="colType">
-        <column name="COLUMN_TYPE" length="128" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
-      <field name="longLowValue">
-        <column name="LONG_LOW_VALUE"  jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="longHighValue">
-        <column name="LONG_HIGH_VALUE" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-       <field name="doubleLowValue">
-        <column name="DOUBLE_LOW_VALUE"  jdbc-type="DOUBLE" allows-null="true"/>
-      </field>
-      <field name="doubleHighValue">
-        <column name="DOUBLE_HIGH_VALUE" jdbc-type="DOUBLE" allows-null="true"/>
-      </field>
-      <field name="decimalLowValue">
-        <column name="BIG_DECIMAL_LOW_VALUE"  jdbc-type="VARCHAR" allows-null="true"/>
-      </field>
-      <field name="decimalHighValue">
-        <column name="BIG_DECIMAL_HIGH_VALUE" jdbc-type="VARCHAR" allows-null="true"/>
-      </field>
-      <field name="numNulls">
-        <column name="NUM_NULLS" jdbc-type="BIGINT" allows-null="false"/>
-      </field>
-      <field name="numDVs">
-        <column name="NUM_DISTINCTS" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="bitVector">
-        <column name="BIT_VECTOR" jdbc-type="BLOB" allows-null="true"/>
-      </field>
-      <field name="avgColLen">
-        <column name="AVG_COL_LEN" jdbc-type="DOUBLE" allows-null="true"/>
-      </field>
-      <field name="maxColLen">
-        <column name="MAX_COL_LEN" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="numTrues">
-        <column name="NUM_TRUES" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="numFalses">
-        <column name="NUM_FALSES" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="lastAnalyzed">
-        <column name="LAST_ANALYZED" jdbc-type="BIGINT" allows-null="false"/>
       </field>
     </class>
 
     <class name="MPartitionColumnStatistics" table="PART_COL_STATS" identity-type="datastore" detachable="true">
+      <foreign-key name="PART_COL_STATS_FK1" delete-action="cascade"/>
       <datastore-identity>
         <column name="CS_ID"/>
       </datastore-identity>
+      <!-- inherits fields from MColumnStatistics -->
 
-      <field name ="catName">
-        <column name="CAT_NAME" length="256" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
-      <field name ="dbName">
-        <column name="DB_NAME" length="128" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
-      <field name="tableName">
-        <column name="TABLE_NAME" length="256" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
-      <field name="partitionName">
-        <column name="PARTITION_NAME" length="767" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
       <field name="partition">
         <column name="PART_ID"/>
       </field>
-      <field name="colName">
-        <column name="COLUMN_NAME" length="767" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
-      <field name="colType">
-        <column name="COLUMN_TYPE" length="128" jdbc-type="VARCHAR" allows-null="false"/>
-      </field>
-      <field name="longLowValue">
-        <column name="LONG_LOW_VALUE"  jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="longHighValue">
-        <column name="LONG_HIGH_VALUE" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-       <field name="doubleLowValue">
-        <column name="DOUBLE_LOW_VALUE"  jdbc-type="DOUBLE" allows-null="true"/>
-      </field>
-      <field name="doubleHighValue">
-        <column name="DOUBLE_HIGH_VALUE" jdbc-type="DOUBLE" allows-null="true"/>
-      </field>
-      <field name="decimalLowValue">
-        <column name="BIG_DECIMAL_LOW_VALUE"  jdbc-type="VARCHAR" allows-null="true"/>
-      </field>
-      <field name="decimalHighValue">
-        <column name="BIG_DECIMAL_HIGH_VALUE" jdbc-type="VARCHAR" allows-null="true"/>
-      </field>
-      <field name="numNulls">
-        <column name="NUM_NULLS" jdbc-type="BIGINT" allows-null="false"/>
-      </field>
-      <field name="numDVs">
-        <column name="NUM_DISTINCTS" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="bitVector">
-        <column name="BIT_VECTOR" jdbc-type="BLOB" allows-null="true"/>
-      </field>
-      <field name="avgColLen">
-        <column name="AVG_COL_LEN" jdbc-type="DOUBLE" allows-null="true"/>
-      </field>
-      <field name="maxColLen">
-        <column name="MAX_COL_LEN" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="numTrues">
-        <column name="NUM_TRUES" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="numFalses">
-        <column name="NUM_FALSES" jdbc-type="BIGINT" allows-null="true"/>
-      </field>
-      <field name="lastAnalyzed">
-        <column name="LAST_ANALYZED" jdbc-type="BIGINT" allows-null="false"/>
-      </field>
     </class>
+
     <class name="MVersionTable" table="VERSION" identity-type="datastore" detachable="true">
       <datastore-identity>
         <column name="VER_ID"/>
@@ -1100,6 +1047,9 @@
       </field>
       <field name ="description">
         <column name="DESCRIPTION" length="1000" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+      <field name ="propertyContent">
+        <column name="PROPERTYCONTENT" jdbc-type="BLOB" allows-null="true"/>
       </field>
     </class>
 
@@ -1437,7 +1387,239 @@
       <field name="payload">
         <column name="PAYLOAD" jdbc-type="BLOB" allows-null="true"/>
       </field>
+    </class>
+    <class name="MScheduledQuery" identity-type="datastore" table="SCHEDULED_QUERIES" detachable="true">
+      <datastore-identity>
+        <column name="SCHEDULED_QUERY_ID"/>
+      </datastore-identity>
+      <field name="scheduleName">
+        <column name="SCHEDULE_NAME" jdbc-type="varchar" length="256" allows-null="true"/>
+      </field>
+      <field name="enabled">
+        <column name="ENABLED"/>
+      </field>
+      <field name="clusterNamespace">
+        <column name="CLUSTER_NAMESPACE" jdbc-type="varchar" length="256" allows-null="true"/>
+      </field>
+      <field name="schedule">
+        <column name="SCHEDULE" jdbc-type="varchar" length="256" allows-null="true"/>
+      </field>
+      <field name="user">
+        <column name="USER" jdbc-type="varchar" length="256" allows-null="true"/>
+      </field>
+      <field name="query">
+        <column name="QUERY" jdbc-type="varchar" length="4000" allows-null="true"/>
+      </field>
+      <field name="nextExecution">
+        <column name="NEXT_EXECUTION" jdbc-type="integer" allows-null="true"/>
+      </field>
+      <field name="activeExecution">
+        <column name="ACTIVE_EXECUTION_ID" allows-null="true"/>
+        <foreign-key name="SCHEDULED_EXECUTIONS_SCHQ_ACTIVE" delete-action="cascade"/>
+      </field>
+      <field name="executions" mapped-by="scheduledQuery" dependent-element="true">
+        <collection element-type="MScheduledExecution" dependent-element="true" />
+        <foreign-key name="SCHEDULED_EXECUTIONS_SCHQ_FK" delete-action="cascade"/>
+      </field>
+      <index name="UniqueSchedule" unique="true">
+        <column name="SCHEDULE_NAME"/>
+        <column name="CLUSTER_NAMESPACE"/>
+      </index>
+      <index name="NextExecutionIndex">
+        <column name="ENABLED"/>
+        <column name="CLUSTER_NAMESPACE"/>
+        <column name="NEXT_EXECUTION"/>
+      </index>
    </class>
+    <class name="MScheduledExecution" identity-type="application" table="SCHEDULED_EXECUTIONS" detachable="true">
+      <field name="scheduledExecutionId" primary-key="true" value-strategy="native">
+        <column name="SCHEDULED_EXECUTION_ID" jdbc-type="bigint" />
+      </field>
+      <field name="scheduledQuery">
+        <column name="SCHEDULED_QUERY_ID" />
+        <foreign-key name="SCHEDULED_EXECUTIONS_SCHQ_FK" delete-action="cascade"/>
+      </field>
+      <field name="executorQueryId">
+        <column name="EXECUTOR_QUERY_ID" jdbc-type="varchar" length="256" allows-null="true"/>
+      </field>
+      <field name="state">
+        <column name="STATE" jdbc-type="varchar" length="256" allows-null="true"/>
+      </field>
+      <field name="startTime">
+        <column name="START_TIME" jdbc-type="integer" allows-null="true"/>
+      </field>
+      <field name="endTime">
+        <column name="END_TIME" jdbc-type="integer" allows-null="true"/>
+      </field>
+      <field name="errorMessage">
+        <column name="ERROR_MESSAGE" jdbc-type="varchar" length="2000" allows-null="true"/>
+      </field>
+      <field name="lastUpdateTime">
+        <column name="LAST_UPDATE_TIME" jdbc-type="integer" allows-null="true"/>
+      </field>
+	  <index name="LastUpdateTimeIndex">
+        <column name="LAST_UPDATE_TIME"/>
+      </index>
+   </class>
+    <class name="MReplicationMetrics" identity-type="application" table="REPLICATION_METRICS" detachable="true">
+      <field name="scheduledExecutionId" primary-key="true">
+        <column name="RM_SCHEDULED_EXECUTION_ID" jdbc-type="bigint" />
+      </field>
+      <field name="policy">
+        <column name="RM_POLICY" jdbc-type="varchar" length="256" allows-null="false" />
+      </field>
+      <field name="dumpExecutionId">
+        <column name="RM_DUMP_EXECUTION_ID" jdbc-type="bigint" allows-null="false"/>
+      </field>
+      <field name="metadata">
+        <column name="RM_METADATA" jdbc-type="varchar" length="4000" allows-null="true"/>
+      </field>
+      <field name="progress">
+        <column name="RM_PROGRESS" jdbc-type="varchar" length="10000" allows-null="true"/>
+      </field>
+      <field name="startTime">
+         <column name="RM_START_TIME" jdbc-type="integer" allows-null="false"/>
+      </field>
+      <field name="messageFormat">
+              <column name="MESSAGE_FORMAT" length="16" jdbc-type="VARCHAR" allows-null="true"/>
+      </field>
+      <index name="PolicyIndex">
+        <column name="RM_POLICY"/>
+      </index>
+      <index name="DumpExecutionIdIndex">
+        <column name="RM_DUMP_EXECUTION_ID"/>
+      </index>
+    </class>
+
+    <class name="MStoredProc" table="STORED_PROCS" identity-type="datastore" detachable="true">
+      <datastore-identity>
+        <column name="SP_ID"/>
+      </datastore-identity>
+      <field name="createTime">
+        <column name="CREATE_TIME" jdbc-type="integer" allows-null="false"/>
+      </field>
+      <field name="database">
+        <column name="DB_ID" allows-null="false"/>
+      </field>
+      <field name="name">
+        <column name="NAME" length="256" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+      <field name="owner">
+        <column name="OWNER_NAME" length="128" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+      <field name="source">
+        <column name="SOURCE" jdbc-type="CLOB" allows-null="false"/>
+      </field>
+      <index name="UniqueStoredProc" unique="true">
+        <column name="NAME"/>
+        <column name="DB_ID"/>
+      </index>
+    </class>
+    <class name="MPackage" table="PACKAGES" identity-type="datastore" detachable="true">
+      <datastore-identity>
+        <column name="PKG_ID"/>
+      </datastore-identity>
+      <field name="createTime">
+        <column name="CREATE_TIME" jdbc-type="integer" allows-null="false"/>
+      </field>
+      <field name="database">
+        <column name="DB_ID" allows-null="false"/>
+      </field>
+      <field name="name">
+        <column name="NAME" length="256" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+      <field name="owner">
+        <column name="OWNER_NAME" length="128" jdbc-type="VARCHAR" allows-null="false"/>
+      </field>
+      <field name="header">
+        <column name="HEADER" jdbc-type="CLOB" allows-null="false"/>
+      </field>
+      <field name="body">
+        <column name="BODY" jdbc-type="CLOB" allows-null="false"/>
+      </field>
+      <index name="UniquePackage" unique="true">
+        <column name="NAME"/>
+        <column name="DB_ID"/>
+      </index>
+    </class>
+    <class name="MDataConnector" table="DATACONNECTORS" identity-type="application" detachable="true">
+       <field name="name" primary-key="true">
+         <column name="NAME" length="128" jdbc-type="VARCHAR" allows-null="false"/>
+       </field>
+       <field name="type">
+         <column name="TYPE" length="128" jdbc-type="VARCHAR" allows-null="false"/>
+       </field>
+       <field name="url">
+         <column name="URL" length="4000" jdbc-type="VARCHAR" allows-null="false"/>
+       </field>
+       <field name="description">
+         <column name="COMMENT" length="256" jdbc-type="VARCHAR"/>
+       </field>
+       <field name="ownerName">
+         <column name="OWNER_NAME" length="128" jdbc-type="VARCHAR" allows-null="true"/>
+       </field>
+       <field name="ownerType">
+         <column name="OWNER_TYPE" length="10" jdbc-type="VARCHAR" allows-null="true"/>
+       </field>
+       <field name="createTime">
+         <column name="CREATE_TIME" jdbc-type="integer" allows-null="false"/>
+       </field>
+       <field name="parameters" table="DATACONNECTOR_PARAMS">
+         <map key-type="java.lang.String" value-type="java.lang.String"/>
+          <join>
+            <column name="NAME"/>
+          </join>
+          <key>
+            <column name="PARAM_KEY" length="180" jdbc-type="VARCHAR"/>
+          </key>
+          <value>
+           <column name="PARAM_VALUE" length="4000" jdbc-type="VARCHAR"/>
+          </value>
+       </field>
+    </class>
+    <class name="MDCPrivilege" table="DC_PRIVS" identity-type="datastore" detachable="true">
+          <index name="DCPrivilegeIndex" unique="true">
+            <column name="AUTHORIZER"/>
+            <column name="NAME"/>
+            <column name="PRINCIPAL_NAME"/>
+            <column name="PRINCIPAL_TYPE"/>
+            <column name="DC_PRIV"/>
+            <column name="GRANTOR"/>
+            <column name="GRANTOR_TYPE"/>
+          </index>
+
+          <datastore-identity>
+            <column name="DC_GRANT_ID"/>
+          </datastore-identity>
+
+          <field name="principalName">
+            <column name="PRINCIPAL_NAME" length="128" jdbc-type="VARCHAR"/>
+          </field>
+          <field name="principalType">
+            <column name="PRINCIPAL_TYPE" length="128" jdbc-type="VARCHAR"/>
+          </field>
+          <field name="dataConnector">
+            <column name="NAME" />
+          </field>
+          <field name="privilege">
+            <column name="DC_PRIV" length="128" jdbc-type="VARCHAR"/>
+          </field>
+          <field name="createTime">
+            <column name="CREATE_TIME" jdbc-type="integer"/>
+          </field>
+          <field name="grantor">
+            <column name="GRANTOR" length="128" jdbc-type="VARCHAR"/>
+          </field>
+          <field name="grantorType">
+            <column name="GRANTOR_TYPE" length="128" jdbc-type="VARCHAR"/>
+          </field>
+          <field name="grantOption">
+            <column name="GRANT_OPTION" jdbc-type="SMALLINT"/>
+          </field>
+          <field name="authorizer">
+            <column name="AUTHORIZER" length="128" jdbc-type="VARCHAR"/>
+          </field>
+        </class>
   </package>
 </jdo>
 

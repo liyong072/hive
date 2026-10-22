@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
@@ -29,20 +30,26 @@ import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 
-import junit.framework.TestCase;
+
+import static org.junit.Assert.assertTrue;
+import org.junit.Test;
 
 
-public class TestMetaStoreAuthorization extends TestCase {
+/**
+ * TestMetaStoreAuthorization.
+ */
+public class TestMetaStoreAuthorization {
   protected HiveConf conf = new HiveConf();
 
   private int port;
 
   public void setup() throws Exception {
     conf.setBoolVar(HiveConf.ConfVars.METASTORE_AUTHORIZATION_STORAGE_AUTH_CHECKS, true);
-    conf.setIntVar(HiveConf.ConfVars.METASTORETHRIFTCONNECTIONRETRIES, 3);
+    conf.setIntVar(HiveConf.ConfVars.METASTORE_THRIFT_CONNECTION_RETRIES, 3);
     conf.setTimeVar(ConfVars.METASTORE_CLIENT_CONNECT_RETRY_DELAY, 60, TimeUnit.SECONDS);
   }
 
+  @Test
   public void testIsWritable() throws Exception {
     setup();
     String testDir = System.getProperty("test.warehouse.dir", "/tmp");
@@ -66,6 +73,7 @@ public class TestMetaStoreAuthorization extends TestCase {
     }
   }
 
+  @Test
   public void testMetaStoreAuthorization() throws Exception {
     setup();
     MetaStoreTestUtils.startMetaStoreWithRetry(conf);

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.objectinspector;
@@ -32,7 +33,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
  * Compare two list of objects.
  * Two lists are expected to have same types. Type information for every object is
  * passed when calling Constructor to avoid the step of figuring out types from
- * ObjectInspetor and determine how to compare the types when comparing.
+ * ObjectInspector and determine how to compare the types when comparing.
  * Also, for string and text elements, it performs slightly better than
  * using ObjectInspectorUtils.compare() == 0, which instead of calling .compare()
  * calls .equalTo(), which compares size before byte by byte comparison.

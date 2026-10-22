@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
@@ -23,16 +24,17 @@ import java.util.List;
 import java.util.Set;
 import java.util.Stack;
 
-import org.apache.hadoop.hive.common.ObjectPair;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hive.ql.Context;
 import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.exec.ColumnInfo;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.optimizer.calcite.CalciteSubquerySemanticException;
 import org.apache.hadoop.hive.ql.parse.SubQueryDiagnostic.QBSubQueryRewrite;
 import org.apache.hadoop.hive.ql.parse.SubQueryUtils.ISubQueryJoinInfo;
-import org.apache.hadoop.hive.ql.parse.TypeCheckProcFactory.DefaultExprProcessor;
+import org.apache.hadoop.hive.ql.parse.type.ExprNodeTypeCheck;
+import org.apache.hadoop.hive.ql.parse.type.TypeCheckCtx;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
@@ -45,6 +47,8 @@ public class QBSubQuery implements ISubQueryJoinInfo {
     NOT_EXISTS,
     IN,
     NOT_IN,
+    SOME,
+    ALL,
     SCALAR;
 
     public static SubQueryType get(ASTNode opNode) throws SemanticException {
@@ -71,6 +75,10 @@ public class QBSubQuery implements ISubQueryJoinInfo {
         return IN;
       case HiveParser.TOK_SUBQUERY_OP_NOTIN:
         return NOT_IN;
+      case HiveParser.KW_SOME:
+        return SOME;
+      case HiveParser.KW_ALL:
+        return ALL;
       default:
         throw new SemanticException(SemanticAnalyzer.generateErrorMessage(opNode,
             "Operator not supported in SubQuery use."));
@@ -251,14 +259,14 @@ public class QBSubQuery implements ISubQueryJoinInfo {
     RowResolver parentQueryRR;
     boolean forHavingClause;
     String parentQueryNewAlias;
-    NodeProcessor defaultExprProcessor;
+    SemanticNodeProcessor defaultExprProcessor;
     Stack<Node> stack;
 
     ConjunctAnalyzer(RowResolver parentQueryRR,
         boolean forHavingClause,
         String parentQueryNewAlias) {
       this.parentQueryRR = parentQueryRR;
-      defaultExprProcessor = new DefaultExprProcessor();
+      defaultExprProcessor = ExprNodeTypeCheck.getExprNodeDefaultExprProcessor();
       this.forHavingClause = forHavingClause;
       this.parentQueryNewAlias = parentQueryNewAlias;
       stack = new Stack<Node>();
@@ -273,14 +281,14 @@ public class QBSubQuery implements ISubQueryJoinInfo {
      * 3. All other expressions have a Type based on their children.
      *    An Expr w/o children is assumed to refer to neither.
      */
-    private ObjectPair<ExprType,ColumnInfo> analyzeExpr(ASTNode expr) {
+    private Pair<ExprType, ColumnInfo> analyzeExpr(ASTNode expr) {
       ColumnInfo cInfo = null;
       if ( forHavingClause ) {
         try {
           cInfo = parentQueryRR.getExpression(expr);
           if ( cInfo != null) {
-              return ObjectPair.create(ExprType.REFERS_PARENT, cInfo);
-            }
+            return Pair.of(ExprType.REFERS_PARENT, cInfo);
+          }
         } catch(SemanticException se) {
         }
       }
@@ -288,19 +296,19 @@ public class QBSubQuery implements ISubQueryJoinInfo {
         ASTNode dot = firstDot(expr);
         cInfo = resolveDot(dot);
         if ( cInfo != null ) {
-          return ObjectPair.create(ExprType.REFERS_PARENT, cInfo);
+          return Pair.of(ExprType.REFERS_PARENT, cInfo);
         }
-        return ObjectPair.create(ExprType.REFERS_SUBQUERY, null);
+        return Pair.of(ExprType.REFERS_SUBQUERY, null);
       } else if ( expr.getType() == HiveParser.TOK_TABLE_OR_COL ) {
-        return ObjectPair.create(ExprType.REFERS_SUBQUERY, null);
+        return Pair.of(ExprType.REFERS_SUBQUERY, null);
       } else {
         ExprType exprType = ExprType.REFERS_NONE;
         int cnt = expr.getChildCount();
         for(int i=0; i < cnt; i++) {
           ASTNode child = (ASTNode) expr.getChild(i);
-          exprType = exprType.combine(analyzeExpr(child).getFirst());
+          exprType = exprType.combine(analyzeExpr(child).getLeft());
         }
-        return ObjectPair.create(exprType, null);
+        return Pair.of(exprType, null);
       }
     }
 
@@ -315,17 +323,17 @@ public class QBSubQuery implements ISubQueryJoinInfo {
        if(conjunct.getChildCount() == 2) {
         ASTNode left = (ASTNode) conjunct.getChild(0);
         ASTNode right = (ASTNode) conjunct.getChild(1);
-        ObjectPair<ExprType,ColumnInfo> leftInfo = analyzeExpr(left);
-        ObjectPair<ExprType,ColumnInfo> rightInfo = analyzeExpr(right);
+        Pair<ExprType, ColumnInfo> leftInfo = analyzeExpr(left);
+        Pair<ExprType, ColumnInfo> rightInfo = analyzeExpr(right);
 
         return new Conjunct(left, right,
-            leftInfo.getFirst(), rightInfo.getFirst(),
-            leftInfo.getSecond(), rightInfo.getSecond());
+            leftInfo.getLeft(), rightInfo.getLeft(),
+            leftInfo.getRight(), rightInfo.getRight());
       } else {
-        ObjectPair<ExprType,ColumnInfo> sqExprInfo = analyzeExpr(conjunct);
+        Pair<ExprType, ColumnInfo> sqExprInfo = analyzeExpr(conjunct);
         return new Conjunct(conjunct, null,
-            sqExprInfo.getFirst(), null,
-            sqExprInfo.getSecond(), sqExprInfo.getSecond());
+            sqExprInfo.getLeft(), null,
+            sqExprInfo.getRight(), sqExprInfo.getRight());
       }
     }
 
@@ -462,7 +470,7 @@ public class QBSubQuery implements ISubQueryJoinInfo {
    */
   private int numOfCorrelationExprsAddedToSQSelect;
 
-  private boolean groupbyAddedToSQ;
+  private boolean groupByAddedToSQ;
 
   private int numOuterCorrExprsForHaving;
 
@@ -490,7 +498,7 @@ public class QBSubQuery implements ISubQueryJoinInfo {
         originalSQAST.getTokenStartIndex(), originalSQAST.getTokenStopIndex());
     originalSQASTOrigin = new ASTNodeOrigin("SubQuery", alias, s, alias, originalSQAST);
     numOfCorrelationExprsAddedToSQSelect = 0;
-    groupbyAddedToSQ = false;
+    groupByAddedToSQ = false;
 
     if ( operator.getType() == SubQueryType.NOT_IN ) {
       notInCheck = new NotInCheck();
@@ -522,7 +530,7 @@ public class QBSubQuery implements ISubQueryJoinInfo {
    */
   void subqueryRestrictionsCheck(RowResolver parentQueryRR,
                                  boolean forHavingClause,
-                                 String outerQueryAlias, boolean [] subqueryConfig)
+                                 String outerQueryAlias)
           throws SemanticException {
     ASTNode insertClause = getChildFromSubqueryAST("Insert", HiveParser.TOK_INSERT);
 
@@ -542,29 +550,25 @@ public class QBSubQuery implements ISubQueryJoinInfo {
             operator.getType() != SubQueryType.NOT_EXISTS &&
             selectClause.getChildCount() - selectExprStart > 1 ) {
       subQueryAST.setOrigin(originalSQASTOrigin);
-      throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
-              subQueryAST, "SubQuery can contain only 1 item in Select List."));
+      throw new SemanticException(ASTErrorUtils.getMsg(
+          ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(),
+          subQueryAST, "SubQuery can contain only 1 item in Select List."));
     }
 
-    boolean hasAggreateExprs = false;
     boolean hasWindowing = false;
 
     // we need to know if aggregate is COUNT since IN corr subq with count aggregate
     // is not special cased later in subquery remove rule
-    boolean hasCount = false;
     for(int i= selectExprStart; i < selectClause.getChildCount(); i++ ) {
 
       ASTNode selectItem = (ASTNode) selectClause.getChild(i);
       int r = SubQueryUtils.checkAggOrWindowing(selectItem);
 
       hasWindowing = hasWindowing | ( r == 3);
-      hasAggreateExprs = hasAggreateExprs | ( r == 1 | r== 2 );
-      hasCount = hasCount | ( r == 2 );
     }
 
     // figure out correlation and presence of non-equi join predicate
     boolean hasCorrelation = false;
-    boolean hasNonEquiJoinPred = false;
 
     ASTNode whereClause = SubQueryUtils.subQueryWhere(insertClause);
     if ( whereClause != null ) {
@@ -580,76 +584,19 @@ public class QBSubQuery implements ISubQueryJoinInfo {
         if (conjunct.isCorrelated()) {
           hasCorrelation = true;
         }
-        if (conjunct.eitherSideRefersBoth() && conjunctAST.getType() != HiveParser.EQUAL) {
-          hasNonEquiJoinPred = true;
-        }
-      }
-    }
-
-    // figure out if there is group by
-    boolean noImplicityGby = true;
-    for(int i=0; i<insertClause.getChildCount(); i++) {
-      if(insertClause.getChild(i).getType() == HiveParser.TOK_GROUPBY) {
-        noImplicityGby = false;
-        break;
       }
     }
 
     /*
-     * Restriction.14.h :: Correlated Sub Queries cannot contain Windowing clauses.
+     * Restriction.14.h :: Only Correlated Exists/Not exists Sub Queries can contain Windowing clauses.
      */
-    if (  hasWindowing && hasCorrelation) {
-      throw new CalciteSubquerySemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
-              subQueryAST, "Correlated Sub Queries cannot contain Windowing clauses."));
+    if (operator.getType() != SubQueryType.EXISTS && operator.getType() != SubQueryType.NOT_EXISTS &&
+        hasWindowing && hasCorrelation) {
+      throw new CalciteSubquerySemanticException(ASTErrorUtils.getMsg(
+          ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(),
+          subQueryAST, "Only Correlated Exists/Not exists Sub Queries can contain Windowing clauses."));
     }
 
-    /*
-     * Restriction.13.m :: In the case of an implied Group By on a
-     * correlated SubQuery, the SubQuery always returns 1 row.
-     * An exists on a SubQuery with an implied GBy will always return true.
-     * Whereas Algebraically transforming to a Join may not return true. See
-     * Specification doc for details.
-     * Similarly a not exists on a SubQuery with a implied GBY will always return false.
-     */
-      // Following is special cases for different type of subqueries which have aggregate and no implicit group by
-      // and are correlatd
-      // * EXISTS/NOT EXISTS - NOT allowed, throw an error for now. We plan to allow this later
-      // * SCALAR - This should return true since later in subquery remove
-      //              rule we need to know about this case.
-      // * IN - always allowed, BUT returns true for cases with aggregate other than COUNT since later in subquery remove
-      //        rule we need to know about this case.
-      // * NOT IN - always allow, but always return true because later subq remove rule will generate diff plan for this case
-      if (hasAggreateExprs &&
-              noImplicityGby) {
-
-        if(operator.getType() == SubQueryType.EXISTS
-                || operator.getType() == SubQueryType.NOT_EXISTS) {
-          if(hasCorrelation) {
-            throw new CalciteSubquerySemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
-                    subQueryAST,
-                    "A predicate on EXISTS/NOT EXISTS SubQuery with implicit Aggregation(no Group By clause) " +
-                            "cannot be rewritten."));
-          }
-        }
-        else if(operator.getType() == SubQueryType.SCALAR) {
-            if(!hasWindowing) {
-              subqueryConfig[1] = true;
-            }
-            if(hasCorrelation) {
-              subqueryConfig[0] = true;
-            }
-        }
-        else if(operator.getType() == SubQueryType.IN) {
-          if(hasCount && hasCorrelation) {
-            subqueryConfig[0] = true;
-          }
-        }
-        else if (operator.getType() == SubQueryType.NOT_IN) {
-            if(hasCorrelation) {
-              subqueryConfig[0] = true;
-            }
-        }
-      }
   }
 
   void validateAndRewriteAST(RowResolver outerQueryRR,
@@ -696,7 +643,8 @@ public class QBSubQuery implements ISubQueryJoinInfo {
         operator.getType() != SubQueryType.NOT_EXISTS &&
         selectClause.getChildCount() - selectExprStart > 1 ) {
       subQueryAST.setOrigin(originalSQASTOrigin);
-      throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
+      throw new SemanticException(ASTErrorUtils.getMsg(
+          ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(),
           subQueryAST, "SubQuery can contain only 1 item in Select List."));
     }
 
@@ -723,16 +671,18 @@ public class QBSubQuery implements ISubQueryJoinInfo {
      */
     if ( operator.getType() == SubQueryType.EXISTS  &&
         containsAggregationExprs &&
-        groupbyAddedToSQ ) {
-      throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
+            groupByAddedToSQ) {
+      throw new SemanticException(ASTErrorUtils.getMsg(
+          ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(),
           subQueryAST,
           "An Exists predicate on SubQuery with implicit Aggregation(no Group By clause) " +
           "cannot be rewritten. (predicate will always return true)."));
     }
     if ( operator.getType() == SubQueryType.NOT_EXISTS  &&
         containsAggregationExprs &&
-        groupbyAddedToSQ ) {
-      throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
+            groupByAddedToSQ) {
+      throw new SemanticException(ASTErrorUtils.getMsg(
+          ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(),
           subQueryAST,
           "A Not Exists predicate on SubQuery with implicit Aggregation(no Group By clause) " +
           "cannot be rewritten. (predicate will always return false)."));
@@ -742,7 +692,8 @@ public class QBSubQuery implements ISubQueryJoinInfo {
      * Restriction.14.h :: Correlated Sub Queries cannot contain Windowing clauses.
      */
     if ( containsWindowing && hasCorrelation ) {
-      throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
+      throw new SemanticException(ASTErrorUtils.getMsg(
+          ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(),
           subQueryAST, "Correlated Sub Queries cannot contain Windowing clauses."));
     }
 
@@ -753,7 +704,8 @@ public class QBSubQuery implements ISubQueryJoinInfo {
     if ( ( operator.getType() == SubQueryType.EXISTS ||
         operator.getType() == SubQueryType.NOT_EXISTS ) &&
         !hasCorrelation ) {
-      throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
+      throw new SemanticException(ASTErrorUtils.getMsg(
+          ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(),
           subQueryAST, "For Exists/Not Exists operator SubQuery must be Correlated."));
     }
 
@@ -763,7 +715,8 @@ public class QBSubQuery implements ISubQueryJoinInfo {
     ASTNode childAST = (ASTNode) subQueryAST.getFirstChildWithType(type);
     if (childAST == null && errorMsg != null) {
       subQueryAST.setOrigin(originalSQASTOrigin);
-      throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(
+      throw new SemanticException(ASTErrorUtils.getMsg(
+          ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(),
           subQueryAST, errorMsg + " clause is missing in SubQuery."));
     }
     return childAST;
@@ -803,12 +756,13 @@ public class QBSubQuery implements ISubQueryJoinInfo {
                 SubQueryUtils.setQualifiedColumnReferences(parentExpr, tableAlias);
         if (parentExpr == null) {
           subQueryAST.setOrigin(originalSQASTOrigin);
-          throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
+          throw new SemanticException(ASTErrorUtils.getMsg(
+              ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(),
                   parentQueryExpression,
                   "Correlating expression contains ambiguous column references."));
         }
       }
-      
+
       parentQueryJoinCond = SubQueryUtils.buildOuterQryToSQJoinCond(
          parentExpr,
          alias,
@@ -928,7 +882,8 @@ public class QBSubQuery implements ISubQueryJoinInfo {
        * Check.12.h :: SubQuery predicates cannot only refer to Outer Query columns.
        */
       if ( conjunct.refersOuterOnly() ) {
-        throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(
+        throw new SemanticException(ASTErrorUtils.getMsg(
+            ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(),
             conjunctAST,
             "SubQuery expression refers to Outer query expressions only."));
       }
@@ -949,9 +904,9 @@ public class QBSubQuery implements ISubQueryJoinInfo {
             rewriteCorrConjunctForHaving(conjunctAST, false, outerQueryAlias,
                 parentQueryRR, conjunct.getRightOuterColInfo());
           }
-          ASTNode joinPredciate = SubQueryUtils.alterCorrelatedPredicate(
+          ASTNode joinPredicate = SubQueryUtils.alterCorrelatedPredicate(
               conjunctAST, sqExprForCorr, true);
-          joinConditionAST = SubQueryUtils.andAST(joinConditionAST, joinPredciate);
+          joinConditionAST = SubQueryUtils.andAST(joinConditionAST, joinPredicate);
           subQueryJoinAliasExprs.add(sqExprForCorr);
           ASTNode selExpr = SubQueryUtils.createSelectItem(conjunct.getLeftExpr(), sqExprAlias);
           selectClause.addChild(selExpr);
@@ -973,9 +928,9 @@ public class QBSubQuery implements ISubQueryJoinInfo {
             rewriteCorrConjunctForHaving(conjunctAST, true, outerQueryAlias,
                 parentQueryRR, conjunct.getLeftOuterColInfo());
           }
-          ASTNode joinPredciate = SubQueryUtils.alterCorrelatedPredicate(
+          ASTNode joinPredicate = SubQueryUtils.alterCorrelatedPredicate(
               conjunctAST, sqExprForCorr, false);
-          joinConditionAST = SubQueryUtils.andAST(joinConditionAST, joinPredciate);
+          joinConditionAST = SubQueryUtils.andAST(joinConditionAST, joinPredicate);
           subQueryJoinAliasExprs.add(sqExprForCorr);
           ASTNode selExpr = SubQueryUtils.createSelectItem(conjunct.getRightExpr(), sqExprAlias);
           selectClause.addChild(selExpr);
@@ -1028,7 +983,7 @@ public class QBSubQuery implements ISubQueryJoinInfo {
     }
 
     groupBy = SubQueryUtils.buildGroupBy();
-    groupbyAddedToSQ = true;
+    groupByAddedToSQ = true;
 
     List<ASTNode> newChildren = new ArrayList<ASTNode>();
     newChildren.add(groupBy);

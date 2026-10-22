@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -200,8 +201,12 @@ public class StringExpr {
    * return the new byte length.
    */
   public static int truncate(byte[] bytes, int start, int length, int maxLength) {
-    int end = start + length;
+    if (length <= maxLength) {
+      // no change in length
+      return length;
+    }
 
+    int end = start + length;
     // count characters forward
     int j = start;
     int charCount = 0;
@@ -223,24 +228,10 @@ public class StringExpr {
    * place the result into element i of a vector.
    */
   public static void truncate(BytesColumnVector outV, int i, byte[] bytes, int start, int length, int maxLength) {
-    int end = start + length;
-
-    // count characters forward
-    int j = start;
-    int charCount = 0;
-    while(j < end) {
-      // UTF-8 continuation bytes have 2 high bits equal to 0x80.
-      if ((bytes[j] & 0xc0) != 0x80) {
-        if (charCount == maxLength) {
-          break;
-        }
-        ++charCount;
-      }
-      j++;
-    }
+    final int newLength = truncate(bytes, start, length, maxLength);
 
     // set output vector
-    outV.setVal(i, bytes, start, (j - start));
+    outV.setVal(i, bytes, start, newLength);
   }
 
   /*
@@ -248,25 +239,12 @@ public class StringExpr {
    * return a byte array with only truncated bytes.
    */
   public static byte[] truncateScalar(byte[] bytes, int maxLength) {
-    int end = bytes.length;
+    int newLength = truncate(bytes, 0, bytes.length, maxLength);
 
-    // count characters forward
-    int j = 0;
-    int charCount = 0;
-    while(j < end) {
-      // UTF-8 continuation bytes have 2 high bits equal to 0x80.
-      if ((bytes[j] & 0xc0) != 0x80) {
-        if (charCount == maxLength) {
-          break;
-        }
-        ++charCount;
-      }
-      j++;
-    }
-    if (j == end) {
+    if (newLength == bytes.length) {
       return bytes;
     } else {
-      return Arrays.copyOf(bytes, j);
+      return Arrays.copyOf(bytes, newLength);
     }
   }
 
@@ -275,36 +253,15 @@ public class StringExpr {
    * return the new byte length.
    */
   public static int rightTrimAndTruncate(byte[] bytes, int start, int length, int maxLength) {
-    int end = start + length;
+    int newLength = truncate(bytes, start, length, maxLength);
 
-    // count characters forward and watch for final run of pads
-    int j = start;
-    int charCount = 0;
-    int padRunStart = -1;
-    while(j < end) {
-      // UTF-8 continuation bytes have 2 high bits equal to 0x80.
-      if ((bytes[j] & 0xc0) != 0x80) {
-        if (charCount == maxLength) {
-          break;
-        }
-        if (bytes[j] == 0x20) {
-          if (padRunStart == -1) {
-            padRunStart = j;
-          }
-        } else {
-          padRunStart = -1;
-        }
-        ++charCount;
-      } else {
-        padRunStart = -1;
+    for (int i = start + newLength - 1; i >= start; i--) {
+      if (bytes[i] != 0x20) {
+        return i - start + 1;
       }
-      j++;
     }
-    if (padRunStart != -1) {
-      return (padRunStart - start);
-    } else {
-      return (j - start);
-    }
+
+    return 0;
   }
 
   /*
@@ -312,37 +269,10 @@ public class StringExpr {
    * place the result into element i of a vector.
    */
   public static void rightTrimAndTruncate(BytesColumnVector outV, int i, byte[] bytes, int start, int length, int maxLength) {
-    int end = start + length;
+    final int newLength = rightTrimAndTruncate(bytes, start, length, maxLength);
 
-    // count characters forward and watch for final run of pads
-    int j = start;
-    int charCount = 0;
-    int padRunStart = -1;
-    while(j < end) {
-      // UTF-8 continuation bytes have 2 high bits equal to 0x80.
-      if ((bytes[j] & 0xc0) != 0x80) {
-        if (charCount == maxLength) {
-          break;
-        }
-        if (bytes[j] == 0x20) {
-          if (padRunStart == -1) {
-            padRunStart = j;
-          }
-        } else {
-          padRunStart = -1;
-        }
-        ++charCount;
-      } else {
-        padRunStart = -1;
-      }
-      j++;
-    }
     // set output vector
-    if (padRunStart != -1) {
-      outV.setVal(i, bytes, start, (padRunStart - start));
-    } else {
-      outV.setVal(i, bytes, start, (j - start) );
-    }
+    outV.setVal(i, bytes, start, newLength);
   }
 
   /*
@@ -350,37 +280,12 @@ public class StringExpr {
    * return a byte array with only the trimmed and truncated bytes.
    */
   public static byte[] rightTrimAndTruncateScalar(byte[] bytes, int maxLength) {
-    int end = bytes.length;
+    int newLength = rightTrimAndTruncate(bytes, 0, bytes.length, maxLength);
 
-    // count characters forward and watch for final run of pads
-    int j = 0;
-    int charCount = 0;
-    int padRunStart = -1;
-    while(j < end) {
-      // UTF-8 continuation bytes have 2 high bits equal to 0x80.
-      if ((bytes[j] & 0xc0) != 0x80) {
-        if (charCount == maxLength) {
-          break;
-        }
-        if (bytes[j] == 0x20) {
-          if (padRunStart == -1) {
-            padRunStart = j;
-          }
-        } else {
-          padRunStart = -1;
-        }
-        ++charCount;
-      } else {
-        padRunStart = -1;
-      }
-      j++;
-    }
-    if (padRunStart != -1) {
-      return Arrays.copyOf(bytes, padRunStart);
-    } else if (j == end) {
+    if (newLength == bytes.length) {
       return bytes;
     } else {
-      return Arrays.copyOf(bytes, j);
+      return Arrays.copyOf(bytes, newLength);
     }
   }
 
@@ -438,7 +343,15 @@ public class StringExpr {
           }
           s_tmp--;
         }
-        next += shift[input[next] & MAX_BYTE];
+
+        // if the character string contains control characters,
+        // overflow occurs.
+        int shiftIndex = input[next] & MAX_BYTE;
+        if (shiftIndex >= MAX_BYTE) {
+          next++;
+        } else {
+          next += shift[shiftIndex];
+        }
       }
       return -1;
     }

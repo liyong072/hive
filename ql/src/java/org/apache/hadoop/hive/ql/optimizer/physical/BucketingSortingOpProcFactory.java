@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.physical;
@@ -34,7 +35,7 @@ import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.exec.ReduceSinkOperator;
 import org.apache.hadoop.hive.ql.exec.SelectOperator;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.lib.Utils;
 import org.apache.hadoop.hive.ql.optimizer.physical.BucketingSortingCtx.BucketCol;
@@ -58,7 +59,7 @@ import org.slf4j.LoggerFactory;
 public class BucketingSortingOpProcFactory {
   private static final Logger LOG = LoggerFactory.getLogger(BucketingSortingOpProcFactory.class);
 
-  public static class DefaultInferrer implements NodeProcessor {
+  public static class DefaultInferrer implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -130,7 +131,7 @@ public class BucketingSortingOpProcFactory {
    * ReduceSink Operator
    *
    */
-  public static class JoinInferrer extends DefaultInferrer implements NodeProcessor {
+  public static class JoinInferrer extends DefaultInferrer implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
         Object... nodeOutputs) throws SemanticException {
@@ -326,7 +327,7 @@ public class BucketingSortingOpProcFactory {
   /**
    * Processor for Select operator.
    */
-  public static class SelectInferrer extends DefaultInferrer implements NodeProcessor {
+  public static class SelectInferrer extends DefaultInferrer implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
         Object... nodeOutputs) throws SemanticException {
@@ -456,7 +457,7 @@ public class BucketingSortingOpProcFactory {
   /**
    * Processor for FileSink operator.
    */
-  public static class FileSinkInferrer extends DefaultInferrer implements NodeProcessor {
+  public static class FileSinkInferrer extends DefaultInferrer implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
         Object... nodeOutputs) throws SemanticException {
@@ -545,7 +546,7 @@ public class BucketingSortingOpProcFactory {
   static List<SortCol> extractSortCols(ReduceSinkOperator rop, List<ExprNodeDesc> outputValues) {
     String sortOrder = rop.getConf().getOrder();
     List<SortCol> sortCols = new ArrayList<SortCol>();
-    ArrayList<ExprNodeDesc> keyCols = rop.getConf().getKeyCols();
+    List<ExprNodeDesc> keyCols = rop.getConf().getKeyCols();
     for (int i = 0; i < keyCols.size(); i++) {
       ExprNodeDesc keyCol = keyCols.get(i);
       if (!(keyCol instanceof ExprNodeColumnDesc)) {
@@ -578,7 +579,7 @@ public class BucketingSortingOpProcFactory {
    *
    */
 
-  public static class MultiGroupByInferrer extends GroupByInferrer implements NodeProcessor {
+  public static class MultiGroupByInferrer extends GroupByInferrer implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
         Object... nodeOutputs) throws SemanticException {
@@ -620,7 +621,7 @@ public class BucketingSortingOpProcFactory {
    *
    * It is up to the caller to guarantee the tree matches this pattern.
    */
-  public static class GroupByInferrer extends DefaultInferrer implements NodeProcessor {
+  public static class GroupByInferrer extends DefaultInferrer implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
         Object... nodeOutputs) throws SemanticException {
@@ -716,7 +717,7 @@ public class BucketingSortingOpProcFactory {
   /**
    * Filter processor
    */
-  public static class ForwardingInferrer extends DefaultInferrer implements NodeProcessor {
+  public static class ForwardingInferrer extends DefaultInferrer implements SemanticNodeProcessor {
     @SuppressWarnings("unchecked")
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -729,47 +730,47 @@ public class BucketingSortingOpProcFactory {
     }
   }
 
-  public static NodeProcessor getDefaultProc() {
+  public static SemanticNodeProcessor getDefaultProc() {
     return new DefaultInferrer();
   }
 
-  public static NodeProcessor getJoinProc() {
+  public static SemanticNodeProcessor getJoinProc() {
     return new JoinInferrer();
   }
 
-  public static NodeProcessor getSelProc() {
+  public static SemanticNodeProcessor getSelProc() {
     return new SelectInferrer();
   }
 
-  public static NodeProcessor getGroupByProc() {
+  public static SemanticNodeProcessor getGroupByProc() {
     return new GroupByInferrer();
   }
 
-  public static NodeProcessor getFileSinkProc() {
+  public static SemanticNodeProcessor getFileSinkProc() {
     return new FileSinkInferrer();
   }
 
-  public static NodeProcessor getFilterProc() {
+  public static SemanticNodeProcessor getFilterProc() {
     return new ForwardingInferrer();
   }
 
-  public static NodeProcessor getLimitProc() {
+  public static SemanticNodeProcessor getLimitProc() {
     return new ForwardingInferrer();
   }
 
-  public static NodeProcessor getLateralViewForwardProc() {
+  public static SemanticNodeProcessor getLateralViewForwardProc() {
     return new ForwardingInferrer();
   }
 
-  public static NodeProcessor getLateralViewJoinProc() {
+  public static SemanticNodeProcessor getLateralViewJoinProc() {
     return new ForwardingInferrer();
   }
 
-  public static NodeProcessor getForwardProc() {
+  public static SemanticNodeProcessor getForwardProc() {
     return new ForwardingInferrer();
   }
 
-  public static NodeProcessor getMultiGroupByProc() {
+  public static SemanticNodeProcessor getMultiGroupByProc() {
     return new MultiGroupByInferrer();
   }
 }

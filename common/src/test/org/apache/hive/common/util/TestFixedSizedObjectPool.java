@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.common.util;
 
@@ -29,6 +30,7 @@ import java.util.concurrent.FutureTask;
 
 import org.apache.hive.common.util.FixedSizedObjectPool;
 import org.apache.hadoop.hive.common.Pool;
+import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -238,6 +240,29 @@ public class TestFixedSizedObjectPool {
     assertTrue(OneObjHelper.THE_OBJECT == pool.take());
   }
 
+  @Test
+  public void testClearImp() {
+    int size = 10;
+    FixedSizedObjectPool<Object>
+        fixedSizedObjectPool =
+        new FixedSizedObjectPool<>(size, new Pool.PoolObjectHelper<Object>() {
+          @Override public Object create() {
+            //Null is used as marker to be the end.
+            return null;
+          }
+
+          @Override public void resetBeforeOffer(Object o) {
+            //
+          }
+        });
+    for (int i = 0; i < size; i++) {
+      fixedSizedObjectPool.offer(new Object());
+    }
+    Assert.assertEquals(size, fixedSizedObjectPool.size());
+    assertNotNull(fixedSizedObjectPool.take());
+    fixedSizedObjectPool.clear();
+    assertNull(fixedSizedObjectPool.take());
+  }
   private static void syncThreadStart(final CountDownLatch cdlIn, final CountDownLatch cdlOut) {
     cdlIn.countDown();
     try {

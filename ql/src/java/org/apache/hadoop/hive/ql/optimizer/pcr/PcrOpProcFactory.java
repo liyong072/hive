@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.pcr;
@@ -21,13 +22,16 @@ package org.apache.hadoop.hive.ql.optimizer.pcr;
 import java.util.ArrayList;
 import java.util.Stack;
 
+import org.apache.hadoop.hive.ql.ddl.DDLUtils;
+import org.apache.hadoop.hive.ql.metadata.Table;
+import org.apache.hadoop.hive.ql.parse.TransformSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.ql.exec.FilterOperator;
 import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
@@ -56,7 +60,7 @@ public final class PcrOpProcFactory {
    * Remove partition condition in a filter operator when possible. This is
    * called only when the filter follows a table scan operator.
    */
-  public static class FilterPCR implements NodeProcessor {
+  public static class FilterPCR implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -101,8 +105,7 @@ public final class PcrOpProcFactory {
         // have found a wrong filter operator. We skip the optimization then.
         return null;
       }
-
-
+      
       ParseContext pctx = owc.getParseContext();
       PrunedPartitionList prunedPartList;
       try {
@@ -110,7 +113,7 @@ public final class PcrOpProcFactory {
         prunedPartList = pctx.getPrunedPartitions(alias, top);
       } catch (HiveException e) {
         // Has to use full name to make sure it does not conflict with
-        // org.apache.commons.lang.StringUtils
+        // org.apache.commons.lang3.StringUtils
         throw new SemanticException(e.getMessage(), e);
       }
 
@@ -124,12 +127,16 @@ public final class PcrOpProcFactory {
       }
 
       for (Partition p : prunedPartList.getPartitions()) {
-        if (!p.getTable().isPartitioned()) {
+        if (!p.getTable().isPartitioned() || p.getSpec().isEmpty()) {
           return null;
         }
       }
-
       partitions.addAll(prunedPartList.getPartitions());
+      
+      // skip the optimization for tables with non-identity partition transforms
+      if (DDLUtils.hasTransformsInPartitionSpec(top.getConf().getTableMetadata())) {
+        return null;
+      }
 
       PcrExprProcFactory.NodeInfoWrapper wrapper = PcrExprProcFactory.walkExprTree(
           alias, partitions, top.getConf().getVirtualCols(), predicate);
@@ -138,7 +145,7 @@ public final class PcrOpProcFactory {
         owc.getOpToRemove().add(new PcrOpWalkerCtx.OpToDeleteInfo(pop, fop));
       } else if (wrapper.state == PcrExprProcFactory.WalkState.CONSTANT && wrapper.outExpr instanceof ExprNodeGenericFuncDesc) {
         ExprNodeDesc desc = ConstantPropagateProcFactory.foldExpr((ExprNodeGenericFuncDesc)wrapper.outExpr);
-        if (desc != null && desc instanceof ExprNodeConstantDesc && Boolean.TRUE.equals(((ExprNodeConstantDesc)desc).getValue())) {
+        if (desc instanceof ExprNodeConstantDesc && Boolean.TRUE.equals(((ExprNodeConstantDesc) desc).getValue())) {
           owc.getOpToRemove().add(new PcrOpWalkerCtx.OpToDeleteInfo(pop, fop));
         } else {
           fop.getConf().setPredicate(wrapper.outExpr);
@@ -158,7 +165,7 @@ public final class PcrOpProcFactory {
   /**
    * Default processor which does nothing
    */
-  public static class DefaultPCR implements NodeProcessor {
+  public static class DefaultPCR implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -168,11 +175,11 @@ public final class PcrOpProcFactory {
     }
   }
 
-  public static NodeProcessor getFilterProc() {
+  public static SemanticNodeProcessor getFilterProc() {
     return new FilterPCR();
   }
 
-  public static NodeProcessor getDefaultProc() {
+  public static SemanticNodeProcessor getDefaultProc() {
     return new DefaultPCR();
   }
 

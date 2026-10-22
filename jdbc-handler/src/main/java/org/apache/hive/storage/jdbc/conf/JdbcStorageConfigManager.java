@@ -1,16 +1,20 @@
 /*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.storage.jdbc.conf;
 
@@ -27,10 +31,12 @@ import org.apache.hadoop.conf.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URISyntaxException;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
+import java.util.function.Function;
 
 /**
  * Main configuration handler class
@@ -42,6 +48,8 @@ public class JdbcStorageConfigManager {
   public static final String CONFIG_PWD = Constants.JDBC_PASSWORD;
   public static final String CONFIG_PWD_KEYSTORE = Constants.JDBC_KEYSTORE;
   public static final String CONFIG_PWD_KEY = Constants.JDBC_KEY;
+  public static final String CONFIG_PWD_URI = Constants.JDBC_PASSWORD_URI;
+
   private static final EnumSet<JdbcStorageConfig> DEFAULT_REQUIRED_PROPERTIES =
     EnumSet.of(JdbcStorageConfig.DATABASE_TYPE,
                JdbcStorageConfig.JDBC_URL,
@@ -59,24 +67,61 @@ public class JdbcStorageConfigManager {
     checkRequiredPropertiesAreDefined(props);
     resolveMetadata(props);
     for (Entry<Object, Object> entry : props.entrySet()) {
-      if (!String.valueOf(entry.getKey()).equals(CONFIG_PWD) &&
-          !String.valueOf(entry.getKey()).equals(CONFIG_PWD_KEYSTORE) &&
-          !String.valueOf(entry.getKey()).equals(CONFIG_PWD_KEY)) {
+      String key = String.valueOf(entry.getKey());
+      if (!key.equals(CONFIG_PWD) &&
+          !key.equals(CONFIG_PWD_KEYSTORE) &&
+          !key.equals(CONFIG_PWD_KEY) &&
+          !key.equals(CONFIG_PWD_URI) &&
+          !key.equals(CONFIG_USERNAME)
+      ) {
         jobProps.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
       }
     }
   }
 
-  public static void copySecretsToJob(Properties props, Map<String, String> jobSecrets)
-    throws HiveException, IOException {
-    checkRequiredPropertiesAreDefined(props);
-    resolveMetadata(props);
-    String passwd = props.getProperty(CONFIG_PWD);
-    if (passwd == null) {
-      String keystore = props.getProperty(CONFIG_PWD_KEYSTORE);
-      String key = props.getProperty(CONFIG_PWD_KEY);
+  private static int countNonNull(String ... values) {
+    int count = 0;
+    for (String str : values) {
+      if (str != null) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  public static String getPasswordFromProperties(Properties properties, Function<String, String> keyTransform)
+      throws HiveException, IOException {
+    String passwd = properties.getProperty(keyTransform.apply(CONFIG_PWD));
+    String keystore = properties.getProperty(keyTransform.apply(CONFIG_PWD_KEYSTORE));
+    String uri = properties.getProperty(keyTransform.apply(CONFIG_PWD_URI));
+    if (countNonNull(passwd, keystore, uri) > 1) {
+      // In tez, when the job conf is copied there is a code path in HiveInputFormat where all the table properties
+      // are copied and the password is copied from the job credentials, so its possible to have 2 of them set.
+      // For now ignore this and print a warning message, we should fix so that the above code is used instead.
+      LOGGER.warn("Only one of " + CONFIG_PWD + ", " + CONFIG_PWD_KEYSTORE + ", " + CONFIG_PWD_URI + " can be set");
+      // throw new HiveException(
+      //    "Only one of " + CONFIG_PWD + ", " + CONFIG_PWD_KEYSTORE + ", " + CONFIG_PWD_URI + " can be set");
+    }
+    if (passwd == null && keystore != null) {
+      String key = properties.getProperty(keyTransform.apply(CONFIG_PWD_KEY));
       passwd = Utilities.getPasswdFromKeystore(keystore, key);
     }
+    if (passwd == null && uri != null) {
+      try {
+        passwd = Utilities.getPasswdFromUri(uri);
+      } catch (URISyntaxException e) {
+        // Should I include the uri in the exception? Suppressing for now, since it may have sensitive info.
+        throw new HiveException("Invalid password uri specified", e);
+      }
+    }
+    return passwd;
+  }
+
+  public static void copySecretsToJob(Properties props, Map<String, String> jobSecrets)
+      throws HiveException, IOException {
+    checkRequiredPropertiesAreDefined(props);
+    resolveMetadata(props);
+    String passwd = getPasswordFromProperties(props, Function.identity());
     if (passwd != null) {
       jobSecrets.put(CONFIG_PWD, passwd);
     }
@@ -122,34 +167,6 @@ public class JdbcStorageConfigManager {
     return config.get(key.getPropertyName());
   }
 
-  public static String getOrigQueryToExecute(Configuration config) {
-    String query;
-    String tableName = config.get(Constants.JDBC_TABLE);
-    if (tableName != null) {
-      // We generate query as select *
-      query = "select * from " + tableName;
-    } else {
-      query = config.get(Constants.JDBC_QUERY);
-    }
-
-    return query;
-  }
-
-  public static String getQueryToExecute(Configuration config) {
-    String query = config.get(Constants.JDBC_QUERY);
-    if (query != null) {
-      // Already defined query, we return it
-      return query;
-    }
-
-    // We generate query as select *
-    String tableName = config.get(JdbcStorageConfig.TABLE.getPropertyName());
-    query = "select * from " + tableName;
-
-    return query;
-  }
-
-
   private static boolean isEmptyString(String value) {
     return ((value == null) || (value.trim().isEmpty()));
   }
@@ -182,11 +199,11 @@ public class JdbcStorageConfigManager {
   }
 
   private static String getMetastoreDatabaseType(HiveConf conf) {
-    return conf.getVar(HiveConf.ConfVars.METASTOREDBTYPE);
+    return conf.getVar(HiveConf.ConfVars.METASTORE_DB_TYPE);
   }
 
   private static String getMetastoreConnectionURL(HiveConf conf) {
-    return conf.getVar(HiveConf.ConfVars.METASTORECONNECTURLKEY);
+    return conf.getVar(HiveConf.ConfVars.METASTORE_CONNECT_URL_KEY);
   }
 
   private static String getMetastoreDriver(HiveConf conf) {
@@ -199,6 +216,6 @@ public class JdbcStorageConfigManager {
 
   private static String getMetastoreJdbcPasswd(HiveConf conf) throws IOException {
     return ShimLoader.getHadoopShims().getPassword(conf,
-        HiveConf.ConfVars.METASTOREPWD.varname);
+        HiveConf.ConfVars.METASTORE_PWD.varname);
   }
 }

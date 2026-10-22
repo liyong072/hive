@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.keyseries;
@@ -222,7 +223,6 @@ public class VectorKeySeriesLongSerialized<T extends SerializeWrite>
   private void serialize(int pos, long value) throws IOException {
     serializeWrite.setAppend(output);
 
-    // UNDONE: Add support for DATE, TIMESTAMP, INTERVAL_YEAR_MONTH, INTERVAL_DAY_TIME...
     switch (primitiveCategory) {
     case BOOLEAN:
       serializeWrite.writeBoolean(value != 0);
@@ -235,6 +235,9 @@ public class VectorKeySeriesLongSerialized<T extends SerializeWrite>
       break;
     case INT:
       serializeWrite.writeInt((int) value);
+      break;
+    case DATE:
+      serializeWrite.writeDate((int) value);
       break;
     case LONG:
       serializeWrite.writeLong(value);

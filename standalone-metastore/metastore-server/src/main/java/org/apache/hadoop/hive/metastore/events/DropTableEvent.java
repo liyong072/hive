@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.events;
@@ -29,13 +30,16 @@ public class DropTableEvent extends ListenerEvent {
 
   private final Table table;
   private final boolean deleteData;
+  private final boolean isReplicated;
 
-  public DropTableEvent(Table table, boolean status, boolean deleteData, IHMSHandler handler) {
+  public DropTableEvent(Table table, boolean status, boolean deleteData, IHMSHandler handler,
+                        boolean isReplicated) {
     super(status, handler);
     this.table = table;
     // In HiveMetaStore, the deleteData flag indicates whether DFS data should be
     // removed on a drop.
     this.deleteData = deleteData;
+    this.isReplicated = isReplicated;
   }
 
   /**
@@ -51,4 +55,9 @@ public class DropTableEvent extends ListenerEvent {
   public boolean getDeleteData() {
     return deleteData;
   }
+
+  /**
+   * @return whether this event was created by replication
+   */
+  public boolean isReplicated() { return isReplicated; }
 }

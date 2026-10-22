@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.io.orc;
 
@@ -82,8 +83,7 @@ public class OrcOutputFormat extends FileOutputFormat<NullWritable, OrcSerdeRow>
     public void write(NullWritable nullWritable,
                       OrcSerdeRow row) throws IOException {
       if (writer == null) {
-        options.inspector(row.getInspector());
-        writer = OrcFile.createWriter(path, options);
+        init(row);
       }
       writer.addRow(row.getRow());
     }
@@ -92,8 +92,7 @@ public class OrcOutputFormat extends FileOutputFormat<NullWritable, OrcSerdeRow>
     public void write(Writable row) throws IOException {
       OrcSerdeRow serdeRow = (OrcSerdeRow) row;
       if (writer == null) {
-        options.inspector(serdeRow.getInspector());
-        writer = OrcFile.createWriter(path, options);
+        init(serdeRow);
       }
       writer.addRow(serdeRow.getRow());
     }
@@ -120,6 +119,14 @@ public class OrcOutputFormat extends FileOutputFormat<NullWritable, OrcSerdeRow>
       stats.setRawDataSize(null == writer ? 0 : writer.getRawDataSize());
       stats.setRowCount(null == writer ? 0 : writer.getNumberOfRows());
       return stats;
+    }
+
+    private void init(OrcSerdeRow serdeRow) throws IOException {
+      options.inspector(serdeRow.getInspector());
+      writer = OrcFile.createWriter(path, options);
+      if (options.isCompaction()) {
+        AcidUtils.OrcAcidVersion.setAcidVersionInDataFile(writer);
+      }
     }
   }
 
@@ -156,9 +163,7 @@ public class OrcOutputFormat extends FileOutputFormat<NullWritable, OrcSerdeRow>
           schema.addField(columnNames.get(i),
               OrcInputFormat.convertTypeInfo(columnTypes.get(i)));
         }
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("ORC schema = " + schema);
-        }
+        LOG.debug("ORC schema = {}", schema);
         result.setSchema(schema);
       }
     }
@@ -268,6 +273,11 @@ public class OrcOutputFormat extends FileOutputFormat<NullWritable, OrcSerdeRow>
       stringifyObject(buffer, obj, inspector);
       return buffer.toString();
     }
+
+    @Override
+    public Path getUpdatedFilePath() {
+      return null;
+    }
   }
 
   @Override
@@ -296,7 +306,7 @@ public class OrcOutputFormat extends FileOutputFormat<NullWritable, OrcSerdeRow>
       }
     }
     final OrcRecordUpdater.KeyIndexBuilder watcher =
-        new OrcRecordUpdater.KeyIndexBuilder("compactor");
+        new OrcRecordUpdater.KeyIndexBuilder();
     opts.inspector(options.getInspector())
         .callback(watcher);
     final Writer writer = OrcFile.createWriter(filename, opts);

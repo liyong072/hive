@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizationContext;
@@ -153,7 +155,8 @@ public class PTFDesc extends AbstractOperatorDesc {
 
     @Explain(vectorization = Vectorization.EXPRESSION, displayName = "functionInputExpressions", explainLevels = { Level.DEFAULT, Level.EXTENDED })
     public String getFunctionInputExpressions() {
-      return Arrays.toString(vectorPTFInfo.getEvaluatorInputExpressions());
+      return Arrays.asList(vectorPTFInfo.getEvaluatorInputExpressions()).stream().map(i -> i[0])
+          .collect(Collectors.toList()).toString();
     }
 
     @Explain(vectorization = Vectorization.EXPRESSION, displayName = "partitionExpressions", explainLevels = { Level.DEFAULT, Level.EXTENDED })
@@ -216,6 +219,14 @@ public class PTFDesc extends AbstractOperatorDesc {
         }
       }
       return result.toString();
+    }
+
+    @Explain(vectorization = Vectorization.DETAIL, displayName = "allEvaluatorsAreStreaming", explainLevels = {
+        Level.DEFAULT, Level.EXTENDED })
+    public boolean getAllEvaluatorsAreStreaming() {
+      VectorPTFEvaluatorBase[] evaluators =
+          VectorPTFDesc.getEvaluators(vectorPTFDesc, vectorPTFInfo);
+      return VectorPTFDesc.getAllEvaluatorsAreStreaming(evaluators);
     }
   }
 

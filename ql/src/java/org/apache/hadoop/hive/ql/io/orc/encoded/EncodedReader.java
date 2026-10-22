@@ -9,24 +9,27 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.io.orc.encoded;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.apache.hadoop.hive.common.io.DiskRangeList;
 import org.apache.orc.StripeInformation;
 import org.apache.hadoop.hive.ql.io.orc.encoded.Reader.OrcEncodedColumnBatch;
 import org.apache.orc.OrcProto;
 import org.apache.orc.impl.OrcIndex;
 
-public interface EncodedReader {
+public interface EncodedReader extends Closeable {
 
   /**
    * Reads encoded data from ORC file.
@@ -44,11 +47,6 @@ public interface EncodedReader {
       OrcProto.RowIndex[] index, List<OrcProto.ColumnEncoding> encodings,
       List<OrcProto.Stream> streams, boolean[] physicalFileIncludes, boolean[] rgs,
       Consumer<OrcEncodedColumnBatch> consumer) throws IOException;
-
-  /**
-   * Closes the reader.
-   */
-  void close() throws IOException;
 
   /**
    * Controls the low-level debug tracing. (Hopefully) allows for optimization where tracing
@@ -71,4 +69,10 @@ public interface EncodedReader {
           throws IOException;
 
   void setStopped(AtomicBoolean isStopped);
+
+  /**
+   * Reads the encoded data from ORC file by disk ranges and populates the cache.
+   */
+  void preReadDataRanges(DiskRangeList ranges) throws IOException;
+
 }

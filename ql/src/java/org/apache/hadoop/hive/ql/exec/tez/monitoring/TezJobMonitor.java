@@ -1,22 +1,28 @@
 /*
-  Licensed to the Apache Software Foundation (ASF) under one
-  or more contributor license agreements.  See the NOTICE file
-  distributed with this work for additional information
-  regarding copyright ownership.  The ASF licenses this file
-  to you under the Apache License, Version 2.0 (the
-  "License"); you may not use this file except in compliance
-  with the License.  You may obtain a copy of the License at
-  <p>
-  http://www.apache.org/licenses/LICENSE-2.0
-  <p>
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.tez.monitoring;
+import org.apache.hadoop.hive.ql.exec.tez.TezSession;
+import org.apache.hadoop.hive.ql.exec.tez.Utils;
+import org.apache.hadoop.hive.ql.exec.tez.monitoring.yarnqueue.NoOpQueueMetricsCollector;
+import org.apache.hadoop.hive.ql.exec.tez.monitoring.yarnqueue.QueueMetricsCollector;
+import org.apache.hadoop.hive.ql.exec.tez.monitoring.yarnqueue.YarnQueueMetricsCollector;
 
 import static org.apache.tez.dag.api.client.DAGStatus.State.RUNNING;
 
@@ -40,6 +46,7 @@ import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.ql.Context;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.tez.TezSessionPoolManager;
+import org.apache.hadoop.yarn.client.api.YarnClient;
 import org.apache.hadoop.hive.ql.log.PerfLogger;
 import org.apache.hadoop.hive.ql.plan.BaseWork;
 import org.apache.hadoop.hive.ql.session.SessionState;
@@ -75,12 +82,16 @@ public class TezJobMonitor {
   private static final int MAX_CHECK_INTERVAL = 1000;
   private static final int MAX_RETRY_INTERVAL = 2500;
   private static final int MAX_RETRY_FAILURES = (MAX_RETRY_INTERVAL / MAX_CHECK_INTERVAL) + 1;
+  private static final long MIN_QUEUE_METRICS_REFRESH_INTERVAL_MS = 1000L;
 
-  private final PerfLogger perfLogger = SessionState.getPerfLogger();
+  private final TezSession session;
+  private final PerfLogger perfLogger;
   private static final List<DAGClient> shutdownList;
   private final List<BaseWork> topSortedWorks;
 
   transient LogHelper console;
+  // Collecting execution summary might be a bit expensive, only do it if needed for query history.
+  private final boolean shouldCollectSummaryString;
 
   private StringWriter diagnostics = new StringWriter();
 
@@ -112,24 +123,125 @@ public class TezJobMonitor {
   private final Context context;
   private long executionStartTime = 0;
   private final RenderStrategy.UpdateFunction updateFunction;
+  // compile time tez counters
+  private final TezCounters counters;
+  private final QueueMetricsCollector metricsCollector;
 
-  public TezJobMonitor(List<BaseWork> topSortedWorks, final DAGClient dagClient, HiveConf conf, DAG dag,
-                       Context ctx) {
+  public TezJobMonitor(TezSession session, List<BaseWork> topSortedWorks, final DAGClient dagClient, HiveConf conf,
+      DAG dag, Context ctx, final TezCounters counters, PerfLogger perfLogger) {
+    this.session = session;
     this.topSortedWorks = topSortedWorks;
     this.dagClient = dagClient;
     this.hiveConf = conf;
     this.dag = dag;
     this.context = ctx;
     console = SessionState.getConsole();
+    this.perfLogger = perfLogger;
     updateFunction = updateFunction();
+    this.counters = counters;
+    this.shouldCollectSummaryString = conf.getBoolVar(HiveConf.ConfVars.HIVE_QUERY_HISTORY_ENABLED) &&
+        conf.getBoolVar(ConfVars.HIVE_QUERY_HISTORY_EXEC_SUMMARY_ENABLED);
+
+    // Initialize YARN queue metrics collector if enabled
+    this.metricsCollector = initializeMetricsCollector();
   }
 
   private RenderStrategy.UpdateFunction updateFunction() {
     return InPlaceUpdate.canRenderInPlace(hiveConf)
         && !SessionState.getConsole().getIsSilent()
         && !SessionState.get().isHiveServerQuery()
-        ? new RenderStrategy.InPlaceUpdateFunction(this)
-        : new RenderStrategy.LogToFileFunction(this);
+        ? new RenderStrategy.InPlaceUpdateFunction(this, perfLogger)
+        : new RenderStrategy.LogToFileFunction(this, perfLogger);
+  }
+
+  /**
+   * Initializes the YARN queue metrics collector based on configuration.
+   * When metrics collection is disabled or initialization fails, a no-op collector is returned.
+   *
+   * <p>Metrics collection requires:
+   * <ul>
+   *   <li>Positive {@link ConfVars#HIVE_TEZ_QUEUE_METRICS_REFRESH_INTERVAL} value</li>
+   *   <li>Available {@link YarnClient} from Tez session</li>
+   * </ul>
+   *
+   * <p>The refresh interval is validated against {@value #MIN_QUEUE_METRICS_REFRESH_INTERVAL_MS}ms minimum.
+   * Thread pool management is delegated to {@link QueueMetricsRefreshPool}.
+   *
+   * @return {@link YarnQueueMetricsCollector} if enabled, otherwise {@link NoOpQueueMetricsCollector#INSTANCE}.
+   *         Never returns null.
+   * @see #getValidatedRefreshInterval()
+   * @see #getValidatedQueueName()
+   */
+  private QueueMetricsCollector initializeMetricsCollector() {
+
+    try {
+      // Get and validate refresh interval
+      long refreshInterval = getValidatedRefreshInterval();
+      if (refreshInterval <= 0) {
+        return NoOpQueueMetricsCollector.INSTANCE;
+      }
+
+      // Get YarnClient from session
+      YarnClient yarnClient = session.getYarnClient();
+      if (yarnClient == null) {
+        LOG.warn("YarnClient not available, skipping queue metrics collection");
+        return NoOpQueueMetricsCollector.INSTANCE;
+      }
+
+      // Get queue name, default to "default" if not specified
+      String queueName = getValidatedQueueName();
+
+      // Use the DAG name as the query identifier for logging
+      String dagName = dag.getName();
+
+      LOG.info("Initializing YARN queue metrics collector for queue: {}, refresh interval: {}ms",
+          queueName, refreshInterval);
+
+      return new YarnQueueMetricsCollector(yarnClient, queueName, refreshInterval, dagName);
+    } catch (Exception e) {
+      LOG.warn("Unable to initialize YARN queue metrics collector", e);
+      return NoOpQueueMetricsCollector.INSTANCE;
+    }
+  }
+
+  /**
+   * Retrieves and validates the queue metrics refresh interval from configuration.
+   *
+   * @return validated refresh interval in milliseconds, or -1 if disabled
+   */
+  private long getValidatedRefreshInterval() {
+    // Get refresh interval — controls whether the feature is enabled.
+    // interval <= 0 means disabled (default is 0s = disabled).
+    long refreshInterval = HiveConf.getTimeVar(hiveConf,
+        ConfVars.HIVE_TEZ_QUEUE_METRICS_REFRESH_INTERVAL, TimeUnit.MILLISECONDS);
+
+    if (refreshInterval <= 0) {
+      LOG.debug("Queue metrics collection disabled (refresh interval: {}ms)", refreshInterval);
+      return -1;
+    }
+
+    // Validate minimum refresh interval (at least 1 second)
+    if (refreshInterval < MIN_QUEUE_METRICS_REFRESH_INTERVAL_MS) {
+      LOG.warn("Queue metrics refresh interval {}ms is less than minimum {}ms, using {}ms",
+          refreshInterval, MIN_QUEUE_METRICS_REFRESH_INTERVAL_MS, MIN_QUEUE_METRICS_REFRESH_INTERVAL_MS);
+      refreshInterval = MIN_QUEUE_METRICS_REFRESH_INTERVAL_MS;
+    }
+
+    return refreshInterval;
+  }
+
+  /**
+   * Retrieves and validates the queue name from the session.
+   *
+   * @return validated queue name, defaults to "default" if not specified
+   */
+  private String getValidatedQueueName() {
+    String queueName = session.getQueueName();
+    if (queueName == null || queueName.trim().isEmpty()) {
+      queueName = "default";
+      LOG.info("Queue name not specified. For metrics monitoring, using 'default' as queue name");
+    }
+    return queueName;
   }
 
   private boolean isProfilingEnabled() {
@@ -146,13 +258,12 @@ public class TezJobMonitor {
     DAGStatus status = null;
     Map<String, Progress> vertexProgressMap = null;
 
-
     long monitorStartTime = System.currentTimeMillis();
     synchronized (shutdownList) {
       shutdownList.add(dagClient);
     }
-    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.TEZ_RUN_DAG);
-    perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.TEZ_SUBMIT_TO_RUNNING);
+    perfLogger.perfLogBegin(CLASS_NAME, PerfLogger.TEZ_RUN_DAG);
+    perfLogger.perfLogBegin(CLASS_NAME, PerfLogger.TEZ_SUBMIT_TO_RUNNING);
     DAGStatus.State lastState = null;
     boolean running = false;
 
@@ -176,6 +287,7 @@ public class TezJobMonitor {
         }
 
         status = dagClient.getDAGStatus(opts, checkInterval);
+        session.updateDagStatus(status);
 
         vertexProgressMap = status.getVertexProgress();
         List<String> vertexNames = vertexProgressMap.keySet()
@@ -185,12 +297,12 @@ public class TezJobMonitor {
         if (wmContext != null) {
           Set<String> desiredCounters = wmContext.getSubscribedCounters();
           TezCounters dagCounters = status.getDAGCounters();
-          if (dagCounters != null && desiredCounters != null && !desiredCounters.isEmpty()) {
-            Map<String, Long> currentCounters = getCounterValues(dagCounters, vertexNames, vertexProgressMap,
+          // if initial counters exists, merge it with dag counters to get aggregated view
+          TezCounters mergedCounters = counters == null ? dagCounters : Utils.mergeTezCounters(dagCounters, counters);
+          if (mergedCounters != null && desiredCounters != null && !desiredCounters.isEmpty()) {
+            Map<String, Long> currentCounters = getCounterValues(mergedCounters, vertexNames, vertexProgressMap,
               desiredCounters, done);
-            if (LOG.isDebugEnabled()) {
-              LOG.debug("Requested DAG status. checkInterval: {}. currentCounters: {}", checkInterval, currentCounters);
-            }
+            LOG.debug("Requested DAG status. checkInterval: {}. currentCounters: {}", checkInterval, currentCounters);
             wmContext.setCurrentCounters(currentCounters);
           }
         }
@@ -212,7 +324,7 @@ public class TezJobMonitor {
               break;
             case RUNNING:
               if (!running) {
-                perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.TEZ_SUBMIT_TO_RUNNING);
+                perfLogger.perfLogEnd(CLASS_NAME, PerfLogger.TEZ_SUBMIT_TO_RUNNING);
                 console.printInfo("Status: Running (" + dagClient.getExecutionContext() + ")\n");
                 this.executionStartTime = System.currentTimeMillis();
                 running = true;
@@ -274,7 +386,9 @@ public class TezJobMonitor {
           } catch (IOException | TezException tezException) {
             // best effort
           }
-          console.printError("Execution has failed. stack trace: " + ExceptionUtils.getStackTrace(e));
+          String reportedException = "Execution has failed, stack trace: " + ExceptionUtils.getStackTrace(e);
+          console.printError(reportedException);
+          diagnostics.append(reportedException);
           rc = 1;
           done = true;
         } else {
@@ -297,12 +411,17 @@ public class TezJobMonitor {
           synchronized (shutdownList) {
             shutdownList.remove(dagClient);
           }
+
+          // Close metrics collector (no-op if disabled)
+          metricsCollector.close();
+          LOG.debug("Closed metrics collector for queue: {}", metricsCollector.getQueueName());
+
           break;
         }
       }
     }
 
-    perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.TEZ_RUN_DAG);
+    perfLogger.perfLogEnd(CLASS_NAME, PerfLogger.TEZ_RUN_DAG);
     printSummary(success, vertexProgressMap);
     return rc;
   }
@@ -428,9 +547,12 @@ public class TezJobMonitor {
 
   private void printSummary(boolean success, Map<String, Progress> progressMap) {
     if (isProfilingEnabled() && success && progressMap != null) {
-
+      if (shouldCollectSummaryString){
+        console.startSummary();
+      }
       double duration = (System.currentTimeMillis() - this.executionStartTime) / 1000.0;
       console.printInfo("Status: DAG finished successfully in " + String.format("%.2f seconds", duration));
+      console.printInfo("DAG ID: " + this.dagClient.getDagIdentifierString());
       console.printInfo("");
 
       new QueryExecutionBreakdownSummary(perfLogger).print(console);
@@ -439,8 +561,8 @@ public class TezJobMonitor {
       //llap IO summary
       if (HiveConf.getBoolVar(hiveConf, HiveConf.ConfVars.LLAP_IO_ENABLED, false)) {
         new LLAPioSummary(progressMap, dagClient).print(console);
-        new FSCountersSummary(progressMap, dagClient).print(console);
       }
+      new FSCountersSummary(progressMap, dagClient).print(console);
       String wmQueue = HiveConf.getVar(hiveConf, ConfVars.HIVE_SERVER2_TEZ_INTERACTIVE_QUEUE);
       if (wmQueue != null && !wmQueue.isEmpty()) {
         new LlapWmSummary(progressMap, dagClient).print(console);
@@ -481,10 +603,28 @@ public class TezJobMonitor {
     }
   }
 
+  public static void killRunningDAGsForApplication(String applicationId) {
+    synchronized (shutdownList) {
+      for (DAGClient c : shutdownList) {
+        try {
+          if (applicationId.equals(c.getSessionIdentifierString())) {
+            c.tryKillDAG();
+          }
+        } catch (Exception e) {
+          LOG.error("Error while trying to kill running DAG on tez session {}", applicationId, e);
+        }
+      }
+    }
+  }
+
   static long getCounterValueByGroupName(TezCounters vertexCounters, String groupNamePattern,
                                          String counterName) {
     TezCounter tezCounter = vertexCounters.getGroup(groupNamePattern).findCounter(counterName);
     return (tezCounter == null) ? 0 : tezCounter.getValue();
+  }
+
+  public HiveConf getHiveConf() {
+    return hiveConf;
   }
 
   public String getDiagnostics() {
@@ -494,11 +634,15 @@ public class TezJobMonitor {
   ProgressMonitor progressMonitor(DAGStatus status, Map<String, Progress> progressMap) {
     try {
       return new TezProgressMonitor(dagClient, status, topSortedWorks, progressMap, console,
-          executionStartTime);
+          executionStartTime, metricsCollector);
     } catch (IOException | TezException e) {
       console.printInfo("Getting  Progress Information: " + e.getMessage() + " stack trace: " +
           ExceptionUtils.getStackTrace(e));
     }
     return TezProgressMonitor.NULL;
+  }
+
+  public LogHelper logger(){
+    return console;
   }
 }

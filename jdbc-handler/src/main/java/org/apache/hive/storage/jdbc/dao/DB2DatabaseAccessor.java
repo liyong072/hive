@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.storage.jdbc.dao;
 
@@ -40,5 +41,24 @@ public class DB2DatabaseAccessor extends GenericJdbcDatabaseAccessor {
       return sql;
     }
     return sql + " LIMIT " + limit;
+  }
+
+  @Override
+  protected String constructQuery(String table, String[] columnNames) {
+    if(columnNames == null) {
+      throw new IllegalArgumentException("Column names may not be null");
+    }
+
+    StringBuilder query = new StringBuilder();
+    query.append("INSERT INTO ").append(table).append(" VALUES (");
+
+    for (int i = 0; i < columnNames.length; i++) {
+      query.append("?");
+      if(i != columnNames.length - 1) {
+        query.append(",");
+      }
+    }
+    query.append(")");
+    return query.toString();
   }
 }

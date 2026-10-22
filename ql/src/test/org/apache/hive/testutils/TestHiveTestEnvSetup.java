@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.testutils;
@@ -24,8 +25,6 @@ import java.util.List;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.DriverFactory;
 import org.apache.hadoop.hive.ql.IDriver;
-import org.apache.hadoop.hive.ql.parse.ParseException;
-import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hive.testutils.HiveTestEnvSetup;
 import org.junit.AfterClass;
@@ -54,8 +53,7 @@ public class TestHiveTestEnvSetup {
         // @formatter:on
     };
     for (String cmd : cmds) {
-      int ret = driver.run(cmd).getResponseCode();
-      assertEquals("Checking command success", 0, ret);
+      driver.run(cmd);
     }
   }
 
@@ -68,17 +66,15 @@ public class TestHiveTestEnvSetup {
   public static void dropTables(IDriver driver) throws Exception {
     String tables[] = { "s", "tu", "tv", "tw" };
     for (String t : tables) {
-      int ret = driver.run("drop table if exists " + t).getResponseCode();
-      assertEquals("Checking command success", 0, ret);
+      driver.run("drop table if exists " + t);
     }
   }
 
   @Test
-  public void testMappingSameQuery() throws ParseException, Exception {
+  public void testMappingSameQuery() throws Exception {
     IDriver driver = createDriver();
     String query = "select sum(u*u),sum(u) from tu where u>1";
-    CommandProcessorResponse ret = driver.run(query);
-    assertEquals(0, ret.getResponseCode());
+    driver.run(query);
 
     List res = new ArrayList();
     driver.getFetchTask().fetch(res);

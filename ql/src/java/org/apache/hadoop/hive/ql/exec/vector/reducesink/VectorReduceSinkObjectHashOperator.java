@@ -9,18 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.reducesink;
 
 import java.util.Random;
-import java.util.function.BiFunction;
 
+import java.util.function.ToIntFunction;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.ql.CompilationOpContext;
 import org.apache.hadoop.hive.ql.exec.vector.VectorExtractRow;
@@ -78,16 +79,15 @@ public class VectorReduceSinkObjectHashOperator extends VectorReduceSinkCommonOp
   protected transient VectorSerializeRow<BinarySortableSerializeWrite> keyVectorSerializeRow;
 
   private transient int numBuckets;
-  private transient ObjectInspector[] bucketObjectInspectors;
   private transient VectorExtractRow bucketVectorExtractRow;
   private transient Object[] bucketFieldValues;
 
-  private transient ObjectInspector[] partitionObjectInspectors;
   private transient VectorExtractRow partitionVectorExtractRow;
   private transient Object[] partitionFieldValues;
   private transient Random nonPartitionRandom;
 
-  private transient BiFunction<Object[], ObjectInspector[], Integer> hashFunc;
+  private transient ToIntFunction<Object[]> partitionHashFunc;
+  private transient ToIntFunction<Object[]> bucketHashFunc;
   private transient BucketNumExpression bucketExpr = null;
 
   /** Kryo ctor. */
@@ -146,8 +146,8 @@ public class VectorReduceSinkObjectHashOperator extends VectorReduceSinkCommonOp
   @Override
   protected void initializeOp(Configuration hconf) throws HiveException {
     super.initializeOp(hconf);
-    VectorExpression.doTransientInit(reduceSinkBucketExpressions);
-    VectorExpression.doTransientInit(reduceSinkPartitionExpressions);
+    VectorExpression.doTransientInit(reduceSinkBucketExpressions, hconf);
+    VectorExpression.doTransientInit(reduceSinkPartitionExpressions, hconf);
 
     if (!isEmptyKey) {
 
@@ -168,7 +168,7 @@ public class VectorReduceSinkObjectHashOperator extends VectorReduceSinkCommonOp
     } else {
       numBuckets = conf.getNumBuckets();
 
-      bucketObjectInspectors = getObjectInspectorArray(reduceSinkBucketTypeInfos);
+      bucketHashFunc = conf.getPartitionFunction(getObjectInspectorArray(reduceSinkBucketTypeInfos));
       bucketVectorExtractRow = new VectorExtractRow();
       bucketVectorExtractRow.init(reduceSinkBucketTypeInfos, reduceSinkBucketColumnMap);
       bucketFieldValues = new Object[reduceSinkBucketTypeInfos.length];
@@ -177,16 +177,11 @@ public class VectorReduceSinkObjectHashOperator extends VectorReduceSinkCommonOp
     if (isEmptyPartitions) {
       nonPartitionRandom = new Random(12345);
     } else {
-      partitionObjectInspectors = getObjectInspectorArray(reduceSinkPartitionTypeInfos);
+      partitionHashFunc = conf.getPartitionFunction(getObjectInspectorArray(reduceSinkPartitionTypeInfos));
       partitionVectorExtractRow = new VectorExtractRow();
       partitionVectorExtractRow.init(reduceSinkPartitionTypeInfos, reduceSinkPartitionColumnMap);
       partitionFieldValues = new Object[reduceSinkPartitionTypeInfos.length];
     }
-
-    // Set hashFunc
-    hashFunc = bucketingVersion == 2 && !vectorDesc.getIsAcidChange() ?
-      ObjectInspectorUtils::getBucketHashCode :
-      ObjectInspectorUtils::getBucketHashCodeOld;
 
     // Set function to evaluate _bucket_number if needed.
     if (reduceSinkKeyExpressions != null) {
@@ -232,21 +227,21 @@ public class VectorReduceSinkObjectHashOperator extends VectorReduceSinkCommonOp
           ve.evaluate(batch);
         }
       }
-  
+
       // Perform any value expressions.  Results will go into scratch columns.
       if (reduceSinkValueExpressions != null) {
         for (VectorExpression ve : reduceSinkValueExpressions) {
           ve.evaluate(batch);
         }
       }
-  
+
       // Perform any bucket expressions.  Results will go into scratch columns.
       if (reduceSinkBucketExpressions != null) {
         for (VectorExpression ve : reduceSinkBucketExpressions) {
           ve.evaluate(batch);
         }
       }
-  
+
       // Perform any partition expressions.  Results will go into scratch columns.
       if (reduceSinkPartitionExpressions != null) {
         for (VectorExpression ve : reduceSinkPartitionExpressions) {
@@ -273,14 +268,14 @@ public class VectorReduceSinkObjectHashOperator extends VectorReduceSinkCommonOp
         } else {
           // Compute hashCode from partitions
           partitionVectorExtractRow.extractRow(batch, batchIndex, partitionFieldValues);
-          hashCode = hashFunc.apply(partitionFieldValues, partitionObjectInspectors);
+          hashCode = partitionHashFunc.applyAsInt(partitionFieldValues);
         }
 
         // Compute hashCode from buckets
         if (!isEmptyBuckets) {
           bucketVectorExtractRow.extractRow(batch, batchIndex, bucketFieldValues);
           final int bucketNum = ObjectInspectorUtils.getBucketNumber(
-              hashFunc.apply(bucketFieldValues, bucketObjectInspectors), numBuckets);
+              bucketHashFunc.applyAsInt(bucketFieldValues), numBuckets);
           if (bucketExpr != null) {
             evaluateBucketExpr(batch, batchIndex, bucketNum);
           }
@@ -296,7 +291,9 @@ public class VectorReduceSinkObjectHashOperator extends VectorReduceSinkCommonOp
 
   private void processKey(VectorizedRowBatch batch, int batchIndex, int tag)
   throws HiveException{
-    if (isEmptyKey) return;
+    if (isEmptyKey) {
+      return;
+    }
 
     try {
       keyBinarySortableSerializeWrite.reset();
@@ -318,7 +315,9 @@ public class VectorReduceSinkObjectHashOperator extends VectorReduceSinkCommonOp
   }
 
   private void processValue(VectorizedRowBatch batch, int batchIndex)  throws HiveException {
-    if (isEmptyValue) return;
+    if (isEmptyValue) {
+      return;
+    }
 
     try {
       valueLazyBinarySerializeWrite.reset();

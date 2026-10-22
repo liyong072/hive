@@ -9,17 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.Optional;
 
 import org.apache.hadoop.hive.common.classification.InterfaceAudience;
 import org.apache.hadoop.hive.common.classification.InterfaceStability;
@@ -65,7 +67,7 @@ import org.apache.hadoop.io.LongWritable;
  * variable length of arguments. 3. It can accept an infinite number of function
  * signature - for example, it's easy to write a GenericUDF that accepts
  * array&lt;int&gt;, array&lt;array&lt;int&gt;&gt; and so on (arbitrary levels of nesting). 4. It
- * can do short-circuit evaluations using DeferedObject.
+ * can do short-circuit evaluations using {@link DeferredObject}.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Stable
@@ -76,8 +78,8 @@ public abstract class GenericUDF implements Closeable {
       "th", "th", "th", "th", "th" };
 
   /**
-   * A Defered Object allows us to do lazy-evaluation and short-circuiting.
-   * GenericUDF use DeferedObject to pass arguments.
+   * A Deferred Object allows us to do lazy-evaluation and short-circuiting.
+   * GenericUDF use {@link DeferredObject} to pass arguments.
    */
   @InterfaceAudience.Public
   @InterfaceStability.Stable
@@ -99,11 +101,33 @@ public abstract class GenericUDF implements Closeable {
 
     @Override
     public void prepare(int version) throws HiveException {
+      // This implementation doesn't need to be prepared
     }
 
     @Override
     public Object get() throws HiveException {
       return value;
+    }
+  }
+
+  /**
+   * A basic implementation of DeferredObject which allows to set or get a Java Object reference.
+   */
+  public static class SettableDeferredJavaObject implements DeferredObject {
+    private Object value;
+
+    @Override
+    public void prepare(int version) throws HiveException {
+      // This implementation doesn't need to be prepared
+    }
+
+    @Override
+    public Object get() throws HiveException {
+      return value;
+    }
+
+    public void set(Object value) {
+      this.value = value;
     }
   }
 
@@ -406,19 +430,17 @@ public abstract class GenericUDF implements Closeable {
     case STRING:
     case VARCHAR:
     case CHAR:
-      outOi = PrimitiveObjectInspectorFactory.writableStringObjectInspector;
-      break;
     case TIMESTAMP:
     case DATE:
     case VOID:
     case TIMESTAMPLOCALTZ:
-      outOi = PrimitiveObjectInspectorFactory.writableDateObjectInspector;
       break;
     default:
       throw new UDFArgumentTypeException(i, getFuncName()
-          + " only takes STRING_GROUP or DATE_GROUP types as " + getArgOrder(i) + " argument, got "
+          + " only takes STRING_GROUP/DATE_GROUP/VOID_GROUP types as " + getArgOrder(i) + " argument, got "
           + inputType);
     }
+    outOi = PrimitiveObjectInspectorFactory.writableDateObjectInspector;
     converters[i] = ObjectInspectorConverters.getConverter(inOi, outOi);
     inputTypes[i] = inputType;
   }
@@ -435,10 +457,19 @@ public abstract class GenericUDF implements Closeable {
     case TIMESTAMP:
     case DATE:
     case TIMESTAMPLOCALTZ:
+    case INT:
+    case SHORT:
+    case LONG:
+    case DOUBLE:
+    case FLOAT:
+    case DECIMAL:
+    case VOID:
+    case BOOLEAN:
+    case BYTE:
       break;
     default:
       throw new UDFArgumentTypeException(i, getFuncName()
-          + " only takes STRING_GROUP or DATE_GROUP types as " + getArgOrder(i) + " argument, got "
+          + " only takes STRING_GROUP/DATE_GROUP/NUMERIC_GROUP/VOID_GROUP/BOOLEAN_GROUP types as " + getArgOrder(i) + " argument, got "
           + inputType);
     }
     outOi = PrimitiveObjectInspectorFactory.writableTimestampObjectInspector;
@@ -488,36 +519,15 @@ public abstract class GenericUDF implements Closeable {
     return v;
   }
 
-  protected Date getDateValue(DeferredObject[] arguments, int i, PrimitiveCategory[] inputTypes,
-                              Converter[] converters) throws HiveException {
+  protected Date getDateValue(DeferredObject[] arguments, int i, Converter[] converters)
+      throws HiveException {
     Object obj;
     if ((obj = arguments[i].get()) == null) {
       return null;
     }
+    Object writableValue = converters[i].convert(obj);
 
-    Date date;
-    switch (inputTypes[i]) {
-    case STRING:
-    case VARCHAR:
-    case CHAR:
-      String dateStr = converters[i].convert(obj).toString();
-      try {
-        date = Date.valueOf(dateStr);
-      } catch (IllegalArgumentException e) {
-        date = null;
-      }
-      break;
-    case TIMESTAMP:
-    case DATE:
-    case TIMESTAMPLOCALTZ:
-      Object writableValue = converters[i].convert(obj);
-      date = ((DateWritableV2) writableValue).get();
-      break;
-    default:
-      throw new UDFArgumentTypeException(0, getFuncName()
-          + " only takes STRING_GROUP and DATE_GROUP types, got " + inputTypes[i]);
-    }
-    return date;
+    return writableValue == null ? null : ((DateWritableV2) writableValue).get();
   }
 
   protected Timestamp getTimestampValue(DeferredObject[] arguments, int i, Converter[] converters)
@@ -637,5 +647,13 @@ public abstract class GenericUDF implements Closeable {
     default:
       return i + ORDINAL_SUFFIXES[i % 10];
     }
+  }
+
+  @SuppressWarnings("unchecked")
+  public <T> Optional<T> adapt(Class<T> clazz) {
+    if (clazz.isInstance(this)) {
+      return Optional.of((T) this);
+    }
+    return Optional.empty();
   }
 }

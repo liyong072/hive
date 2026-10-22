@@ -19,69 +19,98 @@
 
 package org.apache.hadoop.hive.metastore.columnstats.merge;
 
+import org.apache.hadoop.hive.common.histogram.KllHistogramEstimator;
 import org.apache.hadoop.hive.common.ndv.NumDistinctValueEstimator;
+import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
 import org.apache.hadoop.hive.metastore.api.Decimal;
+import org.apache.hadoop.hive.metastore.api.utils.DecimalUtils;
 import org.apache.hadoop.hive.metastore.columnstats.cache.DecimalColumnStatsDataInspector;
+
+import com.google.common.base.MoreObjects;
 
 import static org.apache.hadoop.hive.metastore.columnstats.ColumnsStatsUtils.decimalInspectorFromStats;
 
-public class DecimalColumnStatsMerger extends ColumnStatsMerger {
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
+import java.util.List;
+
+public class DecimalColumnStatsMerger extends ColumnStatsMerger<Decimal> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(DecimalColumnStatsMerger.class);
+
   @Override
   public void merge(ColumnStatisticsObj aggregateColStats, ColumnStatisticsObj newColStats) {
-    DecimalColumnStatsDataInspector aggregateData =
-        decimalInspectorFromStats(aggregateColStats);
-    DecimalColumnStatsDataInspector newData =
-        decimalInspectorFromStats(newColStats);
+    LOG.debug("Merging statistics: [aggregateColStats:{}, newColStats: {}]", aggregateColStats, newColStats);
 
-    Decimal lowValue = getMin(aggregateData.getLowValue(), newData.getLowValue());
-    aggregateData.setLowValue(lowValue);
+    DecimalColumnStatsDataInspector aggregateData = decimalInspectorFromStats(aggregateColStats);
+    DecimalColumnStatsDataInspector newData = decimalInspectorFromStats(newColStats);
 
-    Decimal highValue = getMax(aggregateData.getHighValue(), newData.getHighValue());
-    aggregateData.setHighValue(highValue);
-
-    aggregateData.setNumNulls(aggregateData.getNumNulls() + newData.getNumNulls());
-
-    if (aggregateData.getNdvEstimator() == null || newData.getNdvEstimator() == null) {
-      aggregateData.setNumDVs(Math.max(aggregateData.getNumDVs(), newData.getNumDVs()));
-    } else {
-      NumDistinctValueEstimator oldEst = aggregateData.getNdvEstimator();
-      NumDistinctValueEstimator newEst = newData.getNdvEstimator();
-      long ndv = -1;
-      if (oldEst.canMerge(newEst)) {
-        oldEst.mergeEstimators(newEst);
-        ndv = oldEst.estimateNumDistinctValues();
-        aggregateData.setNdvEstimator(oldEst);
-      } else {
-        ndv = Math.max(aggregateData.getNumDVs(), newData.getNumDVs());
-      }
-      LOG.debug("Use bitvector to merge column " + aggregateColStats.getColName() + "'s ndvs of "
-          + aggregateData.getNumDVs() + " and " + newData.getNumDVs() + " to be " + ndv);
-      aggregateData.setNumDVs(ndv);
+    Decimal lowValue = mergeLowValue(getLowValue(aggregateData), getLowValue(newData));
+    if (lowValue != null) {
+      aggregateData.setLowValue(lowValue);
     }
+    Decimal highValue = mergeHighValue(getHighValue(aggregateData), getHighValue(newData));
+    if (highValue != null) {
+      aggregateData.setHighValue(highValue);
+    }
+    aggregateData.setNumNulls(mergeNumNulls(aggregateData.getNumNulls(), newData.getNumNulls()));
+
+    NumDistinctValueEstimator oldNDVEst = aggregateData.getNdvEstimator();
+    NumDistinctValueEstimator newNDVEst = newData.getNdvEstimator();
+    List<NumDistinctValueEstimator> ndvEstimatorsList = Arrays.asList(oldNDVEst, newNDVEst);
+    aggregateData.setNumDVs(mergeNumDistinctValueEstimator(aggregateColStats.getColName(),
+        ndvEstimatorsList, aggregateData.getNumDVs(), newData.getNumDVs()));
+    aggregateData.setNdvEstimator(ndvEstimatorsList.get(0));
+
+    KllHistogramEstimator oldKllEst = aggregateData.getHistogramEstimator();
+    KllHistogramEstimator newKllEst = newData.getHistogramEstimator();
+    aggregateData.setHistogramEstimator(mergeHistogramEstimator(aggregateColStats.getColName(), oldKllEst, newKllEst));
+
+    aggregateColStats.getStatsData().setDecimalStats(aggregateData);
   }
 
-  Decimal getMax(Decimal firstValue, Decimal secondValue) {
-    if (firstValue == null && secondValue == null) {
-      return null;
-    }
-
-    if (firstValue != null && secondValue != null) {
-      return firstValue.compareTo(secondValue) > 0 ? firstValue : secondValue;
-    }
-
-    return firstValue == null ? secondValue : firstValue;
+  public Decimal getLowValue(DecimalColumnStatsDataInspector data) {
+    return data.isSetLowValue() ? data.getLowValue() : null;
   }
 
-  Decimal getMin(Decimal firstValue, Decimal secondValue) {
-    if (firstValue == null && secondValue == null) {
-      return null;
-    }
+  public Decimal getHighValue(DecimalColumnStatsDataInspector data) {
+    return data.isSetHighValue() ? data.getHighValue() : null;
+  }
 
-    if (firstValue != null && secondValue != null) {
-      return firstValue.compareTo(secondValue) > 0 ? secondValue : firstValue;
+  @Override
+  public Decimal mergeLowValue(Decimal oldValue, Decimal newValue) {
+    if (oldValue != null && newValue != null) {
+      return compareDecimals(oldValue, newValue) < 0 ? oldValue : newValue;
     }
+    if (oldValue != null || newValue != null) {
+      return MoreObjects.firstNonNull(oldValue, newValue);
+    }
+    return null;
+  }
 
-    return firstValue == null ? secondValue : firstValue;
+  @Override
+  public Decimal mergeHighValue(Decimal oldValue, Decimal newValue) {
+    if (oldValue != null && newValue != null) {
+      return compareDecimals(oldValue, newValue) < 0 ? newValue : oldValue;
+    }
+    if (oldValue != null || newValue != null) {
+      return MoreObjects.firstNonNull(oldValue, newValue);
+    }
+    return null;
+  }
+
+  /**
+   * Compare two decimals.
+   * @param decimal1 a non-null decimal
+   * @param decimal2 a non-null decimal
+   * @return see {@link java.util.Comparator#compare(Object, Object)}
+   */
+  private int compareDecimals(Decimal decimal1, Decimal decimal2) {
+    HiveDecimal d1 = DecimalUtils.getHiveDecimal(decimal1);
+    HiveDecimal d2 = DecimalUtils.getHiveDecimal(decimal2);
+    return d1.compareTo(d2);
   }
 }

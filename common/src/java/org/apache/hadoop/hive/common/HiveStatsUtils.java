@@ -9,24 +9,24 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.common;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.LinkedList;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,30 +56,19 @@ public class HiveStatsUtils {
    */
   public static List<FileStatus> getFileStatusRecurse(Path path, int level,  FileSystem fs)
       throws IOException {
-    return getFileStatusRecurse(path, level, fs, FileUtils.HIDDEN_FILES_PATH_FILTER, false);
-  }
-
-  public static List<FileStatus> getFileStatusRecurse(
-      Path path, int level, FileSystem fs, PathFilter filter) throws IOException {
-    return getFileStatusRecurse(path, level, fs, filter, false);
-  }
-
-  public static List<FileStatus> getFileStatusRecurse(
-      Path path, int level, FileSystem fs, PathFilter filter, boolean allLevelsBelow)
-          throws IOException {
 
     // if level is <0, the return all files/directories under the specified path
     if (level < 0) {
       List<FileStatus> result = new ArrayList<FileStatus>();
       try {
         FileStatus fileStatus = fs.getFileStatus(path);
-        FileUtils.listStatusRecursively(fs, fileStatus, filter, result);
+        FileUtils.listStatusRecursively(fs, fileStatus, result);
       } catch (IOException e) {
         // globStatus() API returns empty FileStatus[] when the specified path
         // does not exist. But getFileStatus() throw IOException. To mimic the
         // similar behavior we will return empty array on exception. For external
         // tables, the path of the table will not exists during table creation
-        return new ArrayList<>(0);
+        return Collections.emptyList();
       }
       return result;
     }
@@ -90,31 +79,22 @@ public class HiveStatsUtils {
       sb.append(Path.SEPARATOR).append("*");
     }
     Path pathPattern = new Path(path, sb.toString());
-    if (!allLevelsBelow) {
-      return Lists.newArrayList(fs.globStatus(pathPattern, filter));
+    return Lists.newArrayList(fs.globStatus(pathPattern, FileUtils.HIDDEN_FILES_PATH_FILTER));
+  }
+
+  public static boolean computeHistograms(Configuration conf) {
+    return HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVE_STATS_KLL_ENABLE,
+        HiveConf.ConfVars.HIVE_STATS_KLL_ENABLE.defaultBoolVal);
+  }
+
+  public static int getKParamForKllSketch(Configuration conf) {
+    int k = HiveConf.getIntVar(conf, HiveConf.ConfVars.HIVE_STATS_KLL_K_PARAM);
+
+    if (k < 8 || k > 65535) {
+      throw new IllegalArgumentException(HiveConf.ConfVars.HIVE_STATS_KLL_K_PARAM.varname +
+          " must be in the range [8, 65535], got " + k);
     }
-    LinkedList<FileStatus> queue = new LinkedList<>();
-    List<FileStatus> results = new ArrayList<FileStatus>();
-    for (FileStatus status : fs.globStatus(pathPattern)) {
-      if (filter.accept(status.getPath())) {
-        results.add(status);
-      }
-      if (status.isDirectory()) {
-        queue.add(status);
-      }
-    }
-    while (!queue.isEmpty()) {
-      FileStatus status = queue.poll();
-      for (FileStatus child : fs.listStatus(status.getPath())) {
-        if (filter.accept(child.getPath())) {
-          results.add(child);
-        }
-        if (child.isDirectory()) {
-          queue.add(child);
-        }
-      }
-    }
-    return results;
+    return k;
   }
 
   public static int getNumBitVectorsForNDVEstimation(Configuration conf) throws Exception {

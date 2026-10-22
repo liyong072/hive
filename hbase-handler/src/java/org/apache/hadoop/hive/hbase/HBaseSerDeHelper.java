@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.hbase;
 
@@ -116,9 +117,7 @@ public class HBaseSerDeHelper {
     // trim off the ending ",", if any
     trim(sb);
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Generated columns: [" + sb.toString() + "]");
-    }
+    LOG.debug("Generated columns: [{}]", sb);
   }
 
   /**
@@ -350,9 +349,7 @@ public class HBaseSerDeHelper {
     // trim off ending ",", if any
     trim(sb);
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Generated column types: [" + sb.toString() + "]");
-    }
+    LOG.debug("Generated column types: [{}]", sb);
   }
 
   /**

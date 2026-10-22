@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -50,9 +51,9 @@ public class FunctionInfo {
 
   private String className;
 
-  private GenericUDF genericUDF;
+  protected GenericUDF genericUDF;
 
-  private GenericUDTF genericUDTF;
+  protected GenericUDTF genericUDTF;
 
   private GenericUDAFResolver genericUDAFResolver;
 
@@ -111,6 +112,24 @@ public class FunctionInfo {
     this.resources = resources;
   }
 
+  public FunctionInfo(FunctionType functionType, String displayName, Class<? extends TableFunctionResolver> tFnCls,
+      GenericUDF genericUDF, GenericUDTF genericUDTF, GenericUDAFResolver genericUDAFResolver,
+      String className, FunctionResource... resources) {
+    this.functionType = functionType;
+    this.displayName = displayName;
+    this.tableFunctionResolver = tFnCls;
+    PartitionTableFunctionDescription def =
+        (tableFunctionResolver != null)
+	    ? AnnotationUtils.getAnnotation(
+                tableFunctionResolver, PartitionTableFunctionDescription.class)
+            : null;
+    this.genericUDF = genericUDF;
+    this.genericUDTF = genericUDTF;
+    this.genericUDAFResolver = genericUDAFResolver;
+    this.className = className;
+    this.isInternalTableFunction = def != null && def.isInternal();
+    this.resources = resources;
+  }
   /**
    * Get a new GenericUDF object for the function.
    */
@@ -214,6 +233,10 @@ public class FunctionInfo {
     return null != genericUDTF;
   }
 
+  public Class<? extends TableFunctionResolver>  getTableFunctionResolver() {
+    return tableFunctionResolver;
+  }
+
   /**
    * @return TRUE if the function is a Table Function
    */
@@ -239,6 +262,10 @@ public class FunctionInfo {
 
   public String getClassName() {
     return className;
+  }
+
+  public void setClassName(String className) {
+    this.className = className;
   }
 
   public FunctionResource[] getResources() {

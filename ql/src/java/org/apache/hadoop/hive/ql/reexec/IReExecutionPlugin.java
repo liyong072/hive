@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.reexec;
@@ -42,24 +43,72 @@ public interface IReExecutionPlugin {
   /**
    * Called before executing the query.
    */
-  void beforeExecute(int executionIndex, boolean explainReOptimization);
+  default void beforeExecute(int executionIndex, boolean explainReOptimization) {
+    // default noop
+  }
 
   /**
    * The query have failed, does this plugin advises to re-execute it again?
    */
-  boolean shouldReExecute(int executionNum);
+  default boolean shouldReExecute(int executionNum) {
+    // default no
+    return false;
+  }
 
   /**
-   * The plugin should prepare for the re-compilaton of the query.
+   * The plugin should prepare for the re-compilation of the query.
    */
-  void prepareToReExecute();
+  default void prepareToReExecute() {
+    // default noop
+  }
 
   /**
-   * The query have failed; and have been recompiled - does this plugin advises to re-execute it again?
+   * The query has failed; and have been recompiled - does this plugin advises to re-execute it again?
    */
-  boolean shouldReExecute(int executionNum, PlanMapper oldPlanMapper, PlanMapper newPlanMapper);
+  default boolean shouldReExecuteAfterCompile(int executionNum, PlanMapper oldPlanMapper, PlanMapper newPlanMapper) {
+    // default no
+    return false;
+  }
 
-  void afterExecute(PlanMapper planMapper, boolean successfull);
+  /**
+   * Called after the driver executed the query - delivers the status and the plan data.
+   * @param planMapper
+   * @param successful
+   */
+  default void afterExecute(PlanMapper planMapper, boolean successful) {
+    // default noop
+  }
 
+  /**
+   * Called before the compilation happen.
+   * @param compilationNum Number of the previous compilations
+   */
+  default void beforeCompile(int compilationNum) {
+    // default noop
+  }
 
+  /**
+   * The query has failed. Should we try recompilation?
+   * @param compilationNum Number of the previous compilations
+   * @return
+   */
+  default boolean shouldReCompile(int compilationNum) {
+    // default no
+    return false;
+  }
+
+  /**
+   * The plugin should prepare for the recompilation of the query
+   */
+  default void prepareToReCompile() {
+    // default noop
+  }
+
+  /**
+   * Called after the compilation - delivers the result of the new compilation.
+   * @param successful
+   */
+  default void afterCompile(boolean successful) {
+    // default noop
+  }
 }

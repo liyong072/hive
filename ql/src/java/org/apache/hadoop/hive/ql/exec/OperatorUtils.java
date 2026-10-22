@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -21,17 +22,19 @@ package org.apache.hadoop.hive.ql.exec;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 
+import com.google.common.base.Preconditions;
 import org.apache.hadoop.hive.ql.exec.NodeUtils.Function;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.parse.SemiJoinBranchInfo;
-import org.apache.hadoop.hive.ql.parse.spark.SparkPartitionPruningSinkOperator;
 import org.apache.hadoop.hive.ql.plan.BaseWork;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeColumnDesc;
@@ -50,6 +53,35 @@ import com.google.common.collect.Multimap;
 public class OperatorUtils {
 
   private static final Logger LOG = LoggerFactory.getLogger(OperatorUtils.class);
+
+  /**
+   * Return the ancestor of the specified operator at the provided path or null if the path is invalid.
+   *
+   * The method is equivalent to following code:
+   * <pre>{@code
+   *     op.getParentOperators().get(path[0])
+   *     .getParentOperators().get(path[1])
+   *     ...
+   *     .getParentOperators().get(path[n])
+   * }</pre>
+   * with additional checks about the validity of the provided path and the type of the ancestor.
+   *
+   * @param op the operator for which we
+   * @param clazz the class of the ancestor operator
+   * @param path the path leading to the desired ancestor
+   * @param <T> the type of the ancestor
+   * @return the ancestor of the specified operator at the provided path or null if the path is invalid.
+   */
+  public static <T> T ancestor(Operator<?> op, Class<T> clazz, int... path) {
+    Operator<?> target = op;
+    for (int i = 0; i < path.length; i++) {
+      if (target.getParentOperators() == null || path[i] > target.getParentOperators().size()) {
+        return null;
+      }
+      target = target.getParentOperators().get(path[i]);
+    }
+    return clazz.isInstance(target) ? clazz.cast(target) : null;
+  }
 
   public static <T> Set<T> findOperators(Operator<?> start, Class<T> clazz) {
     return findOperators(start, clazz, new HashSet<T>());
@@ -146,6 +178,47 @@ public class OperatorUtils {
     return found;
   }
 
+  /**
+   * Check whether there are more operators in the specified operator tree branch than the given limit
+   * until a ReduceSinkOperator is reached.
+   * The method traverses the parent operators of the specified root operator in dept first manner.
+   * @param start root of the operator tree to check
+   * @param opClazz type of operator to track
+   * @param limit maximum allowed number of operator in a branch of the tree
+   * @return true if limit is exceeded false otherwise
+   */
+  public static boolean hasMoreOperatorsThan(
+      Operator<?> start, Class<?> opClazz, int limit) {
+    return hasMoreOperatorsThan(start, opClazz, limit, new HashSet<>());
+  }
+
+  private static boolean hasMoreOperatorsThan(
+      Operator<?> start, Class<?> opClazz, int limit, Set<Operator<?>> visited) {
+    if (!visited.add(start)) {
+      return limit < 0;
+    }
+
+    if (limit < 0) {
+      return false;
+    }
+
+    if (start instanceof ReduceSinkOperator) {
+      return false;
+    }
+
+    if (opClazz.isInstance(start)) {
+      limit--;
+    }
+
+    if (start.getParentOperators() != null) {
+      for (Operator<?> parent : start.getParentOperators()) {
+        if (hasMoreOperatorsThan(parent, opClazz, limit, visited)) {
+          return true;
+        }
+      }
+    }
+    return limit < 0;
+  }
 
   public static void setChildrenCollector(List<Operator<? extends OperatorDesc>> childOperators, OutputCollector out) {
     if (childOperators == null) {
@@ -329,40 +402,6 @@ public class OperatorUtils {
   }
 
   /**
-   * Given the input operator 'op', walk up the operator tree from 'op', and collect all the
-   * roots that can be reached from it. The results are stored in 'roots'.
-   */
-  public static void findRoots(Operator<?> op, Collection<Operator<?>> roots) {
-    List<Operator<?>> parents = op.getParentOperators();
-    if (parents == null || parents.isEmpty()) {
-      roots.add(op);
-      return;
-    }
-    for (Operator<?> p : parents) {
-      findRoots(p, roots);
-    }
-  }
-
-  /**
-   * Remove the branch that contains the specified operator. Do nothing if there's no branching,
-   * i.e. all the upstream operators have only one child.
-   */
-  public static void removeBranch(SparkPartitionPruningSinkOperator op) {
-    Operator<?> child = op;
-    Operator<?> curr = op;
-
-    while (curr.getChildOperators().size() <= 1) {
-      child = curr;
-      if (curr.getParentOperators() == null || curr.getParentOperators().isEmpty()) {
-        return;
-      }
-      curr = curr.getParentOperators().get(0);
-    }
-
-    curr.removeChild(child);
-  }
-
-  /**
    * Remove operator from the tree, disconnecting it from its
    * parents and children.
    */
@@ -388,20 +427,6 @@ public class OperatorUtils {
       return op.toString() + " (" + ((TableScanOperator) op).getConf().getAlias() + ")";
     }
     return op.toString();
-  }
-
-  /**
-   * Return true if contain branch otherwise return false
-   */
-  public static boolean isInBranch(SparkPartitionPruningSinkOperator op) {
-    Operator<?> curr = op;
-    while (curr.getChildOperators().size() <= 1) {
-      if (curr.getParentOperators() == null || curr.getParentOperators().isEmpty()) {
-        return false;
-      }
-      curr = curr.getParentOperators().get(0);
-    }
-    return true;
   }
 
   public static Set<Operator<?>> getOp(BaseWork work, Class<?> clazz) {
@@ -610,5 +635,85 @@ public class OperatorUtils {
       }
     }
     return null;
+  }
+
+  /**
+   *  Determines if the two trees are using independent inputs.
+   */
+  public static boolean treesWithIndependentInputs(Operator<?> tree1, Operator<?> tree2) {
+    Set<String> tables1 = signaturesOf(OperatorUtils.findOperatorsUpstream(tree1, TableScanOperator.class));
+    Set<String> tables2 = signaturesOf(OperatorUtils.findOperatorsUpstream(tree2, TableScanOperator.class));
+
+    tables1.retainAll(tables2);
+    return tables1.isEmpty();
+  }
+
+  private static Set<String> signaturesOf(Set<TableScanOperator> ops) {
+    Set<String> ret = new HashSet<>();
+    for (TableScanOperator o : ops) {
+      ret.add(o.getConf().getQualifiedTable());
+    }
+    return ret;
+  }
+
+  /**
+   * Given start, end operators and a colName, look for the original TS colExpr
+   * that it originates from. This method checks column Expr mappings (aliases)
+   * from the start operator and its parents up to the end operator.
+   * It then returns the unwrapped Expr found within a ExprNodeGenericFuncDesc (if any).
+   * @param colName colName to backtrack
+   * @param start start backtracking from this Op
+   * @param end end backtracking at this Op
+   * @return the original column name or null if not found
+   */
+  public static ExprNodeColumnDesc findTableOriginColExpr(ExprNodeColumnDesc colName, Operator<?> start, Operator<?> end)
+      throws SemanticException {
+    ExprNodeDesc res = ExprNodeDescUtils.backtrack(colName, start, end, false, true);
+    return (res != null) ? ExprNodeDescUtils.getColumnExpr(res) : null;
+  }
+
+  public static Set<Operator<?>> getAllOperatorsForSimpleFetch(Set<Operator<?>> opSet) {
+    Set<Operator<?>> returnSet = new LinkedHashSet<Operator<?>>();
+    Stack<Operator<?>> opStack = new Stack<Operator<?>>();
+    // add all children
+    opStack.addAll(opSet);
+    while (!opStack.empty()) {
+      Operator<?> op = opStack.pop();
+      returnSet.add(op);
+      if (op.getChildOperators() != null) {
+        opStack.addAll(op.getChildOperators());
+      }
+    }
+    return returnSet;
+  }
+
+  /**
+   * Given a {@link FetchTask} this returns a set of all the operators within the task
+   * @param task - Fetch Task
+   */
+  public static Set<Operator<?>> getAllFetchOperators(FetchTask task) {
+    if (task.getWork().getSource() == null)  {
+      return Collections.EMPTY_SET;
+    }
+    Set<Operator<?>> operatorList =  new HashSet<>();
+    operatorList.add(task.getWork().getSource());
+    return getAllOperatorsForSimpleFetch(operatorList);
+  }
+
+  /**
+   * Traverses the operator chain upwards to find input source operator in that branch
+   *
+   * @param op the starting operator
+   * @return the first matching operator or null if none found
+   */
+  public static Operator<?> findSourceOperatorInSameBranch(Operator<?> op) {
+    while (op != null && !(op instanceof TableScanOperator || op instanceof ReduceSinkOperator
+            || op instanceof CommonJoinOperator)) {
+      // If op has parents it is guaranteed to be 1.
+      List<Operator<?>> parents = op.getParentOperators();
+      Preconditions.checkState(parents.size() <= 1);
+      op = parents.size() == 1 ? parents.get(0) : null;
+    }
+    return op;
   }
 }

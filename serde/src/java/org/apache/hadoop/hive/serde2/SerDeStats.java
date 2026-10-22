@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2;
@@ -28,10 +29,16 @@ public class SerDeStats {
   // currently we support only raw data size stat
   private long rawDataSize;
   private long rowCount;
+  private long insertCount;
+  private long updateCount;
+  private long deleteCount;
 
   public SerDeStats() {
     rawDataSize = 0;
     rowCount = 0;
+    insertCount = 0;
+    updateCount = 0;
+    deleteCount = 0;
   }
 
   /**
@@ -66,4 +73,27 @@ public class SerDeStats {
     this.rowCount = rowCount;
   }
 
+  public long getInsertCount() {
+    return insertCount;
+  }
+
+  public void setInsertCount(long insertCount) {
+    this.insertCount = insertCount;
+  }
+
+  public long getUpdateCount() {
+    return updateCount;
+  }
+
+  public void setUpdateCount(long updateCount) {
+    this.updateCount = updateCount;
+  }
+
+  public long getDeleteCount() {
+    return deleteCount;
+  }
+
+  public void setDeleteCount(long deleteCount) {
+    this.deleteCount = deleteCount;
+  }
 }

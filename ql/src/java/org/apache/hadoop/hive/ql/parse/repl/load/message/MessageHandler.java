@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.load.message;
 
@@ -27,6 +28,7 @@ import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.apache.hadoop.hive.ql.parse.ReplicationSpec;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.parse.repl.load.UpdatedMetaDataTracker;
+import org.apache.hadoop.hive.ql.parse.repl.metric.ReplicationMetricCollector;
 import org.slf4j.Logger;
 
 import java.io.Serializable;
@@ -37,7 +39,7 @@ import org.apache.hadoop.hive.ql.parse.repl.load.DumpMetaData;
 
 public interface MessageHandler {
 
-  List<Task<? extends Serializable>> handle(Context withinContext) throws SemanticException;
+  List<Task<?>> handle(Context withinContext) throws SemanticException;
 
   Set<ReadEntity> readEntities();
 
@@ -47,19 +49,20 @@ public interface MessageHandler {
 
   class Context {
     public String location;
-    public final String tableName, dbName;
-    public final Task<? extends Serializable> precursor;
+    public final String dbName;
+    public final Task<?> precursor;
     public DumpMetaData dmd;
     final HiveConf hiveConf;
     final Hive db;
     final org.apache.hadoop.hive.ql.Context nestedContext;
     final Logger log;
+    String dumpDirectory;
+    private transient ReplicationMetricCollector metricCollector;
 
-    public Context(String dbName, String tableName, String location,
-        Task<? extends Serializable> precursor, DumpMetaData dmd, HiveConf hiveConf,
+    public Context(String dbName, String location,
+        Task<?> precursor, DumpMetaData dmd, HiveConf hiveConf,
         Hive db, org.apache.hadoop.hive.ql.Context nestedContext, Logger log) {
       this.dbName = dbName;
-      this.tableName = tableName;
       this.location = location;
       this.precursor = precursor;
       this.dmd = dmd;
@@ -69,9 +72,24 @@ public interface MessageHandler {
       this.log = log;
     }
 
-    public Context(Context other, String dbName, String tableName) {
+    public Context(String dbName, String location,
+                   Task<?> precursor, DumpMetaData dmd, HiveConf hiveConf,
+                   Hive db, org.apache.hadoop.hive.ql.Context nestedContext, Logger log,
+                   String dumpDirectory, ReplicationMetricCollector metricCollector) {
       this.dbName = dbName;
-      this.tableName = tableName;
+      this.location = location;
+      this.precursor = precursor;
+      this.dmd = dmd;
+      this.hiveConf = hiveConf;
+      this.db = db;
+      this.nestedContext = nestedContext;
+      this.log = log;
+      this.dumpDirectory = dumpDirectory;
+      this.metricCollector = metricCollector;
+    }
+
+    public Context(Context other, String dbName) {
+      this.dbName = dbName;
       this.location = other.location;
       this.precursor = other.precursor;
       this.dmd = other.dmd;
@@ -81,8 +99,17 @@ public interface MessageHandler {
       this.log = other.log;
     }
 
-    boolean isTableNameEmpty() {
-      return StringUtils.isEmpty(tableName);
+    public Context(Context other, String dbName, String dumpDirectory, ReplicationMetricCollector metricCollector) {
+      this.dbName = dbName;
+      this.location = other.location;
+      this.precursor = other.precursor;
+      this.dmd = other.dmd;
+      this.hiveConf = other.hiveConf;
+      this.db = other.db;
+      this.nestedContext = other.nestedContext;
+      this.log = other.log;
+      this.dumpDirectory = dumpDirectory;
+      this.metricCollector = metricCollector;
     }
 
     public boolean isDbNameEmpty() {
@@ -100,6 +127,14 @@ public interface MessageHandler {
 
     public org.apache.hadoop.hive.ql.Context getNestedContext() {
       return nestedContext;
+    }
+
+    public String getDumpDirectory() {
+      return dumpDirectory;
+    }
+
+    public ReplicationMetricCollector getMetricCollector() {
+      return metricCollector;
     }
 
     public HiveTxnManager getTxnMgr() {

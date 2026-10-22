@@ -9,18 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2;
 
-import java.util.Properties;
-
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.io.Writable;
 
@@ -34,18 +32,7 @@ import org.apache.hadoop.io.Writable;
  * All deserializers should extend the abstract class AbstractDeserializer.
  * The interface is necessary for SerDes to be able to implement both Serializer and Deserializer.
  */
-public interface Deserializer {
-
-  /**
-   * Initialize the HiveDeserializer.
-   *
-   * @param conf
-   *          System properties
-   * @param tbl
-   *          table properties
-   * @throws SerDeException
-   */
-  void initialize(Configuration conf, Properties tbl) throws SerDeException;
+public interface Deserializer extends SerDe {
 
   /**
    * Deserialize an object out of a Writable blob. In most cases, the return
@@ -66,10 +53,4 @@ public interface Deserializer {
    */
   ObjectInspector getObjectInspector() throws SerDeException;
 
-  /**
-   * Returns statistics collected when serializing
-   *
-   * @return {@link SerDeStats} object; or in case not supported: null
-   */
-  SerDeStats getSerDeStats();
 }

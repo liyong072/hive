@@ -9,30 +9,34 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
 
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentTypeException;
+import org.apache.hadoop.hive.ql.exec.vector.VectorizedExpressions;
+import org.apache.hadoop.hive.ql.exec.vector.expressions.MurmurHashIntColIntCol;
+import org.apache.hadoop.hive.ql.exec.vector.expressions.MurmurHashStringColIntCol;
+import org.apache.hadoop.hive.ql.exec.vector.expressions.MurmurHashStringColStringCol;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
-import org.apache.hadoop.hive.serde2.ByteStream;
-import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.io.IntWritable;
-import org.apache.hive.common.util.Murmur3;
 
 /**
  * GenericUDF Class for computing murmurhash values.
  */
 @Description(name = "hash", value = "_FUNC_(a1, a2, ...) - Returns a hash value of the arguments")
+@VectorizedExpressions({ MurmurHashStringColIntCol.class, MurmurHashStringColStringCol.class,
+    MurmurHashIntColIntCol.class })
 public class GenericUDFMurmurHash extends GenericUDF {
   private transient ObjectInspector[] argumentOIs;
 
@@ -48,7 +52,7 @@ public class GenericUDFMurmurHash extends GenericUDF {
   @Override
   public Object evaluate(DeferredObject[] arguments) throws HiveException {
     Object[] fieldValues = new Object[arguments.length];
-    for(int i = 0; i < arguments.length; i++) {
+    for (int i = 0; i < arguments.length; i++) {
       fieldValues[i] = arguments[i].get();
     }
     int r = ObjectInspectorUtils.getBucketHashCode(fieldValues, argumentOIs);

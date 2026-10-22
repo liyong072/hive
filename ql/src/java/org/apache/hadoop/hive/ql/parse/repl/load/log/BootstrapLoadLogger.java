@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.load.log;
 
@@ -22,7 +23,12 @@ import org.apache.hadoop.hive.ql.parse.repl.load.log.state.*;
 import org.apache.hadoop.hive.ql.parse.repl.ReplLogger;
 import org.apache.hadoop.hive.ql.parse.repl.ReplState.LogTag;
 
-public class BootstrapLoadLogger extends ReplLogger {
+/**
+ * BootstrapLoadLogger.
+ *
+ * Repllogger for bootstrap Load.
+ **/
+public class BootstrapLoadLogger extends ReplLogger<String> {
   private String dbName;
   private String dumpDir;
   private long numTables;
@@ -62,5 +68,13 @@ public class BootstrapLoadLogger extends ReplLogger {
   public void endLog(String lastReplId) {
     (new BootstrapLoadEnd(dbName, numTables, numFunctions, dumpDir, lastReplId))
             .log(LogTag.END);
+  }
+
+  @Override
+  public void setParams(String dbName, String dumpDirectory, long numTables, long numFunctions) {
+    this.dbName = dbName;
+    this.dumpDir = dumpDirectory;
+    this.numTables = numTables;
+    this.numFunctions = numFunctions;
   }
 }

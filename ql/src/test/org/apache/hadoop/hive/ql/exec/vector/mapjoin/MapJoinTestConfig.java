@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin;
@@ -26,7 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.hadoop.hive.common.type.DataTypePhysicalVariation;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.CompilationOpContext;
@@ -75,7 +76,6 @@ import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.VectorMapJoinVariation;
 import org.apache.hadoop.hive.ql.plan.VectorSelectDesc;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
-import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.ByteStream.Output;
 import org.apache.hadoop.hive.serde2.binarysortable.BinarySortableSerDe;
 import org.apache.hadoop.hive.serde2.binarysortable.fast.BinarySortableSerializeWrite;
@@ -308,6 +308,9 @@ public class MapJoinTestConfig {
     case LEFT_SEMI:
       joinDescType = JoinDesc.LEFT_SEMI_JOIN;
       break;
+    case LEFT_ANTI:
+        joinDescType = JoinDesc.ANTI_JOIN;
+        break;
     case OUTER:
       joinDescType = JoinDesc.LEFT_OUTER_JOIN;
       break;
@@ -363,6 +366,7 @@ public class MapJoinTestConfig {
       hashTableKind = HashTableKind.HASH_MULTISET;
       break;
     case LEFT_SEMI:
+    case LEFT_ANTI:
       hashTableKind = HashTableKind.HASH_SET;
       break;
     case OUTER:
@@ -390,6 +394,9 @@ public class MapJoinTestConfig {
         break;
       case LONG:
         hashTableKeyType = HashTableKeyType.LONG;
+        break;
+      case DATE:
+        hashTableKeyType = HashTableKeyType.DATE;
         break;
       case STRING:
         hashTableKeyType = HashTableKeyType.STRING;
@@ -544,6 +551,7 @@ public class MapJoinTestConfig {
     case BYTE:
     case SHORT:
     case INT:
+    case DATE:
     case LONG:
       switch (VectorMapJoinVariation) {
       case INNER:
@@ -682,7 +690,7 @@ public class MapJoinTestConfig {
     TableDesc keyTableDesc = mapJoinDesc.getKeyTblDesc();
     AbstractSerDe keySerializer = (AbstractSerDe) ReflectionUtil.newInstance(
         BinarySortableSerDe.class, null);
-    SerDeUtils.initializeSerDe(keySerializer, null, keyTableDesc.getProperties(), null);
+    keySerializer.initialize(null, keyTableDesc.getProperties(), null);
     MapJoinObjectSerDeContext keyContext = new MapJoinObjectSerDeContext(keySerializer, false);
 
     final List<TableDesc> valueTableDescList;
@@ -693,8 +701,8 @@ public class MapJoinTestConfig {
     }
     TableDesc valueTableDesc = valueTableDescList.get(smallTablePos);
     AbstractSerDe valueSerDe = (AbstractSerDe) ReflectionUtil.newInstance(
-        valueTableDesc.getDeserializerClass(), null);
-    SerDeUtils.initializeSerDe(valueSerDe, null, valueTableDesc.getProperties(), null);
+        valueTableDesc.getSerDeClass(), null);
+    valueSerDe.initialize(null, valueTableDesc.getProperties(), null);
     MapJoinObjectSerDeContext valueContext =
         new MapJoinObjectSerDeContext(valueSerDe, hasFilter(mapJoinDesc, smallTablePos));
     MapJoinTableContainerSerDe mapJoinTableContainerSerDe =
@@ -922,7 +930,7 @@ public class MapJoinTestConfig {
     case FAST:
       mapJoinTableContainer =
           new VectorMapJoinFastTableContainer(
-              mapJoinDesc, testDesc.hiveConf, testData.smallTableKeyHashMap.size());
+              mapJoinDesc, testDesc.hiveConf, testData.smallTableKeyHashMap.size(), 1);
       break;
     default:
       throw new RuntimeException("Unexpected hash table implementation type " + vectorDesc.getHashTableImplementationType());

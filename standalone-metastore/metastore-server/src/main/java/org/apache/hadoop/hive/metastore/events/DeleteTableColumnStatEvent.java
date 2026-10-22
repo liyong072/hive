@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.events;
@@ -29,21 +30,23 @@ import org.apache.hadoop.hive.metastore.IHMSHandler;
 @InterfaceAudience.Public
 @InterfaceStability.Stable
 public class DeleteTableColumnStatEvent extends ListenerEvent {
-  private String catName, dbName, tableName, colName;
+  private String catName, dbName, tableName, colName, engine;
 
   /**
    * @param catName catalog name
    * @param dbName database name
    * @param tableName table name
    * @param colName column name
+   * @param engine engine
    * @param handler handler that is firing the event
    */
-  public DeleteTableColumnStatEvent(String catName, String dbName, String tableName, String colName, IHMSHandler handler) {
+  public DeleteTableColumnStatEvent(String catName, String dbName, String tableName, String colName, String engine, IHMSHandler handler) {
     super(true, handler);
     this.catName = catName;
     this.dbName = dbName;
     this.tableName = tableName;
     this.colName = colName;
+    this.engine = engine;
   }
 
   public String getCatName() {
@@ -60,5 +63,9 @@ public class DeleteTableColumnStatEvent extends ListenerEvent {
 
   public String getColName() {
     return colName;
+  }
+
+  public String getEngine() {
+    return engine;
   }
 }

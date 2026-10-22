@@ -7,13 +7,14 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.avro;
 
@@ -24,6 +25,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.rmi.server.UID;
+import java.time.ZoneId;
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.DataFileStream;
@@ -48,6 +50,13 @@ public class AvroGenericRecordWritable implements Writable{
   // Schema that exists in the Avro data file.
   private Schema fileSchema;
 
+  // Time zone file was written in, from metadata
+  private ZoneId writerTimezone = null;
+
+  private Boolean writerProleptic = null;
+  
+  private final Boolean writerZoneConversionLegacy;
+
   /**
    * Unique Id determine which record reader created this record
    */
@@ -68,10 +77,19 @@ public class AvroGenericRecordWritable implements Writable{
     this.record = record;
   }
 
-  public AvroGenericRecordWritable() {}
+  public AvroGenericRecordWritable() {
+    this.writerZoneConversionLegacy = null;
+  }
 
   public AvroGenericRecordWritable(GenericRecord record) {
     this.record = record;
+    this.writerZoneConversionLegacy = null;
+  }
+
+  public AvroGenericRecordWritable(ZoneId writerTimezone, Boolean writerProleptic, Boolean writerZoneConversionLegacy) {
+    this.writerTimezone = writerTimezone;
+    this.writerProleptic = writerProleptic;
+    this.writerZoneConversionLegacy = writerZoneConversionLegacy;
   }
 
   @Override
@@ -140,5 +158,17 @@ public class AvroGenericRecordWritable implements Writable{
 
   public void setFileSchema(Schema originalSchema) {
     this.fileSchema = originalSchema;
+  }
+
+  public ZoneId getWriterTimezone() {
+    return writerTimezone;
+  }
+
+  public Boolean getWriterProleptic() {
+    return writerProleptic;
+  }
+  
+  Boolean getWriterZoneConversionLegacy() {
+    return writerZoneConversionLegacy;
   }
 }

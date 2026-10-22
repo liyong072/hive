@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.hplsql;
@@ -27,10 +28,12 @@ import java.io.IOException;
  * Read a stream from an external process 
  */
 public class StreamGobbler extends Thread {
-  InputStream is;
+  private final Console console;
+  private final InputStream is;
   
-  StreamGobbler(InputStream is) {
+  StreamGobbler(InputStream is, Console console) {
     this.is = is;
+    this.console = console;
   }
   
   public void run() {
@@ -42,7 +45,7 @@ public class StreamGobbler extends Thread {
         if(line == null) {
           break;
         }        
-        System.out.println(line);
+        console.printLine(line);
       }
     } catch (IOException ioe) {
       ioe.printStackTrace();  

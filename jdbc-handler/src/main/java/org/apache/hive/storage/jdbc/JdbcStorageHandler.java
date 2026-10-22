@@ -1,31 +1,39 @@
 /*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.storage.jdbc;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.Constants;
 import org.apache.hadoop.hive.metastore.HiveMetaHook;
+import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.HiveStorageHandler;
 import org.apache.hadoop.hive.ql.metadata.JarUtils;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.security.authorization.HiveAuthorizationProvider;
+import org.apache.hadoop.hive.ql.security.authorization.HiveCustomStorageHandlerUtils;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.OutputFormat;
+import org.apache.hive.storage.jdbc.conf.DatabaseType;
+import org.apache.hive.storage.jdbc.conf.JdbcStorageConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +45,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 public class JdbcStorageHandler implements HiveStorageHandler {
 
@@ -90,6 +100,17 @@ public class JdbcStorageHandler implements HiveStorageHandler {
     } catch (Exception e) {
       throw new IllegalArgumentException(e);
     }
+  }
+
+  @Override
+  public URI getURIForAuth(Table table) throws URISyntaxException {
+    Map<String, String> tableProperties = HiveCustomStorageHandlerUtils.getTableProperties(table);
+    DatabaseType dbType = DatabaseType.valueOf(
+      tableProperties.get(JdbcStorageConfig.DATABASE_TYPE.getPropertyName()));
+    String host_url = DatabaseType.METASTORE == dbType ?
+      "jdbc:metastore://" : tableProperties.get(Constants.JDBC_URL);
+    String table_name = tableProperties.get(Constants.JDBC_TABLE);
+    return new URI(host_url+"/"+table_name);
   }
 
   @Override

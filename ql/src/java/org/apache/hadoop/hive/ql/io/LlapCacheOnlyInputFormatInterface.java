@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io;
@@ -25,4 +26,11 @@ import org.apache.hadoop.hive.common.io.FileMetadataCache;
 /** Marker interface for LLAP IO. */
 public interface LlapCacheOnlyInputFormatInterface {
   void injectCaches(FileMetadataCache metadataCache, DataCache dataCache, Configuration cacheConf);
+
+  /**
+   * For inputformats that can only accept LLAP caching with vectorization turned on.
+   */
+  interface VectorizedOnly extends LlapCacheOnlyInputFormatInterface {
+
+  }
 }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules;
 
@@ -27,15 +28,18 @@ import java.util.Set;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import org.apache.calcite.adapter.druid.DruidQuery;
-import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.rel.RelCollation;
+import org.apache.calcite.rel.RelCollations;
+import org.apache.calcite.rel.RelDistribution;
+import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.Project;
+import org.apache.calcite.rel.core.TableFunctionScan;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.type.RelDataType;
@@ -51,9 +55,7 @@ import org.apache.calcite.rex.RexTableInputRef;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitor;
 import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql2rel.CorrelationReferenceFinder;
-import org.apache.calcite.sql2rel.RelFieldTrimmer;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.apache.calcite.util.Pair;
@@ -61,12 +63,14 @@ import org.apache.calcite.util.mapping.IntPair;
 import org.apache.calcite.util.mapping.Mapping;
 import org.apache.calcite.util.mapping.MappingType;
 import org.apache.calcite.util.mapping.Mappings;
+import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.optimizer.calcite.HiveCalciteUtil;
 import org.apache.hadoop.hive.ql.optimizer.calcite.RelOptHiveTable;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveAggregate;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveMultiJoin;
-import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveProject;
+import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveSortExchange;
+import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveTableFunctionScan;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveTableScan;
 import org.apache.hadoop.hive.ql.parse.ColumnAccessInfo;
 import org.slf4j.Logger;
@@ -78,26 +82,89 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
 
   protected static final Logger LOG = LoggerFactory.getLogger(HiveRelFieldTrimmer.class);
 
-  private ColumnAccessInfo columnAccessInfo;
-  private Map<HiveProject, Table> viewProjectToTableSchema;
-  private final RelBuilder relBuilder;
+  // We initialize the field trimmer statically here and we will reuse it across
+  // queries. The reason is that otherwise we will create a new dispatcher with
+  // each instantiation, thus effectively removing the caching mechanism that is
+  // built within the dispatcher.
+  private static final HiveRelFieldTrimmer FIELD_TRIMMER_STATS =
+      new HiveRelFieldTrimmer(true);
+  private static final HiveRelFieldTrimmer FIELD_TRIMMER_NO_STATS =
+      new HiveRelFieldTrimmer(false);
+  // For testing
+  private static final HiveRelFieldTrimmer FIELD_TRIMMER_STATS_METHOD_DISPATCHER =
+      new HiveRelFieldTrimmer(true, false);
+  private static final HiveRelFieldTrimmer FIELD_TRIMMER_NO_STATS_METHOD_DISPATCHER =
+      new HiveRelFieldTrimmer(false, false);
+
   private final boolean fetchStats;
 
-  public HiveRelFieldTrimmer(SqlValidator validator, RelBuilder relBuilder) {
-    this(validator, relBuilder, false);
+  private static final ThreadLocal<ColumnAccessInfo> COLUMN_ACCESS_INFO =
+      new ThreadLocal<>();
+  private static final ThreadLocal<Map<RelNode, Table>> REL_TO_TABLE = new ThreadLocal<>();
+
+
+  protected HiveRelFieldTrimmer(boolean fetchStats) {
+    this(fetchStats, true);
   }
 
-  public HiveRelFieldTrimmer(SqlValidator validator, RelBuilder relBuilder,
-      ColumnAccessInfo columnAccessInfo, Map<HiveProject, Table> viewToTableSchema) {
-    this(validator, relBuilder, false);
-    this.columnAccessInfo = columnAccessInfo;
-    this.viewProjectToTableSchema = viewToTableSchema;
-  }
-
-  public HiveRelFieldTrimmer(SqlValidator validator, RelBuilder relBuilder, boolean fetchStats) {
-    super(validator, relBuilder);
-    this.relBuilder = relBuilder;
+  private HiveRelFieldTrimmer(boolean fetchStats, boolean useLMFBasedDispatcher) {
+    super(useLMFBasedDispatcher);
     this.fetchStats = fetchStats;
+  }
+
+  /**
+   * Returns a HiveRelFieldTrimmer instance that does not retrieve
+   * stats.
+   */
+  public static HiveRelFieldTrimmer get() {
+    return get(false);
+  }
+
+  /**
+   * Returns a HiveRelFieldTrimmer instance that can retrieve stats.
+   */
+  public static HiveRelFieldTrimmer get(boolean fetchStats) {
+    return get(fetchStats, true);
+  }
+
+  /**
+   * Returns a HiveRelFieldTrimmer instance that can retrieve stats and use
+   * a custom dispatcher.
+   */
+  public static HiveRelFieldTrimmer get(boolean fetchStats, boolean useLMFBasedDispatcher) {
+    return fetchStats ?
+        (useLMFBasedDispatcher ? FIELD_TRIMMER_STATS : FIELD_TRIMMER_STATS_METHOD_DISPATCHER) :
+        (useLMFBasedDispatcher ? FIELD_TRIMMER_NO_STATS : FIELD_TRIMMER_NO_STATS_METHOD_DISPATCHER);
+  }
+
+  /**
+   * Trims unused fields from a relational expression.
+   *
+   * <p>We presume that all fields of the relational expression are wanted by
+   * its consumer, so only trim fields that are not used within the tree.
+   *
+   * @param root Root node of relational expression
+   * @return Trimmed relational expression
+   */
+  @Override
+  public RelNode trim(RelBuilder relBuilder, RelNode root) {
+    return trim(relBuilder, root, null, null);
+  }
+
+  public RelNode trim(RelBuilder relBuilder, RelNode root,
+                      ColumnAccessInfo columnAccessInfo,
+                      Map<RelNode, Table> relNodeToTable) {
+    try {
+      // Set local thread variables
+      COLUMN_ACCESS_INFO.set(columnAccessInfo);
+      REL_TO_TABLE.set(relNodeToTable);
+      // Execute pruning
+      return super.trim(relBuilder, root);
+    } finally {
+      // Always remove the local thread variables to avoid leaks
+      COLUMN_ACCESS_INFO.remove();
+      REL_TO_TABLE.remove();
+    }
   }
 
   /**
@@ -134,6 +201,30 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
     return dispatchTrimFields(input, fieldsUsedBuilder.build(), extraFields);
   }
 
+  @Override
+  protected void preTrim(RelNode rel, ImmutableBitSet fieldsUsed) {
+    setColumnAccessInfoForViews(rel, fieldsUsed);
+  }
+
+  protected void setColumnAccessInfoForViews(RelNode rel, ImmutableBitSet fieldsUsed) {
+    final ColumnAccessInfo columnAccessInfo = COLUMN_ACCESS_INFO.get();
+    final Map<RelNode, Table> relToTable = REL_TO_TABLE.get();
+
+    // HiveTableScans are handled separately in HiveTableScan's trimFields method.
+    if (!(rel instanceof HiveTableScan) &&
+        columnAccessInfo != null &&
+        relToTable != null &&
+        relToTable.containsKey(rel)) {
+      Table table = relToTable.get(rel);
+      String tableName = table.getCompleteName();
+      List<FieldSchema> tableAllCols = table.getAllCols();
+      
+      for (int i : fieldsUsed) {
+        columnAccessInfo.add(tableName, tableAllCols.get(i).getName());
+      }
+    }
+  }
+
   /**
    * Variant of {@link #trimFields(RelNode, ImmutableBitSet, Set)} for
    * {@link org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveMultiJoin}.
@@ -150,10 +241,9 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
     final Set<RelDataTypeField> combinedInputExtraFields =
         new LinkedHashSet<RelDataTypeField>(extraFields);
     RelOptUtil.InputFinder inputFinder =
-        new RelOptUtil.InputFinder(combinedInputExtraFields);
-    inputFinder.inputBitSet.addAll(fieldsUsed);
+        new RelOptUtil.InputFinder(combinedInputExtraFields, fieldsUsed);
     conditionExpr.accept(inputFinder);
-    final ImmutableBitSet fieldsUsedPlus = inputFinder.inputBitSet.build();
+    final ImmutableBitSet fieldsUsedPlus = inputFinder.build();
 
     int inputStartPos = 0;
     int changeCount = 0;
@@ -173,7 +263,7 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
       }
 
       Set<RelDataTypeField> inputExtraFields =
-              Collections.<RelDataTypeField>emptySet();
+          Collections.<RelDataTypeField>emptySet();
       TrimResult trimResult =
           trimChild(join, input, inputFieldsUsed.build(), inputExtraFields);
       newInputs.add(trimResult.left);
@@ -212,7 +302,7 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
 
     // Build new join.
     final RexVisitor<RexNode> shuttle = new RexPermuteInputsShuttle(
-            mapping, newInputs.toArray(new RelNode[newInputs.size()]));
+        mapping, newInputs.toArray(new RelNode[newInputs.size()]));
     RexNode newConditionExpr = conditionExpr.accept(shuttle);
 
     List<RexNode> newJoinFilters = Lists.newArrayList();
@@ -222,87 +312,16 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
     }
 
     final RelDataType newRowType = RelOptUtil.permute(join.getCluster().getTypeFactory(),
-            join.getRowType(), mapping);
+        join.getRowType(), mapping);
     final RelNode newJoin = new HiveMultiJoin(join.getCluster(),
-            newInputs,
-            newConditionExpr,
-            newRowType,
-            join.getJoinInputs(),
-            join.getJoinTypes(),
-            newJoinFilters);
+        newInputs,
+        newConditionExpr,
+        newRowType,
+        join.getJoinInputs(),
+        join.getJoinTypes(),
+        newJoinFilters);
 
     return new TrimResult(newJoin, mapping);
-  }
-
-  /**
-   * Variant of {@link #trimFields(RelNode, ImmutableBitSet, Set)} for
-   * {@link org.apache.calcite.adapter.druid.DruidQuery}.
-   */
-  public TrimResult trimFields(DruidQuery dq, ImmutableBitSet fieldsUsed,
-      Set<RelDataTypeField> extraFields) {
-    final int fieldCount = dq.getRowType().getFieldCount();
-    if (fieldsUsed.equals(ImmutableBitSet.range(fieldCount))
-        && extraFields.isEmpty()) {
-      // if there is nothing to project or if we are projecting everything
-      // then no need to introduce another RelNode
-      return trimFields(
-          (RelNode) dq, fieldsUsed, extraFields);
-    }
-    final RelNode newTableAccessRel = project(dq, fieldsUsed, extraFields, relBuilder);
-
-    // Some parts of the system can't handle rows with zero fields, so
-    // pretend that one field is used.
-    if (fieldsUsed.cardinality() == 0) {
-      RelNode input = newTableAccessRel;
-      if (input instanceof Project) {
-        // The table has implemented the project in the obvious way - by
-        // creating project with 0 fields. Strip it away, and create our own
-        // project with one field.
-        Project project = (Project) input;
-        if (project.getRowType().getFieldCount() == 0) {
-          input = project.getInput();
-        }
-      }
-      return dummyProject(fieldCount, input);
-    }
-
-    final Mapping mapping = createMapping(fieldsUsed, fieldCount);
-    return result(newTableAccessRel, mapping);
-  }
-
-  private static RelNode project(DruidQuery dq, ImmutableBitSet fieldsUsed,
-          Set<RelDataTypeField> extraFields, RelBuilder relBuilder) {
-    final int fieldCount = dq.getRowType().getFieldCount();
-    if (fieldsUsed.equals(ImmutableBitSet.range(fieldCount))
-        && extraFields.isEmpty()) {
-      return dq;
-    }
-    final List<RexNode> exprList = new ArrayList<>();
-    final List<String> nameList = new ArrayList<>();
-    final RexBuilder rexBuilder = dq.getCluster().getRexBuilder();
-    final List<RelDataTypeField> fields = dq.getRowType().getFieldList();
-
-    // Project the subset of fields.
-    for (int i : fieldsUsed) {
-      RelDataTypeField field = fields.get(i);
-      exprList.add(rexBuilder.makeInputRef(dq, i));
-      nameList.add(field.getName());
-    }
-
-    // Project nulls for the extra fields. (Maybe a sub-class table has
-    // extra fields, but we don't.)
-    for (RelDataTypeField extraField : extraFields) {
-      exprList.add(
-          rexBuilder.ensureType(
-              extraField.getType(),
-              rexBuilder.constantNull(),
-              true));
-      nameList.add(extraField.getName());
-    }
-
-    HiveProject hp = (HiveProject) relBuilder.push(dq).project(exprList, nameList).build();
-    hp.setSynthetic();
-    return hp;
   }
 
   private boolean isRexLiteral(final RexNode rexNode) {
@@ -318,10 +337,10 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
 
 
   // Given a groupset this tries to find out if the cardinality of the grouping columns could have changed
-  // because if not and it consist of keys (unique + not null OR pk), we can safely remove rest of the columns
+  // because if not, and it consists of keys (unique + not null OR pk), we can safely remove rest of the columns
   // if those are columns are not being used further up
   private ImmutableBitSet generateGroupSetIfCardinalitySame(final Aggregate aggregate,
-                                        final ImmutableBitSet originalGroupSet, final ImmutableBitSet fieldsUsed) {
+      final ImmutableBitSet originalGroupSet, final ImmutableBitSet fieldsUsed) {
 
     RexBuilder rexBuilder = aggregate.getCluster().getRexBuilder();
     RelMetadataQuery mq = aggregate.getCluster().getMetadataQuery();
@@ -434,28 +453,26 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
       return generateGroupSetIfCardinalitySame(aggregate, originalGroupSet, fieldsUsed);
     }
 
-    // we have set of unique key, get to the key which is same as group by key
-    ImmutableBitSet groupByUniqueKey = null;
-
+    // Find the maximum number of columns that can be removed by retaining a certain unique key
+    ImmutableBitSet columnsToRemove = ImmutableBitSet.of();
+    final ImmutableBitSet unusedGroupingColumns = aggregate.getGroupSet().except(fieldsUsed);
     for (ImmutableBitSet key : uniqueKeys) {
-      if (aggregate.getGroupSet().contains(key)) {
-        groupByUniqueKey = key;
-        break;
+      ImmutableBitSet removeCandidate = unusedGroupingColumns.except(key);
+      if (aggregate.getGroupSet().contains(key) && removeCandidate.cardinality() > columnsToRemove.cardinality()) {
+        columnsToRemove = removeCandidate;
       }
     }
 
-    if (groupByUniqueKey == null) {
-      // group by keys do not represent unique keys
-      return originalGroupSet;
+    // We must not remove all the group columns: we risk altering the semantics of the aggregation;
+    // e.g., do not convert a HiveAggregate(group=[{0}], COUNT) into HiveAggregate(group=[{}], COUNT)
+    // since they return different results when the input is an empty Values (empty resultset vs. 0)
+    if (columnsToRemove.equals(aggregate.getGroupSet())) {
+      // Just keep one column to avoid any potential problem
+      int keeper = columnsToRemove.nextSetBit(0);
+      columnsToRemove = columnsToRemove.clear(keeper);
     }
 
-    // we know group by key contains primary key and there is at least one column in group by which is not being used
-    // if that column is not part of key it should be removed
-    ImmutableBitSet nonKeyColumns = aggregate.getGroupSet().except(groupByUniqueKey);
-    ImmutableBitSet columnsToRemove = nonKeyColumns.except(fieldsUsed);
-    ImmutableBitSet newGroupSet = aggregate.getGroupSet().except(columnsToRemove);
-
-    return  newGroupSet;
+    return aggregate.getGroupSet().except(columnsToRemove);
   }
 
   /**
@@ -466,28 +483,23 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
    *  none of the relnode above aggregate refers to these keys
    *
    *  If all of above is true then group by is rewritten and a new project is introduced
-   *  underneath aggregate
-   *
-   *  This is mainly done so that hive is able to push down queries with
-   *  group by 'constant key with type not supported by druid' into druid.
-   *
+   *  underneath aggregate.
    */
   private Aggregate rewriteGBConstantKeys(Aggregate aggregate, ImmutableBitSet fieldsUsed,
-                                          Set<RelDataTypeField> extraFields) {
-    if ((aggregate.getIndicatorCount() > 0)
-        || (aggregate.getGroupSet().isEmpty())
-        || fieldsUsed.contains(aggregate.getGroupSet())) {
+      ImmutableBitSet aggCallFields) {
+    if (aggregate.getGroupSet().isEmpty()
+        || aggregate.getGroupType() != Aggregate.Group.SIMPLE
+        || fieldsUsed.intersects(aggregate.getGroupSet())) {
       return aggregate;
     }
 
     final RelNode input = aggregate.getInput();
 
-
     final RelDataType rowType = input.getRowType();
     RexBuilder rexBuilder = aggregate.getCluster().getRexBuilder();
     final List<RexNode> newProjects = new ArrayList<>();
 
-    final List<RexNode> inputExprs = input.getChildExps();
+    final List<RexNode> inputExprs = input instanceof Project ? ((Project) input).getProjects() : null;
     if (inputExprs == null || inputExprs.isEmpty()) {
       return aggregate;
     }
@@ -503,16 +515,17 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
 
     if (allConstants) {
       for (int i = 0; i < rowType.getFieldCount(); i++) {
-        if (aggregate.getGroupSet().get(i)) {
+        if (aggregate.getGroupSet().get(i) && !aggCallFields.get(i)) {
           newProjects.add(rexBuilder.makeLiteral(true));
         } else {
           newProjects.add(rexBuilder.makeInputRef(input, i));
         }
       }
+      final RelBuilder relBuilder = REL_BUILDER.get();
       relBuilder.push(input);
       relBuilder.project(newProjects);
       Aggregate newAggregate = new HiveAggregate(aggregate.getCluster(), aggregate.getTraitSet(), relBuilder.build(),
-                                                 aggregate.getGroupSet(), null, aggregate.getAggCallList());
+          aggregate.getGroupSet(), aggregate.getGroupSets(), aggregate.getAggCallList());
       return newAggregate;
     }
     return aggregate;
@@ -533,23 +546,33 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
     //
     // But group and indicator fields stay, even if they are not used.
 
-    aggregate = rewriteGBConstantKeys(aggregate, fieldsUsed, extraFields);
-
-    final RelDataType rowType = aggregate.getRowType();
-
     // Compute which input fields are used.
-    // 1. group fields are always used
-    final ImmutableBitSet.Builder inputFieldsUsed =
-        aggregate.getGroupSet().rebuild();
-    // 2. agg functions
+
+
+    // agg functions
+    // agg functions are added first (before group sets) because rewriteGBConstantsKeys
+    // needs it
+    final ImmutableBitSet.Builder aggCallFieldsUsedBuilder =  ImmutableBitSet.builder();
     for (AggregateCall aggCall : aggregate.getAggCallList()) {
       for (int i : aggCall.getArgList()) {
-        inputFieldsUsed.set(i);
+        aggCallFieldsUsedBuilder.set(i);
       }
       if (aggCall.filterArg >= 0) {
-        inputFieldsUsed.set(aggCall.filterArg);
+        aggCallFieldsUsedBuilder.set(aggCall.filterArg);
       }
+      aggCallFieldsUsedBuilder.addAll(RelCollations.ordinals(aggCall.collation));
     }
+
+    // transform if group by contain constant keys
+    ImmutableBitSet aggCallFieldsUsed = aggCallFieldsUsedBuilder.build();
+    aggregate = rewriteGBConstantKeys(aggregate, fieldsUsed, aggCallFieldsUsed);
+
+    // add group fields
+    final ImmutableBitSet.Builder inputFieldsUsed =  aggregate.getGroupSet().rebuild();
+    inputFieldsUsed.addAll(aggCallFieldsUsed);
+
+
+    final RelDataType rowType = aggregate.getRowType();
 
     // Create input with trimmed columns.
     final RelNode input = aggregate.getInput();
@@ -582,7 +605,7 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
     if (input == newInput
         && fieldsUsed.equals(ImmutableBitSet.range(rowType.getFieldCount()))) {
       return result(aggregate,
-                    Mappings.createIdentity(rowType.getFieldCount()));
+          Mappings.createIdentity(rowType.getFieldCount()));
     }
 
     // update the group by keys based on inputMapping
@@ -615,7 +638,7 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
     } else {
       newGroupSets = ImmutableList.copyOf(
           Iterables.transform(aggregate.getGroupSets(),
-            input1 -> Mappings.apply(inputMapping, input1)));
+              input1 -> Mappings.apply(inputMapping, input1)));
     }
 
     // Populate mapping of where to find the fields. System, group key and
@@ -629,6 +652,7 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
     }
 
     // Now create new agg calls, and populate mapping for them.
+    final RelBuilder relBuilder = REL_BUILDER.get();
     relBuilder.push(newInput);
     final List<RelBuilder.AggCall> newAggCallList = new ArrayList<>();
     j = originalGroupCount; // because lookup in fieldsUsed is done using original group count
@@ -640,9 +664,12 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
         final RexNode filterArg = aggCall.filterArg < 0 ? null
             : relBuilder.field(Mappings.apply(inputMapping, aggCall.filterArg));
         RelBuilder.AggCall newAggCall =
-            relBuilder.aggregateCall(aggCall.getAggregation(),
-                                     aggCall.isDistinct(), aggCall.isApproximate(),
-                                     filterArg, aggCall.name, args);
+                relBuilder.aggregateCall(aggCall.getAggregation(), args)
+                        .distinct(aggCall.isDistinct())
+                        .filter(filterArg)
+                        .approximate(aggCall.isApproximate())
+                        .sort(relBuilder.fields(aggCall.collation))
+                        .as(aggCall.name);
         mapping.set(j, updatedGroupCount +  newAggCallList.size());
         newAggCallList.add(newAggCall);
       }
@@ -656,29 +683,27 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
     return result(relBuilder.build(), mapping);
   }
 
-  /**
-   * Variant of {@link #trimFields(RelNode, ImmutableBitSet, Set)} for
-   * {@link org.apache.calcite.rel.logical.LogicalProject}.
-   */
-  public TrimResult trimFields(Project project, ImmutableBitSet fieldsUsed,
-      Set<RelDataTypeField> extraFields) {
-    // set columnAccessInfo for ViewColumnAuthorization
-    for (Ord<RexNode> ord : Ord.zip(project.getProjects())) {
-      if (fieldsUsed.get(ord.i)) {
-        if (this.columnAccessInfo != null && this.viewProjectToTableSchema != null
-            && this.viewProjectToTableSchema.containsKey(project)) {
-          Table tab = this.viewProjectToTableSchema.get(project);
-          this.columnAccessInfo.add(tab.getCompleteName(), tab.getAllCols().get(ord.i).getName());
-        }
-      }
-    }
-    return super.trimFields(project, fieldsUsed, extraFields);
-  }
-
-  @Override
-  public TrimResult trimFields(TableScan tableAccessRel, ImmutableBitSet fieldsUsed,
+  public TrimResult trimFields(HiveTableScan tableAccessRel, ImmutableBitSet fieldsUsed,
       Set<RelDataTypeField> extraFields) {
     final TrimResult result = super.trimFields(tableAccessRel, fieldsUsed, extraFields);
+    final ColumnAccessInfo columnAccessInfo = COLUMN_ACCESS_INFO.get();
+    if (columnAccessInfo != null) {
+      // Store information about column accessed by the table so it can be used
+      // to send only this information for column masking
+      final RelOptHiveTable tab = (RelOptHiveTable) tableAccessRel.getTable();
+      final String qualifiedName = tab.getHiveTableMD().getCompleteName();
+      final List<FieldSchema> allCols = tab.getHiveTableMD().getAllCols();
+      final boolean insideView = tableAccessRel.isInsideView();
+      fieldsUsed.asList().stream()
+        .filter(idx -> idx < tab.getNoOfNonVirtualCols())
+        .forEach(idx -> {
+          if (insideView) {
+            columnAccessInfo.addIndirect(qualifiedName, allCols.get(idx).getName());
+          } else {
+            columnAccessInfo.add(qualifiedName, allCols.get(idx).getName());
+          }
+        });
+    }
     if (fetchStats) {
       fetchColStats(result.getKey(), tableAccessRel, fieldsUsed, extraFields);
     }
@@ -690,7 +715,7 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
     final List<Integer> iRefSet = Lists.newArrayList();
     if (key instanceof Project) {
       final Project project = (Project) key;
-      for (RexNode rx : project.getChildExps()) {
+      for (RexNode rx : project.getProjects()) {
         iRefSet.addAll(HiveCalciteUtil.getInputRefs(rx));
       }
     } else {
@@ -718,5 +743,113 @@ public class HiveRelFieldTrimmer extends RelFieldTrimmer {
 
   protected TrimResult result(RelNode r, final Mapping mapping) {
     return new TrimResult(r, mapping);
+  }
+
+  /**
+   * Variant of {@link #trimFields(RelNode, ImmutableBitSet, Set)} for {@link HiveTableFunctionScan}.
+   * Copied {@link org.apache.calcite.sql2rel.RelFieldTrimmer#trimFields(
+   * org.apache.calcite.rel.logical.LogicalTableFunctionScan, ImmutableBitSet, Set)}
+   * and replaced <code>tabFun</code> to {@link HiveTableFunctionScan}.
+   * Proper fix would be implement this in calcite.
+   */
+  public TrimResult trimFields(
+          HiveTableFunctionScan tabFun,
+          ImmutableBitSet fieldsUsed,
+          Set<RelDataTypeField> extraFields) {
+    final RelDataType rowType = tabFun.getRowType();
+    final int fieldCount = rowType.getFieldCount();
+    final List<RelNode> newInputs = new ArrayList<>();
+
+    for (RelNode input : tabFun.getInputs()) {
+      final int inputFieldCount = input.getRowType().getFieldCount();
+      ImmutableBitSet inputFieldsUsed = ImmutableBitSet.range(inputFieldCount);
+
+      // Create input with trimmed columns.
+      final Set<RelDataTypeField> inputExtraFields =
+              Collections.emptySet();
+      TrimResult trimResult =
+              trimChildRestore(
+                      tabFun, input, inputFieldsUsed, inputExtraFields);
+      assert trimResult.right.isIdentity();
+      newInputs.add(trimResult.left);
+    }
+
+    TableFunctionScan newTabFun = tabFun;
+    if (!tabFun.getInputs().equals(newInputs)) {
+      newTabFun = tabFun.copy(tabFun.getTraitSet(), newInputs,
+              tabFun.getCall(), tabFun.getElementType(), tabFun.getRowType(),
+              tabFun.getColumnMappings());
+    }
+    assert newTabFun.getClass() == tabFun.getClass();
+
+    // Always project all fields.
+    Mapping mapping = Mappings.createIdentity(fieldCount);
+    return result(newTabFun, mapping);
+  }
+
+  /**
+   * This method can be called to pre-register all the classes that may be
+   * visited during the planning phase.
+   */
+  protected void register(List<Class<? extends RelNode>> nodeClasses) throws Throwable {
+    this.trimFieldsDispatcher.register(nodeClasses);
+  }
+
+  /**
+   * This method can be called at startup time to pre-register all the
+   * Hive classes that may be visited during the planning phase.
+   */
+  public static void initializeFieldTrimmerClass(List<Class<? extends RelNode>> nodeClasses) {
+    try {
+      FIELD_TRIMMER_STATS.register(nodeClasses);
+      FIELD_TRIMMER_NO_STATS.register(nodeClasses);
+    } catch (Throwable t) {
+      // LOG it but do not fail
+      LOG.warn("Error initializing field trimmer instance", t);
+    }
+  }
+
+  public TrimResult trimFields(
+          HiveSortExchange exchange,
+          ImmutableBitSet fieldsUsed,
+          Set<RelDataTypeField> extraFields) {
+    final RelDataType rowType = exchange.getRowType();
+    final int fieldCount = rowType.getFieldCount();
+    final RelCollation collation = exchange.getCollation();
+    final RelDistribution distribution = exchange.getDistribution();
+    final RelNode input = exchange.getInput();
+
+    // We use the fields used by the consumer, plus any fields used as exchange
+    // keys.
+    final ImmutableBitSet.Builder inputFieldsUsed = fieldsUsed.rebuild();
+    for (RelFieldCollation field : collation.getFieldCollations()) {
+      inputFieldsUsed.set(field.getFieldIndex());
+    }
+    for (int keyIndex : distribution.getKeys()) {
+      inputFieldsUsed.set(keyIndex);
+    }
+
+    // Create input with trimmed columns.
+    final Set<RelDataTypeField> inputExtraFields = Collections.emptySet();
+    TrimResult trimResult =
+            trimChild(exchange, input, inputFieldsUsed.build(), inputExtraFields);
+    RelNode newInput = trimResult.left;
+    final Mapping inputMapping = trimResult.right;
+
+    // If the input is unchanged, and we need to project all columns,
+    // there's nothing we can do.
+    if (newInput == input
+            && inputMapping.isIdentity()
+            && fieldsUsed.cardinality() == fieldCount) {
+      return result(exchange, Mappings.createIdentity(fieldCount));
+    }
+
+    final RelBuilder relBuilder = REL_BUILDER.get();
+    relBuilder.push(newInput);
+    RelCollation newCollation = RexUtil.apply(inputMapping, collation);
+    RelDistribution newDistribution = distribution.apply(inputMapping);
+    relBuilder.sortExchange(newDistribution, newCollation);
+
+    return result(relBuilder.build(), inputMapping);
   }
 }

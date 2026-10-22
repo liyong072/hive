@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.orc;
@@ -21,11 +22,21 @@ package org.apache.hadoop.hive.ql.io.orc;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.PrintStream;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -129,6 +140,7 @@ public class TestOrcRecordUpdater {
     Reader reader = OrcFile.createReader(bucketPath,
         new OrcFile.ReaderOptions(conf).filesystem(fs).maxLength(len));
     assertEquals(3, reader.getNumberOfRows());
+    reader.close();
 
     // read the second flush and make sure we see all 5 rows
     len = side.readLong();
@@ -175,6 +187,7 @@ public class TestOrcRecordUpdater {
     assertEquals("fifth",
         OrcRecordUpdater.getRow(row).getFieldValue(0).toString());
     assertEquals(false, rows.hasNext());
+    rows.close();
 
     // add one more record and close
     updater.insert(20, new MyRow("sixth"));
@@ -183,6 +196,7 @@ public class TestOrcRecordUpdater {
         new OrcFile.ReaderOptions(conf).filesystem(fs));
     assertEquals(6, reader.getNumberOfRows());
     assertEquals(6L, updater.getStats().getRowCount());
+    reader.close();
 
     assertEquals(false, fs.exists(sidePath));
   }
@@ -313,5 +327,46 @@ public class TestOrcRecordUpdater {
     assertNull(OrcRecordUpdater.getRow(row));
 
     assertEquals(false, rows.hasNext());
+    rows.close();
+  }
+
+  /*
+    CharsetDecoder instances are not thread safe, so it can end up in an inconsistent state when reading multiple
+    buffers parallel.
+    E.g:
+    java.lang.IllegalStateException: Current state = FLUSHED, new state = CODING_END
+  */
+  @Test
+  public void testConcurrentParseKeyIndex() throws Exception {
+
+    // Given
+    Reader mockReader = mock(Reader.class);
+    when(mockReader.hasMetadataValue(OrcRecordUpdater.ACID_KEY_INDEX_NAME)).thenReturn(true);
+
+    // Create a large buffer
+    final StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < 3000; i++) {
+      sb.append("100000,200000,300000;");
+    }
+    when(mockReader.getMetadataValue(OrcRecordUpdater.ACID_KEY_INDEX_NAME)).thenReturn(
+            ByteBuffer.wrap(sb.toString().getBytes()));
+
+    // When
+    // Hit OrcRecordUpdater.parseKeyIndex with large parallelism
+    final int parallelism = 4000;
+    Callable<RecordIdentifier[]>[] r = new Callable[parallelism];
+    for (int i = 0; i < parallelism; i++) {
+      r[i] = () -> {
+        return OrcRecordUpdater.parseKeyIndex(mockReader);
+      };
+    }
+    ExecutorService executorService = Executors.newFixedThreadPool(parallelism);
+    List<Future<RecordIdentifier[]>> res = executorService.invokeAll(Arrays.asList(r));
+
+    // Then
+    // Check for exceptions
+    for (Future<RecordIdentifier[]> ri : res) {
+      ri.get();
+    }
   }
 }

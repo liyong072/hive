@@ -9,24 +9,28 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.session;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Map;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.fs.FileSystem;
@@ -34,10 +38,17 @@ import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.ParentNotDirectoryException;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.metastore.Warehouse;
+import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
+import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
+import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
+import org.apache.hadoop.util.ReflectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hive.common.util.HiveTestUtils;
 import org.junit.After;
 import org.junit.Assert;
@@ -54,6 +65,7 @@ import com.google.common.io.Files;
  */
 @RunWith(value = Parameterized.class)
 public class TestSessionState {
+
   private final boolean prewarm;
   private final static String clazzDistFileName = "RefreshedJarClass.jar.V1";
   private final static String clazzV2FileName = "RefreshedJarClass.jar.V2";
@@ -77,7 +89,7 @@ public class TestSessionState {
 
   @Before
   public void setUp() {
-    HiveConf conf = new HiveConf();
+    HiveConf conf = new HiveConfForTest(getClass());
     String tmp = System.getProperty("java.io.tmpdir");
     File tmpDir = new File(tmp);
     if (!tmpDir.exists()) {
@@ -125,7 +137,7 @@ public class TestSessionState {
         SessionState.get().getCurrentDatabase());
 
     //verify that a new sessionstate has default db
-    SessionState.start(new HiveConf());
+    SessionState.start(getNewHiveConf());
     assertEquals(Warehouse.DEFAULT_DATABASE_NAME,
         SessionState.get().getCurrentDatabase());
 
@@ -158,7 +170,7 @@ public class TestSessionState {
 
   @Test
   public void testClassLoaderEquality() throws Exception {
-    HiveConf conf = new HiveConf();
+    HiveConf conf = getNewHiveConf();
     final SessionState ss1 = new SessionState(conf);
     RegisterJarRunnable otherThread = new RegisterJarRunnable("./build/contrib/test/test-udfs.jar", ss1);
     Thread th1 = new Thread(otherThread);
@@ -195,8 +207,8 @@ public class TestSessionState {
 
   @Test
   public void testReloadAuxJars2() {
-    HiveConf conf = new HiveConf();
-    HiveConf.setVar(conf, ConfVars.HIVERELOADABLEJARS, hiveReloadPath);
+    HiveConf conf = getNewHiveConf();
+    HiveConf.setVar(conf, ConfVars.HIVE_RELOADABLE_JARS, hiveReloadPath);
     SessionState ss = new SessionState(conf);
     SessionState.start(ss);
 
@@ -221,10 +233,52 @@ public class TestSessionState {
     }
   }
 
+  static class DummyUDF extends GenericUDF {
+
+    @Override public ObjectInspector initialize(ObjectInspector[] arguments)
+        throws UDFArgumentException {
+      return PrimitiveObjectInspectorFactory.javaStringObjectInspector;
+    }
+
+    @Override public Object evaluate(DeferredObject[] arguments) throws HiveException {
+      return "dummy";
+    }
+
+    @Override public String getDisplayString(String[] children) {
+      return "dummy";
+    }
+  }
+
+
+  private Map getReflectionUtilsCache() {
+    Field constructorCache;
+    try {
+      constructorCache = ReflectionUtils.class.getDeclaredField("CONSTRUCTOR_CACHE");
+      if (constructorCache != null) {
+        constructorCache.setAccessible(true);
+        return (Map)constructorCache.get(new ReflectionUtils());
+      }
+    } catch (Exception e) {
+      LOG.info("Failed to get Hadoop ReflectionUtils CONSTRUCTOR_CACHE", e);
+    }
+    return null;
+  }
+
+  @Test
+  public void testReflectionCleanup() throws Exception {
+    SessionState ss = SessionState.get();
+    assertNull(ss.getTezSession());
+    ReflectionUtils.newInstance(DummyUDF.class, null);
+    ss.close();
+    Map cache = getReflectionUtilsCache();
+    assertTrue("Cache can't be null", (cache != null));
+    assertEquals("Size of cache is " + cache.size(), 0, cache.size());
+  }
+
   @Test
   public void testReloadExistingAuxJars2() {
-    HiveConf conf = new HiveConf();
-    HiveConf.setVar(conf, ConfVars.HIVERELOADABLEJARS, hiveReloadPath);
+    HiveConf conf = getNewHiveConf();
+    HiveConf.setVar(conf, ConfVars.HIVE_RELOADABLE_JARS, hiveReloadPath);
 
     SessionState ss = new SessionState(conf);
     SessionState.start(ss);
@@ -269,7 +323,7 @@ public class TestSessionState {
    */
   @Test
   public void testCreatePath() throws Exception {
-    HiveConf conf = new HiveConf();
+    HiveConf conf = getNewHiveConf();
     LocalFileSystem localFileSystem = FileSystem.getLocal(conf);
 
     Path repeatedCreate = new Path("repeatedCreate");
@@ -309,5 +363,9 @@ public class TestSessionState {
     } catch (IOException e) {
       assertTrue(e.getMessage().contains("Failed to create directory noPermissions/child"));
     }
+  }
+
+  private HiveConf getNewHiveConf() {
+    return new HiveConfForTest(getClass());
   }
 }

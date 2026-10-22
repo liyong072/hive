@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.lib;
@@ -26,7 +27,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.Stack;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
 import org.apache.hadoop.hive.ql.plan.OperatorDesc;
@@ -60,7 +61,7 @@ public class LevelOrderWalker extends DefaultGraphWalker {
    *
    * @param disp Dispatcher to call for each op encountered
    */
-  public LevelOrderWalker(Dispatcher disp) {
+  public LevelOrderWalker(SemanticDispatcher disp) {
     super(disp);
     this.numLevels = Integer.MAX_VALUE;
   }
@@ -72,7 +73,7 @@ public class LevelOrderWalker extends DefaultGraphWalker {
    * @param disp Dispatcher to call for each op encountered
    * @param numLevels Number of ancestor levels
    */
-  public LevelOrderWalker(Dispatcher disp, int numLevels) {
+  public LevelOrderWalker(SemanticDispatcher disp, int numLevels) {
     super(disp);
     this.numLevels = numLevels;
   }

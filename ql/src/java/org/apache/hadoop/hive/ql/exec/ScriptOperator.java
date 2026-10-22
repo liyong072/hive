@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -43,9 +44,9 @@ import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.ScriptDesc;
 import org.apache.hadoop.hive.ql.plan.api.OperatorType;
+import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.Deserializer;
 import org.apache.hadoop.hive.serde2.SerDeException;
-import org.apache.hadoop.hive.serde2.SerDeUtils;
 import org.apache.hadoop.hive.serde2.Serializer;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.io.BytesWritable;
@@ -53,11 +54,6 @@ import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapred.Reporter;
-import org.apache.hadoop.util.Shell;
-import org.apache.hadoop.util.StringUtils;
-import org.apache.spark.SparkConf;
-import org.apache.spark.SparkEnv;
-import org.apache.spark.SparkFiles;
 
 /**
  * ScriptOperator.
@@ -154,8 +150,8 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
     if (blackListedConfEntries == null) {
       blackListedConfEntries = new HashSet<String>();
       if (conf != null) {
-        String bl = conf.get(HiveConf.ConfVars.HIVESCRIPT_ENV_BLACKLIST.toString(),
-          HiveConf.ConfVars.HIVESCRIPT_ENV_BLACKLIST.getDefaultValue());
+        String bl = conf.get(HiveConf.ConfVars.HIVE_SCRIPT_ENV_BLACKLIST.toString(),
+          HiveConf.ConfVars.HIVE_SCRIPT_ENV_BLACKLIST.getDefaultValue());
         if (bl != null && !bl.isEmpty()) {
           String[] bls = bl.split(",");
           Collections.addAll(blackListedConfEntries, bls);
@@ -180,7 +176,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
         String value = conf.get(name); // does variable expansion
         name = safeEnvVarName(name);
         boolean truncate = conf
-            .getBoolean(HiveConf.ConfVars.HIVESCRIPTTRUNCATEENV.toString(), false);
+            .getBoolean(HiveConf.ConfVars.HIVE_SCRIPT_TRUNCATE_ENV.toString(), false);
         value = safeEnvVarValue(value, name, truncate);
         env.put(name, value);
       }
@@ -273,15 +269,14 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
     try {
       this.hconf = hconf;
 
-      scriptOutputDeserializer = conf.getScriptOutputInfo()
-          .getDeserializerClass().newInstance();
-      SerDeUtils.initializeSerDe(scriptOutputDeserializer, hconf,
-                                 conf.getScriptOutputInfo().getProperties(), null);
+      AbstractSerDe outputSerDe = conf.getScriptOutputInfo().getSerDeClass().newInstance();
+      outputSerDe.initialize(hconf, conf.getScriptOutputInfo().getProperties(), null);
 
-      scriptInputSerializer = (Serializer) conf.getScriptInputInfo()
-          .getDeserializerClass().newInstance();
-      scriptInputSerializer.initialize(hconf, conf.getScriptInputInfo()
-          .getProperties());
+      AbstractSerDe inputSerde = conf.getScriptInputInfo().getSerDeClass().newInstance();
+      inputSerde.initialize(hconf, conf.getScriptInputInfo().getProperties(), null);
+
+      scriptOutputDeserializer = outputSerDe;
+      scriptInputSerializer = inputSerde;
 
       outputObjInspector = scriptOutputDeserializer.getObjectInspector();
 
@@ -296,14 +291,12 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
   }
 
   boolean allowPartialConsumption() {
-    return HiveConf.getBoolVar(hconf, HiveConf.ConfVars.ALLOWPARTIALCONSUMP);
+    return HiveConf.getBoolVar(hconf, HiveConf.ConfVars.ALLOW_PARTIAL_CONSUMP);
   }
 
   void displayBrokenPipeInfo() {
-    if (LOG.isInfoEnabled()) {
-      LOG.info("The script did not consume all input data. This is considered as an error.");
-      LOG.info("set " + HiveConf.ConfVars.ALLOWPARTIALCONSUMP.toString() + "=true; to ignore it.");
-    }
+    LOG.info("The script did not consume all input data. This is considered as an error.");
+    LOG.info("set " + HiveConf.ConfVars.ALLOW_PARTIAL_CONSUMP.toString() + "=true; to ignore it.");
     return;
   }
 
@@ -322,7 +315,6 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
     // initialize the user's process only when you receive the first row
     if (firstRow) {
       firstRow = false;
-      SparkConf sparkConf = null;
       try {
         String[] cmdArgs = splitArgs(conf.getScriptCmd());
 
@@ -332,12 +324,6 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
         if (!new File(prog).isAbsolute()) {
           PathFinder finder = new PathFinder("PATH");
           finder.prependPathComponent(currentDir.toString());
-
-          // In spark local mode, we need to search added files in root directory.
-          if (HiveConf.getVar(hconf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("spark")) {
-            sparkConf = SparkEnv.get().conf();
-            finder.prependPathComponent(SparkFiles.getRootDirectory());
-          }
           File f = finder.getAbsolutePath(prog);
           if (f != null) {
             cmdArgs[0] = f.getAbsolutePath();
@@ -346,36 +332,23 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
         }
 
         String[] wrappedCmdArgs = addWrapper(cmdArgs);
-        if (LOG.isInfoEnabled()) {
-          LOG.info("Executing " + Arrays.asList(wrappedCmdArgs));
-          LOG.info("tablename=" + tableName);
-          LOG.info("partname=" + partitionName);
-          LOG.info("alias=" + alias);
-        }
+        LOG.info("Executing " + Arrays.asList(wrappedCmdArgs));
+        LOG.info("tablename=" + tableName);
+        LOG.info("partname=" + partitionName);
+        LOG.info("alias=" + alias);
 
         ProcessBuilder pb = new ProcessBuilder(wrappedCmdArgs);
         Map<String, String> env = pb.environment();
         addJobConfToEnvironment(hconf, env);
-        env.put(safeEnvVarName(HiveConf.ConfVars.HIVEALIAS.varname), String
+        env.put(safeEnvVarName(HiveConf.ConfVars.HIVE_ALIAS.varname), String
             .valueOf(alias));
 
         // Create an environment variable that uniquely identifies this script
         // operator
         String idEnvVarName = HiveConf.getVar(hconf,
-            HiveConf.ConfVars.HIVESCRIPTIDENVVAR);
+            HiveConf.ConfVars.HIVE_SCRIPT_ID_ENV_VAR);
         String idEnvVarVal = getOperatorId();
         env.put(safeEnvVarName(idEnvVarName), idEnvVarVal);
-
-        // For spark, in non-local mode, any added dependencies are stored at
-        // SparkFiles::getRootDirectory, which is the executor's working directory.
-        // In local mode, we need to manually point the process's working directory to it,
-        // in order to make the dependencies accessible.
-        if (sparkConf != null) {
-          String master = sparkConf.get("spark.master");
-          if (master.equals("local") || master.startsWith("local[")) {
-            pb.directory(new File(SparkFiles.getRootDirectory()));
-          }
-        }
 
         scriptPid = pb.start(); // Runtime.getRuntime().exec(wrappedCmdArgs);
 
@@ -404,11 +377,11 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
             .getProperties());
 
         errThread = new StreamThread(scriptErrReader, new ErrorStreamProcessor(
-            HiveConf.getIntVar(hconf, HiveConf.ConfVars.SCRIPTERRORLIMIT)),
+            HiveConf.getIntVar(hconf, HiveConf.ConfVars.SCRIPT_ERROR_LIMIT)),
             "ErrorProcessor");
 
         if (HiveConf
-            .getBoolVar(hconf, HiveConf.ConfVars.HIVESCRIPTAUTOPROGRESS)) {
+            .getBoolVar(hconf, HiveConf.ConfVars.HIVE_SCRIPT_AUTO_PROGRESS)) {
           autoProgressor = new AutoProgressor(this.getClass().getName(),
               reporter, Utilities.getDefaultNotificationInterval(hconf),
               HiveConf.getTimeVar(
@@ -450,8 +423,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
             outThread.join(0);
           }
         } catch (Exception e2) {
-          LOG.warn("Exception in closing outThread: "
-              + StringUtils.stringifyException(e2));
+          LOG.warn("Exception in closing outThread", e2);
         }
         setDone(true);
         LOG.warn("Got broken pipe during write: ignoring exception and setting operator to done");
@@ -499,8 +471,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
           new_abort = true;
         }
       } catch (IOException e) {
-        LOG.error("Got ioexception: " + e.getMessage());
-        e.printStackTrace();
+        LOG.error("Got exception", e);
         new_abort = true;
       } catch (InterruptedException e) {
       }
@@ -540,8 +511,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
         outThread.join(0);
       }
     } catch (Exception e) {
-      LOG.warn("Exception in closing outThread: "
-          + StringUtils.stringifyException(e));
+      LOG.warn("Exception in closing outThread", e);
     }
 
     try {
@@ -549,8 +519,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
         errThread.join(0);
       }
     } catch (Exception e) {
-      LOG.warn("Exception in closing errThread: "
-          + StringUtils.stringifyException(e));
+      LOG.warn("Exception in closing errThread", e);
     }
 
     try {
@@ -558,8 +527,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
         scriptPid.destroy();
       }
     } catch (Exception e) {
-      LOG.warn("Exception in destroying scriptPid: "
-          + StringUtils.stringifyException(e));
+      LOG.warn("Exception in destroying scriptPid", e);
     }
 
     super.close(new_abort);
@@ -607,7 +575,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
     private final Reporter reporter;
 
     CounterStatusProcessor(Configuration hconf, Reporter reporter){
-      this.reporterPrefix = HiveConf.getVar(hconf, HiveConf.ConfVars.STREAMREPORTERPERFIX);
+      this.reporterPrefix = HiveConf.getVar(hconf, HiveConf.ConfVars.STREAM_REPORTER_PREFIX);
       this.counterPrefix = reporterPrefix + "counter:";
       this.statusPrefix = reporterPrefix + "status:";
       this.reporter = reporter;
@@ -658,7 +626,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
     public ErrorStreamProcessor(int maxBytes) {
       this.maxBytes = maxBytes;
       lastReportTime = 0;
-      if (HiveConf.getBoolVar(hconf, HiveConf.ConfVars.STREAMREPORTERENABLED)){
+      if (HiveConf.getBoolVar(hconf, HiveConf.ConfVars.STREAM_REPORTER_ENABLED)){
         counterStatus = new CounterStatusProcessor(hconf, reporter);
       }
     }
@@ -680,9 +648,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
       long now = System.currentTimeMillis();
       // reporter is a member variable of the Operator class.
       if (now - lastReportTime > 60 * 1000 && reporter != null) {
-        if (LOG.isInfoEnabled()) {
-          LOG.info("ErrorStreamProcessor calling reporter.progress()");
-        }
+        LOG.info("ErrorStreamProcessor calling reporter.progress()");
         lastReportTime = now;
         reporter.progress();
       }
@@ -738,23 +704,18 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
           }
           proc.processLine(row);
         }
-        if (LOG.isInfoEnabled()) {
-          LOG.info("StreamThread " + name + " done");
-        }
+        LOG.info("StreamThread " + name + " done");
 
       } catch (Throwable th) {
         scriptError = th;
-        LOG.warn("Exception in StreamThread.run(): " + th.getMessage() +
-            "\nCause: " + th.getCause());
-        LOG.warn(StringUtils.stringifyException(th));
+        LOG.warn("Exception in StreamThread.run()", th);
       } finally {
         try {
           if (in != null) {
             in.close();
           }
         } catch (Exception e) {
-          LOG.warn(name + ": error in closing ..");
-          LOG.warn(StringUtils.stringifyException(e));
+          LOG.warn(name + ": error in closing ..", e);
         }
         try
         {
@@ -762,7 +723,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
             proc.close();
           }
         }catch (Exception e) {
-          LOG.warn(": error in closing .."+StringUtils.stringifyException(e));
+          LOG.warn(": error in closing ..", e);
         }
       }
     }
@@ -772,7 +733,7 @@ public class ScriptOperator extends Operator<ScriptDesc> implements
    * Wrap the script in a wrapper that allows admins to control.
    */
   protected String[] addWrapper(String[] inArgs) {
-    String wrapper = HiveConf.getVar(hconf, HiveConf.ConfVars.SCRIPTWRAPPER);
+    String wrapper = HiveConf.getVar(hconf, HiveConf.ConfVars.SCRIPT_WRAPPER);
     if (wrapper == null) {
       return inArgs;
     }

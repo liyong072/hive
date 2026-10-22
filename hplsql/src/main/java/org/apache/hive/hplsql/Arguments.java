@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.hplsql;
@@ -37,9 +38,15 @@ public class Arguments {
   String fileName;  
   String main;
   Map<String, String> vars = new HashMap<String, String>();
-  
+
+  public static Arguments script(String str) {
+    Arguments arguments = new Arguments();
+    arguments.parse(new String[]{"-e", str});
+    return arguments;
+  }
+
   @SuppressWarnings("static-access")
-  Arguments() {
+  public Arguments() {
     // -e 'query'
     options.addOption(OptionBuilder
         .hasArg()

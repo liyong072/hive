@@ -9,22 +9,23 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.repl.bootstrap.events.filesystem;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.ql.ddl.table.partition.add.AlterTableAddPartitionDesc;
 import org.apache.hadoop.hive.ql.exec.repl.bootstrap.events.PartitionEvent;
 import org.apache.hadoop.hive.ql.exec.repl.bootstrap.events.TableEvent;
 import org.apache.hadoop.hive.ql.exec.repl.bootstrap.load.ReplicationState;
 import org.apache.hadoop.hive.ql.parse.ReplicationSpec;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
-import org.apache.hadoop.hive.ql.plan.AddPartitionDesc;
 import org.apache.hadoop.hive.ql.plan.ImportTableDesc;
 
 import java.util.List;
@@ -34,9 +35,9 @@ public class FSPartitionEvent implements PartitionEvent {
   private final ReplicationState replicationState;
   private final TableEvent tableEvent;
 
-  FSPartitionEvent(HiveConf hiveConf, String metadataDir,
+  FSPartitionEvent(HiveConf hiveConf, String metadataDir, String dataDir,
       ReplicationState replicationState) {
-    tableEvent = new FSTableEvent(hiveConf, metadataDir);
+    tableEvent = new FSTableEvent(hiveConf, metadataDir, dataDir);
     this.replicationState = replicationState;
   }
 
@@ -46,9 +47,21 @@ public class FSPartitionEvent implements PartitionEvent {
   }
 
   @Override
-  public AddPartitionDesc lastPartitionReplicated() {
+  public AlterTableAddPartitionDesc lastPartitionReplicated() {
     assert replicationState != null && replicationState.partitionState != null;
     return replicationState.partitionState.lastReplicatedPartition;
+  }
+
+  @Override
+  public ReplicationState.PartitionState.Stage lastStageReplicated() {
+    assert replicationState != null && replicationState.partitionState != null;
+    return replicationState.partitionState.stage;
+  }
+
+  @Override
+  public AlterTableAddPartitionDesc.PartitionDesc lastPartSpecReplicated() {
+    assert replicationState != null && replicationState.partitionState != null;
+    return replicationState.partitionState.partSpec;
   }
 
   @Override
@@ -62,7 +75,7 @@ public class FSPartitionEvent implements PartitionEvent {
   }
 
   @Override
-  public List<AddPartitionDesc> partitionDescriptions(ImportTableDesc tblDesc)
+  public List<AlterTableAddPartitionDesc> partitionDescriptions(ImportTableDesc tblDesc)
       throws SemanticException {
     return tableEvent.partitionDescriptions(tblDesc);
   }
@@ -86,5 +99,10 @@ public class FSPartitionEvent implements PartitionEvent {
   @Override
   public Path metadataPath() {
     return tableEvent.metadataPath();
+  }
+
+  @Override
+  public Path dataPath() {
+    return tableEvent.dataPath();
   }
 }

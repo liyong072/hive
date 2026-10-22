@@ -1,19 +1,20 @@
 /*
-  Licensed to the Apache Software Foundation (ASF) under one
-  or more contributor license agreements.  See the NOTICE file
-  distributed with this work for additional information
-  regarding copyright ownership.  The ASF licenses this file
-  to you under the Apache License, Version 2.0 (the
-  "License"); you may not use this file except in compliance
-  with the License.  You may obtain a copy of the License at
-
-      http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer;
 
@@ -59,11 +60,13 @@ import static org.mockito.Mockito.when;
 public class TestGenMapRedUtilsCreateConditionalTask {
   private static HiveConf hiveConf;
 
-  private Task<? extends Serializable> dummyMRTask;
+  private Task<?> dummyMRTask;
 
   @BeforeClass
   public static void initializeSessionState() {
     hiveConf = new HiveConf();
+    // GenMapRedUtils is an MR compiler class
+    hiveConf.set(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE.varname, "mr");
   }
 
   @Before
@@ -187,9 +190,9 @@ public class TestGenMapRedUtilsCreateConditionalTask {
     GenMapRedUtils.createMRWorkForMergingFiles(fileSinkOperator, finalDirName, null,
         moveTaskList, hiveConf, dummyMRTask, new LineageState());
     ConditionalTask conditionalTask = (ConditionalTask)dummyMRTask.getChildTasks().get(0);
-    Task<? extends Serializable> moveOnlyTask = conditionalTask.getListTasks().get(0);
-    Task<? extends Serializable> mergeOnlyTask = conditionalTask.getListTasks().get(1);
-    Task<? extends Serializable> mergeAndMoveTask = conditionalTask.getListTasks().get(2);
+    Task<?> moveOnlyTask = conditionalTask.getListTasks().get(0);
+    Task<?> mergeOnlyTask = conditionalTask.getListTasks().get(1);
+    Task<?> mergeAndMoveTask = conditionalTask.getListTasks().get(2);
 
     /*
      * OPTIMIZATION
@@ -228,9 +231,9 @@ public class TestGenMapRedUtilsCreateConditionalTask {
     GenMapRedUtils.createMRWorkForMergingFiles(fileSinkOperator, finalDirName, null,
         moveTaskList, hiveConf, dummyMRTask, new LineageState());
     ConditionalTask conditionalTask = (ConditionalTask)dummyMRTask.getChildTasks().get(0);
-    Task<? extends Serializable> moveOnlyTask = conditionalTask.getListTasks().get(0);
-    Task<? extends Serializable> mergeOnlyTask = conditionalTask.getListTasks().get(1);
-    Task<? extends Serializable> mergeAndMoveTask = conditionalTask.getListTasks().get(2);
+    Task<?> moveOnlyTask = conditionalTask.getListTasks().get(0);
+    Task<?> mergeOnlyTask = conditionalTask.getListTasks().get(1);
+    Task<?> mergeAndMoveTask = conditionalTask.getListTasks().get(2);
 
     // Verify moveOnlyTask is NOT optimized
     assertEquals(1, moveOnlyTask.getChildTasks().size());
@@ -263,9 +266,9 @@ public class TestGenMapRedUtilsCreateConditionalTask {
     GenMapRedUtils.createMRWorkForMergingFiles(fileSinkOperator, finalDirName, null,
         moveTaskList, hiveConf, dummyMRTask, new LineageState());
     ConditionalTask conditionalTask = (ConditionalTask)dummyMRTask.getChildTasks().get(0);
-    Task<? extends Serializable> moveOnlyTask = conditionalTask.getListTasks().get(0);
-    Task<? extends Serializable> mergeOnlyTask = conditionalTask.getListTasks().get(1);
-    Task<? extends Serializable> mergeAndMoveTask = conditionalTask.getListTasks().get(2);
+    Task<?> moveOnlyTask = conditionalTask.getListTasks().get(0);
+    Task<?> mergeOnlyTask = conditionalTask.getListTasks().get(1);
+    Task<?> mergeAndMoveTask = conditionalTask.getListTasks().get(2);
 
     // Verify moveOnlyTask is NOT optimized
     assertEquals(1, moveOnlyTask.getChildTasks().size());
@@ -309,7 +312,7 @@ public class TestGenMapRedUtilsCreateConditionalTask {
     return moveTask;
   }
 
-  private void verifyMoveTask(Task<? extends Serializable> task, Path source, Path target) {
+  private void verifyMoveTask(Task<?> task, Path source, Path target) {
     MoveTask moveTask = (MoveTask)task;
     assertEquals(source, moveTask.getWork().getLoadFileWork().getSourcePath());
     assertEquals(target, moveTask.getWork().getLoadFileWork().getTargetDir());

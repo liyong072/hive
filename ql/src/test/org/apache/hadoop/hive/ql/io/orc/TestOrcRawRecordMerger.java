@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.orc;
@@ -23,11 +24,11 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.hive.common.ValidReadTxnList;
 import org.apache.hadoop.hive.common.ValidTxnList;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
+import org.apache.hadoop.hive.ql.io.AcidDirectory;
 import org.apache.hadoop.hive.ql.io.BucketCodec;
 import org.apache.orc.CompressionKind;
-import org.apache.orc.MemoryManager;
+import org.apache.orc.OrcConf;
 import org.apache.orc.StripeInformation;
-import org.apache.orc.impl.MemoryManagerImpl;
 import org.apache.orc.impl.OrcAcidUtils;
 import org.junit.Assert;
 import org.junit.Rule;
@@ -69,28 +70,35 @@ import com.google.common.collect.Lists;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 public class TestOrcRawRecordMerger {
 
   private static final Logger LOG = LoggerFactory.getLogger(TestOrcRawRecordMerger.class);
   @Test
-  public void testOrdering() throws Exception {
+  public void testOrdering() {
     ReaderKey left = new ReaderKey(100, 200, 1200, 300);
     ReaderKey right = new ReaderKey();
     right.setValues(100, 200, 1000, 200, false);
     assertTrue(right.compareTo(left) < 0);
     assertTrue(left.compareTo(right) > 0);
-    assertEquals(false, left.equals(right));
+    assertNotEquals(left, right);
     left.set(right);
-    assertTrue(right.compareTo(left) == 0);
-    assertEquals(true, right.equals(left));
+    assertEquals(0, right.compareTo(left));
+    assertEquals(right, left);
     right.setRowId(2000);
     assertTrue(right.compareTo(left) > 0);
     left.setValues(1, 2, 3, 4, false);
@@ -110,8 +118,54 @@ public class TestOrcRawRecordMerger {
     RecordIdentifier ri = new RecordIdentifier(1, 2, 3);
     assertEquals(1, ri.compareTo(left));
     assertEquals(-1, left.compareTo(ri));
-    assertEquals(false, ri.equals(left));
-    assertEquals(false, left.equals(ri));
+    assertNotEquals(ri, left);
+    assertNotEquals(left, ri);
+  }
+
+  @Test
+  public void testIntersect() {
+    OrcRawRecordMerger.KeyInterval ki1 = generateKeyInterval(1000L, 2000L);
+    OrcRawRecordMerger.KeyInterval ki2 = generateKeyInterval(1500L, 2500L);
+    checkIntersect(ki1, ki2, true);
+
+    ki2 = generateKeyInterval(500L, 1000L);
+    checkIntersect(ki1, ki2, true);
+
+    ki2 = generateKeyInterval(500L, 999L);
+    checkIntersect(ki1, ki2, false);
+
+    ki2 = generateKeyInterval(500L, null);
+    checkIntersect(ki1, ki2, true);
+
+    ki2 = generateKeyInterval(2500L, null);
+    checkIntersect(ki1, ki2, false);
+
+    ki2 = generateKeyInterval(null, null);
+    checkIntersect(ki1, ki2, true);
+  }
+
+  private static OrcRawRecordMerger.KeyInterval generateKeyInterval(Long minRowId, Long maxRowId) {
+    RecordIdentifier min = null;
+    if (minRowId != null) {
+      min = new RecordIdentifier(1, 100, minRowId);
+    }
+    RecordIdentifier max = null;
+    if (maxRowId != null) {
+      max = new RecordIdentifier(1, 100, maxRowId);
+    }
+    return new OrcRawRecordMerger.KeyInterval(min, max);
+  }
+
+  private static void checkIntersect(OrcRawRecordMerger.KeyInterval ki1, OrcRawRecordMerger.KeyInterval ki2,
+      boolean isIntersect)
+  {
+    if (isIntersect) {
+      assertTrue(ki1.isIntersects(ki2));
+      assertTrue(ki2.isIntersects(ki1));
+    } else {
+      assertFalse(ki1.isIntersects(ki2));
+      assertFalse(ki2.isIntersects(ki1));
+    }
   }
 
   private static void setRow(OrcStruct event,
@@ -140,14 +194,15 @@ public class TestOrcRawRecordMerger {
   private List<StripeInformation> createStripes(long... rowCounts) {
     long offset = 0;
     List<StripeInformation> result =
-        new ArrayList<StripeInformation>(rowCounts.length);
+        new ArrayList<>(rowCounts.length);
+    int stripeCount = 0;
     for(long count: rowCounts) {
       OrcProto.StripeInformation.Builder stripe =
           OrcProto.StripeInformation.newBuilder();
       stripe.setDataLength(800).setIndexLength(100).setFooterLength(100)
           .setNumberOfRows(count).setOffset(offset);
       offset += 1000;
-      result.add(new ReaderImpl.StripeInformationImpl(stripe.build()));
+      result.add(new ReaderImpl.StripeInformationImpl(stripe.build(), stripeCount++, -1, null));
     }
     return result;
   }
@@ -170,21 +225,52 @@ public class TestOrcRawRecordMerger {
     setRow(row4, OrcRecordUpdater.INSERT_OPERATION, 40, 50, 60, 130, "fourth");
     OrcStruct row5 = new OrcStruct(OrcRecordUpdater.FIELDS);
     setRow(row5, OrcRecordUpdater.INSERT_OPERATION, 40, 50, 61, 140, "fifth");
-    Mockito.when(reader.rowsOptions(Mockito.any(Reader.Options.class), Mockito.any(HiveConf.class)))
+    when(reader.rowsOptions(any(Reader.Options.class), any(HiveConf.class)))
         .thenReturn(recordReader);
 
-    Mockito.when(recordReader.hasNext()).
+    when(recordReader.hasNext()).
         thenReturn(true, true, true, true, true, false);
 
-    Mockito.when(recordReader.getProgress()).thenReturn(1.0f);
+    when(recordReader.getProgress()).thenReturn(1.0f);
 
-    Mockito.when(recordReader.next(null)).thenReturn(row1);
-    Mockito.when(recordReader.next(row1)).thenReturn(row2);
-    Mockito.when(recordReader.next(row2)).thenReturn(row3);
-    Mockito.when(recordReader.next(row3)).thenReturn(row4);
-    Mockito.when(recordReader.next(row4)).thenReturn(row5);
+    when(recordReader.next(null)).thenReturn(row1);
+    when(recordReader.next(row1)).thenReturn(row2);
+    when(recordReader.next(row2)).thenReturn(row3);
+    when(recordReader.next(row3)).thenReturn(row4);
+    when(recordReader.next(row4)).thenReturn(row5);
 
     return reader;
+  }
+
+  private static <T> void checkReaderRecord(
+      int writeId, int bucketProperty, int rowId, int currWriteId, T value, ReaderKey key, ReaderPair pair) {
+    assertEquals(writeId, key.getWriteId());
+    assertEquals(bucketProperty, key.getBucketProperty());
+    assertEquals(rowId, key.getRowId());
+    assertEquals(currWriteId, key.getCurrentWriteId());
+    assertEquals(value, value(pair.nextRecord()));
+  }
+
+  private static <T> void checkMergerRecord(
+      long writeId, int bucketProperty, long rowId, T value, RecordIdentifier key, OrcStruct event) {
+    assertEquals(value, getValue(event));
+    assertEquals(writeId, key.getWriteId());
+    assertEquals(bucketProperty, key.getBucketProperty());
+    assertEquals(rowId, key.getRowId());
+  }
+
+  private static <T> void checkMergerRecord(
+      int operationType, T value, ReaderKey key, RecordIdentifier id, OrcStruct event) {
+    checkEvent(operationType, event);
+    checkMergerRecord(key.getWriteId(), key.getBucketProperty(), key.getRowId(),
+        value, id, event);
+  }
+
+  private static void checkEvent(int operationType, OrcStruct event) {
+    assertEquals(operationType, OrcRecordUpdater.getOperation(event));
+    if (operationType == OrcRecordUpdater.DELETE_OPERATION) {
+      assertNull(OrcRecordUpdater.getRow(event));
+    }
   }
 
   @Test
@@ -196,68 +282,41 @@ public class TestOrcRawRecordMerger {
     ReaderPair pair = new OrcRawRecordMerger.ReaderPairAcid(key, reader, minKey, maxKey,
         new Reader.Options(), new HiveConf());
     RecordReader recordReader = pair.getRecordReader();
-    assertEquals(10, key.getWriteId());
-    assertEquals(20, key.getBucketProperty());
-    assertEquals(40, key.getRowId());
-    assertEquals(120, key.getCurrentWriteId());
-    assertEquals("third", value(pair.nextRecord()));
+    checkReaderRecord(10, 20, 40, 120, "third", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(40, key.getWriteId());
-    assertEquals(50, key.getBucketProperty());
-    assertEquals(60, key.getRowId());
-    assertEquals(130, key.getCurrentWriteId());
-    assertEquals("fourth", value(pair.nextRecord()));
+    checkReaderRecord(40, 50, 60, 130, "fourth", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(null, pair.nextRecord());
+    assertNull(pair.nextRecord());
     Mockito.verify(recordReader).close();
   }
 
   @Test
-  public void testReaderPairNoMin() throws Exception {
+  public void testReaderPairNoMinMaxKeys() throws Exception {
     ReaderKey key = new ReaderKey();
     Reader reader = createMockReader();
 
+    // null min and max keys forces a full scan of all records
     ReaderPair pair = new OrcRawRecordMerger.ReaderPairAcid(key, reader, null, null,
         new Reader.Options(), new HiveConf());
     RecordReader recordReader = pair.getRecordReader();
-    assertEquals(10, key.getWriteId());
-    assertEquals(20, key.getBucketProperty());
-    assertEquals(20, key.getRowId());
-    assertEquals(100, key.getCurrentWriteId());
-    assertEquals("first", value(pair.nextRecord()));
+    checkReaderRecord(10, 20, 20, 100, "first", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(10, key.getWriteId());
-    assertEquals(20, key.getBucketProperty());
-    assertEquals(30, key.getRowId());
-    assertEquals(110, key.getCurrentWriteId());
-    assertEquals("second", value(pair.nextRecord()));
+    checkReaderRecord(10, 20, 30, 110, "second", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(10, key.getWriteId());
-    assertEquals(20, key.getBucketProperty());
-    assertEquals(40, key.getRowId());
-    assertEquals(120, key.getCurrentWriteId());
-    assertEquals("third", value(pair.nextRecord()));
+    checkReaderRecord(10, 20, 40, 120, "third", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(40, key.getWriteId());
-    assertEquals(50, key.getBucketProperty());
-    assertEquals(60, key.getRowId());
-    assertEquals(130, key.getCurrentWriteId());
-    assertEquals("fourth", value(pair.nextRecord()));
+    checkReaderRecord(40, 50, 60, 130, "fourth", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(40, key.getWriteId());
-    assertEquals(50, key.getBucketProperty());
-    assertEquals(61, key.getRowId());
-    assertEquals(140, key.getCurrentWriteId());
-    assertEquals("fifth", value(pair.nextRecord()));
+    checkReaderRecord(40, 50, 61, 140, "fifth", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(null, pair.nextRecord());
+    assertNull(pair.nextRecord());
     Mockito.verify(recordReader).close();
   }
 
@@ -276,16 +335,17 @@ public class TestOrcRawRecordMerger {
     OrcStruct row4 = createOriginalRow("fourth");
     OrcStruct row5 = createOriginalRow("fifth");
 
-    Mockito.when(reader.rowsOptions(Mockito.any(Reader.Options.class), Mockito.any(HiveConf.class)))
+    // HiveConf argument of rowsOptions can be null
+    when(reader.rowsOptions(any(Reader.Options.class), any()))
         .thenReturn(recordReader);
-    Mockito.when(recordReader.hasNext()).
+    when(recordReader.hasNext()).
         thenReturn(true, true, true, true, true, false);
-    Mockito.when(recordReader.getRowNumber()).thenReturn(0L, 1L, 2L, 3L, 4L);
-    Mockito.when(recordReader.next(null)).thenReturn(row1);
-    Mockito.when(recordReader.next(row1)).thenReturn(row2);
-    Mockito.when(recordReader.next(row2)).thenReturn(row3);
-    Mockito.when(recordReader.next(row3)).thenReturn(row4);
-    Mockito.when(recordReader.next(row4)).thenReturn(row5);
+    when(recordReader.getRowNumber()).thenReturn(0L, 1L, 2L, 3L, 4L);
+    when(recordReader.next(null)).thenReturn(row1);
+    when(recordReader.next(row1)).thenReturn(row2);
+    when(recordReader.next(row2)).thenReturn(row3);
+    when(recordReader.next(row3)).thenReturn(row4);
+    when(recordReader.next(row4)).thenReturn(row5);
     return reader;
   }
 
@@ -306,22 +366,16 @@ public class TestOrcRawRecordMerger {
     ReaderPair pair = new OrcRawRecordMerger.OriginalReaderPairToRead(key, reader, BUCKET, minKey, maxKey,
         new Reader.Options().include(includes), new OrcRawRecordMerger.Options().rootPath(root),
             conf, new ValidReaderWriteIdList(), 0);
+
+    // min/max keys drives the record reading, skipping to the 3rd row and stopping at the 4th
     RecordReader recordReader = pair.getRecordReader();
-    assertEquals(0, key.getWriteId());
-    assertEquals(bucketProperty, key.getBucketProperty());
-    assertEquals(2, key.getRowId());
-    assertEquals(0, key.getCurrentWriteId());
-    assertEquals("third", value(pair.nextRecord()));
+    checkReaderRecord(0, bucketProperty, 2, 0, "third", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(0, key.getWriteId());
-    assertEquals(bucketProperty, key.getBucketProperty());
-    assertEquals(3, key.getRowId());
-    assertEquals(0, key.getCurrentWriteId());
-    assertEquals("fourth", value(pair.nextRecord()));
+    checkReaderRecord(0, bucketProperty, 3, 0, "fourth", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(null, pair.nextRecord());
+    assertNull(pair.nextRecord());
     Mockito.verify(recordReader).close();
   }
 
@@ -330,94 +384,47 @@ public class TestOrcRawRecordMerger {
   }
 
   @Test
-  public void testOriginalReaderPairNoMin() throws Exception {
+  public void testOriginalReaderPairNoMinMaxKeys() throws Exception {
     int BUCKET = 10;
     ReaderKey key = new ReaderKey();
     Reader reader = createMockOriginalReader();
     Configuration conf = new Configuration();
     int bucketProperty = OrcRawRecordMerger.encodeBucketId(conf, BUCKET, 0);
     FileSystem fs = FileSystem.getLocal(conf);
-    Path root = new Path(tmpDir, "testOriginalReaderPairNoMin");
+    Path root = new Path(tmpDir, "testOriginalReaderPairNoMinMaxKeys");
     fs.makeQualified(root);
     fs.create(root);
+
+    // null min and max keys forces a full scan of all records
     ReaderPair pair = new OrcRawRecordMerger.OriginalReaderPairToRead(key, reader, BUCKET, null, null,
-        new Reader.Options(), new OrcRawRecordMerger.Options().rootPath(root), conf, new ValidReaderWriteIdList(), 0);
-    assertEquals("first", value(pair.nextRecord()));
-    assertEquals(0, key.getWriteId());
-    assertEquals(bucketProperty, key.getBucketProperty());
-    assertEquals(0, key.getRowId());
-    assertEquals(0, key.getCurrentWriteId());
+        new Reader.Options(), new OrcRawRecordMerger.Options().rootPath(root), conf,
+        new ValidReaderWriteIdList(), 0);
+    checkReaderRecord(0, bucketProperty, 0, 0, "first", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals("second", value(pair.nextRecord()));
-    assertEquals(0, key.getWriteId());
-    assertEquals(bucketProperty, key.getBucketProperty());
-    assertEquals(1, key.getRowId());
-    assertEquals(0, key.getCurrentWriteId());
+    checkReaderRecord(0, bucketProperty, 1, 0, "second", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals("third", value(pair.nextRecord()));
-    assertEquals(0, key.getWriteId());
-    assertEquals(bucketProperty, key.getBucketProperty());
-    assertEquals(2, key.getRowId());
-    assertEquals(0, key.getCurrentWriteId());
+    checkReaderRecord(0, bucketProperty, 2, 0, "third", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals("fourth", value(pair.nextRecord()));
-    assertEquals(0, key.getWriteId());
-    assertEquals(bucketProperty, key.getBucketProperty());
-    assertEquals(3, key.getRowId());
-    assertEquals(0, key.getCurrentWriteId());
+    checkReaderRecord(0, bucketProperty, 3, 0, "fourth", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals("fifth", value(pair.nextRecord()));
-    assertEquals(0, key.getWriteId());
-    assertEquals(bucketProperty, key.getBucketProperty());
-    assertEquals(4, key.getRowId());
-    assertEquals(0, key.getCurrentWriteId());
+    checkReaderRecord(0, bucketProperty, 4, 0, "fifth", key, pair);
 
     pair.next(pair.nextRecord());
-    assertEquals(null, pair.nextRecord());
+    assertNull(pair.nextRecord());
     Mockito.verify(pair.getRecordReader()).close();
   }
 
-  @Test
-  public void testNewBase() throws Exception {
-    Configuration conf = new Configuration();
-    conf.set(IOConstants.SCHEMA_EVOLUTION_COLUMNS, "col1");
-    conf.set(IOConstants.SCHEMA_EVOLUTION_COLUMNS_TYPES, "string");
-    HiveConf.setBoolVar(conf, HiveConf.ConfVars.HIVE_TRANSACTIONAL_TABLE_SCAN, true);
+  private Reader buildMockReaderMerger(List<String> columnNames, List<OrcProto.Type.Kind> columnKinds,
+      boolean addHiveAcidKeyIndexMetadata) throws IOException {
     Reader reader = Mockito.mock(Reader.class, settings);
     RecordReader recordReader = Mockito.mock(RecordReader.class, settings);
 
-    List<OrcProto.Type> types = new ArrayList<OrcProto.Type>();
-    OrcProto.Type.Builder typeBuilder = OrcProto.Type.newBuilder();
-    typeBuilder.setKind(OrcProto.Type.Kind.STRUCT).addSubtypes(1)
-        .addSubtypes(2).addSubtypes(3).addSubtypes(4).addSubtypes(5)
-        .addSubtypes(6);
-    typeBuilder.addAllFieldNames(Lists.newArrayList(
-        OrcRecordUpdater.OPERATION_FIELD_NAME,
-        OrcRecordUpdater.CURRENT_WRITEID_FIELD_NAME,
-        OrcRecordUpdater.BUCKET_FIELD_NAME,
-        OrcRecordUpdater.ROW_ID_FIELD_NAME,
-        OrcRecordUpdater.CURRENT_WRITEID_FIELD_NAME,
-        OrcRecordUpdater.ROW_FIELD_NAME));
-    types.add(typeBuilder.build());
-    types.add(null);
-    types.add(null);
-    types.add(null);
-    types.add(null);
-    types.add(null);
-    typeBuilder.clearSubtypes();
-    typeBuilder.addSubtypes(7);
-    typeBuilder.addAllFieldNames(Lists.newArrayList("col1"));
-    types.add(typeBuilder.build());
-    typeBuilder.clear();
-    typeBuilder.setKind(OrcProto.Type.Kind.STRING);
-    types.add(typeBuilder.build());
-
-    Mockito.when(reader.getTypes()).thenReturn(types);
-    Mockito.when(reader.rowsOptions(Mockito.any(Reader.Options.class), Mockito.any(HiveConf.class)))
+    when(reader.getTypes()).thenReturn(buildReaderTypes(columnNames, columnKinds));
+    when(reader.rowsOptions(any(Reader.Options.class), any()))
         .thenReturn(recordReader);
 
     OrcStruct row1 = new OrcStruct(OrcRecordUpdater.FIELDS);
@@ -431,57 +438,165 @@ public class TestOrcRawRecordMerger {
     OrcStruct row5 = new OrcStruct(OrcRecordUpdater.FIELDS);
     setRow(row5, OrcRecordUpdater.INSERT_OPERATION, 40, 50, 61, 140, "fifth");
 
-    Mockito.when(recordReader.hasNext()).
-        thenReturn(true, true, true, true, true, false);
+    when(recordReader.getProgress()).thenReturn(1.0f);
 
-    Mockito.when(recordReader.getProgress()).thenReturn(1.0f);
+    if (addHiveAcidKeyIndexMetadata) {
+      // hasNext() and next() need re-checking after fixing https://issues.apache.org/jira/browse/HIVE-26150
+      when(recordReader.hasNext()).
+          thenReturn(true, true, true, true, true, false);
 
-    Mockito.when(recordReader.next(null)).thenReturn(row1, row4);
-    Mockito.when(recordReader.next(row1)).thenReturn(row2);
-    Mockito.when(recordReader.next(row2)).thenReturn(row3);
-    Mockito.when(recordReader.next(row3)).thenReturn(row5);
+      when(recordReader.next(null)).thenReturn(row1, row4);
+      when(recordReader.next(row1)).thenReturn(row2);
+      when(recordReader.next(row2)).thenReturn(row3);
+      when(recordReader.next(row3)).thenReturn(row5);
+    } else {
+      // it should be (true x 4, false), see https://issues.apache.org/jira/browse/HIVE-26150
+      when(recordReader.hasNext()).
+          thenReturn(true, true, true, true, true, true, true, true, true, false);
 
-    Mockito.when(reader.hasMetadataValue(OrcRecordUpdater.ACID_KEY_INDEX_NAME))
-        .thenReturn(true);
-    Mockito.when(reader.getMetadataValue(OrcRecordUpdater.ACID_KEY_INDEX_NAME))
-        .thenReturn(ByteBuffer.wrap("10,20,30;40,50,60;40,50,61"
-            .getBytes("UTF-8")));
-    Mockito.when(reader.getStripes())
-        .thenReturn(createStripes(2, 2, 1));
+      when(recordReader.next(null)).thenReturn(row1);
+      when(recordReader.next(row1)).thenReturn(row2);
+      when(recordReader.next(row2)).thenReturn(row3);
+      when(recordReader.next(row3)).thenReturn(row4);
+      when(recordReader.next(row4)).thenReturn(row5);
+    }
 
-    OrcRawRecordMerger merger = new OrcRawRecordMerger(conf, false, reader,
+    when(reader.hasMetadataValue(OrcRecordUpdater.ACID_KEY_INDEX_NAME))
+        .thenReturn(addHiveAcidKeyIndexMetadata);
+    if (addHiveAcidKeyIndexMetadata) {
+      when(reader.getMetadataValue(OrcRecordUpdater.ACID_KEY_INDEX_NAME))
+          .thenReturn(ByteBuffer.wrap("10,20,30;40,50,60;40,50,61".getBytes(StandardCharsets.UTF_8)));
+    }
+    when(reader.getStripes()).thenReturn(createStripes(2, 2, 1));
+
+    return reader;
+  }
+
+  @Test
+  public void testNewBase() throws Exception {
+    final List<String> columnNames = Collections.singletonList("col1");
+    final List<String> columnTypes = Collections.singletonList("string");
+    final List<OrcProto.Type.Kind> columnKinds = Collections.singletonList(OrcProto.Type.Kind.STRING);
+
+    final Configuration conf = new Configuration();
+    conf.set(IOConstants.SCHEMA_EVOLUTION_COLUMNS, columnNames.get(0));
+    conf.set(IOConstants.SCHEMA_EVOLUTION_COLUMNS_TYPES, columnTypes.get(0));
+    HiveConf.setBoolVar(conf, HiveConf.ConfVars.HIVE_TRANSACTIONAL_TABLE_SCAN, true);
+
+    final Reader reader = buildMockReaderMerger(columnNames, columnKinds, true);
+
+    final OrcRawRecordMerger merger = new OrcRawRecordMerger(conf, false, reader,
         false, 10, createMaximalTxnList(),
         new Reader.Options().range(1000, 1000), null, new OrcRawRecordMerger.Options());
-    RecordReader rr = merger.getCurrentReader().getRecordReader();
+    final RecordReader rr = merger.getCurrentReader().getRecordReader();
+
     assertEquals(0, merger.getOtherReaders().size());
+    assertEquals(merger.getMinKey().toString(), new RecordIdentifier(10, 20, 30), merger.getMinKey());
+    assertEquals(merger.getMaxKey().toString(), new RecordIdentifier(40, 50, 60), merger.getMaxKey());
 
-    assertEquals("" + merger.getMinKey(),new RecordIdentifier(10, 20, 30), merger.getMinKey());
-    assertEquals("" + merger.getMaxKey(), new RecordIdentifier(40, 50, 60), merger.getMaxKey());
-    RecordIdentifier id = merger.createKey();
-    OrcStruct event = merger.createValue();
+    final RecordIdentifier id = merger.createKey();
+    final OrcStruct event = merger.createValue();
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(10, 20, 40, "third", id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(10, id.getWriteId());
-    assertEquals(20, id.getBucketProperty());
-    assertEquals(40, id.getRowId());
-    assertEquals("third", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(40, 50, 60, "fourth", id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(40, id.getWriteId());
-    assertEquals(50, id.getBucketProperty());
-    assertEquals(60, id.getRowId());
-    assertEquals("fourth", getValue(event));
-
-    assertEquals(false, merger.next(id, event));
+    assertFalse(merger.next(id, event));
     assertEquals(1.0, merger.getProgress(), 0.01);
     merger.close();
     Mockito.verify(rr).close();
     Mockito.verify(rr).getProgress();
 
+    assertRecordMergerStructFields(merger, columnNames);
+  }
+
+  @Test
+  public void testNewBaseNoHiveAcidKeyIndexMetadata() throws Exception {
+    final List<String> columnNames = Collections.singletonList("col1");
+    final List<String> columnTypes = Collections.singletonList("string");
+    final List<OrcProto.Type.Kind> columnKinds = Collections.singletonList(OrcProto.Type.Kind.STRING);
+
+    final Configuration conf = new Configuration();
+    conf.set(IOConstants.SCHEMA_EVOLUTION_COLUMNS, columnNames.get(0));
+    conf.set(IOConstants.SCHEMA_EVOLUTION_COLUMNS_TYPES, columnTypes.get(0));
+    HiveConf.setBoolVar(conf, HiveConf.ConfVars.HIVE_TRANSACTIONAL_TABLE_SCAN, true);
+
+    final Reader reader = buildMockReaderMerger(columnNames, columnKinds, false);
+    final OrcRawRecordMerger merger = new OrcRawRecordMerger(conf, true, reader,
+        false, 10, createMaximalTxnList(),
+        new Reader.Options().range(1000, 1000), null, new OrcRawRecordMerger.Options());
+    final RecordReader rr = merger.getCurrentReader().getRecordReader();
+    assertEquals(0, merger.getOtherReaders().size());
+
+    assertNull(merger.getMinKey());
+    assertNull(merger.getMaxKey());
+    RecordIdentifier id = merger.createKey();
+    OrcStruct event = merger.createValue();
+
+    // minKey/maxKey = null => full record scan
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(10, 20, 20, "first", id, event);
+
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(10, 20, 30, "second", id, event);
+
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(10, 20, 40, "third", id, event);
+
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(40, 50, 60, "fourth", id, event);
+
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(40, 50, 61, "fifth", id, event);
+
+    assertEquals(1.0, merger.getProgress(), 0.01);
+    merger.close();
+    Mockito.verify(rr).close();
+    Mockito.verify(rr).getProgress();
+
+    assertRecordMergerStructFields(merger, columnNames);
+  }
+
+  private static List<OrcProto.Type> buildReaderTypes(List<String> columns, List<OrcProto.Type.Kind> columnTypes) {
+    final List<OrcProto.Type> types = new ArrayList<>();
+    final OrcProto.Type.Builder typeBuilder = OrcProto.Type.newBuilder();
+
+    typeBuilder.setKind(OrcProto.Type.Kind.STRUCT).addSubtypes(1)
+        .addSubtypes(2).addSubtypes(3).addSubtypes(4).addSubtypes(5)
+        .addSubtypes(6);
+    typeBuilder.addAllFieldNames(Lists.newArrayList(
+        OrcRecordUpdater.OPERATION_FIELD_NAME,
+        OrcRecordUpdater.CURRENT_WRITEID_FIELD_NAME,
+        OrcRecordUpdater.BUCKET_FIELD_NAME,
+        OrcRecordUpdater.ROW_ID_FIELD_NAME,
+        OrcRecordUpdater.CURRENT_WRITEID_FIELD_NAME,
+        OrcRecordUpdater.ROW_FIELD_NAME));
+
+    types.add(typeBuilder.build());
+    types.add(null);
+    types.add(null);
+    types.add(null);
+    types.add(null);
+    types.add(null);
+    typeBuilder.clearSubtypes();
+    typeBuilder.addSubtypes(7);
+    typeBuilder.addAllFieldNames(columns);
+    types.add(typeBuilder.build());
+    typeBuilder.clear();
+    columnTypes.forEach(typeBuilder::setKind);
+    types.add(typeBuilder.build());
+
+    return types;
+  }
+
+  private static void assertRecordMergerStructFields(OrcRawRecordMerger merger, List<String> columns) {
     StructObjectInspector eventObjectInspector =
         (StructObjectInspector) merger.getObjectInspector();
     List<? extends StructField> fields =
         eventObjectInspector.getAllStructFieldRefs();
+
+    // check ACID (internal) columns
     assertEquals(OrcRecordUpdater.FIELDS, fields.size());
     assertEquals(OrcRecordUpdater.OPERATION_FIELD_NAME,
         fields.get(OrcRecordUpdater.OPERATION).getFieldName());
@@ -496,8 +611,12 @@ public class TestOrcRawRecordMerger {
     StructObjectInspector rowObjectInspector =
         (StructObjectInspector) fields.get(OrcRecordUpdater.ROW)
             .getFieldObjectInspector();
-    assertEquals("col1",
-        rowObjectInspector.getAllStructFieldRefs().get(0).getFieldName());
+
+    // check actual row columns (that is, user data)
+    for (int i = 0; i < columns.size(); i++) {
+      assertEquals(columns.get(i),
+          rowObjectInspector.getAllStructFieldRefs().get(i).getFieldName());
+    }
   }
 
   static class MyRow {
@@ -523,7 +642,8 @@ public class TestOrcRawRecordMerger {
   }
 
   static String getValue(OrcStruct event) {
-    return OrcRecordUpdater.getRow(event).getFieldValue(0).toString();
+    OrcStruct struct = OrcRecordUpdater.getRow(event);
+    return struct == null ? null : struct.getFieldValue(0).toString();
   }
 
   @Rule
@@ -538,7 +658,7 @@ public class TestOrcRawRecordMerger {
     Configuration conf = new Configuration();
     FileSystem fs = FileSystem.getLocal(conf);
     OrcOutputFormat of = new OrcOutputFormat();
-    Path root = new Path(tmpDir, "testEmpty").makeQualified(fs);
+    Path root = new Path(tmpDir, "testLogicalEmpty").makeQualified(fs);
     fs.delete(root, true);
     ObjectInspector inspector;
     synchronized (TestOrcFile.class) {
@@ -592,20 +712,10 @@ public class TestOrcRawRecordMerger {
         .inspector(inspector).bucket(BUCKET).writingBase(true)
         .maximumWriteId(100).finalDestination(root);
     of.getRecordUpdater(root, options).close(false);
-    {
-      /*OrcRecordUpdater is inconsistent about when it creates empty files and when it does not.
-      This creates an empty bucket. HIVE-17138*/
-      OrcFile.WriterOptions wo = OrcFile.writerOptions(conf);
-      wo.inspector(inspector);
-      wo.callback(new OrcRecordUpdater.KeyIndexBuilder("testEmpty"));
-      Writer w = OrcFile.createWriter(AcidUtils.createBucketFile(new Path(root,
-        AcidUtils.baseDir(100)), BUCKET), wo);
-      w.close();
-    }
     conf.set(ValidTxnList.VALID_TXNS_KEY,
         new ValidReadTxnList(new long[0], new BitSet(), 1000, Long.MAX_VALUE).writeToString());
-    ValidWriteIdList writeIdList = new ValidReaderWriteIdList("testEmpty:200:" + Long.MAX_VALUE);
-    AcidUtils.Directory directory = AcidUtils.getAcidState(root, conf, writeIdList);
+    ValidWriteIdList writeIdList = ValidReaderWriteIdList.fromValue("testEmpty:200:" + Long.MAX_VALUE);
+    AcidDirectory directory = AcidUtils.getAcidState(fs, root, conf, writeIdList, null, false);
 
     Path basePath = AcidUtils.createBucketFile(directory.getBaseDirectory(),
         BUCKET);
@@ -620,7 +730,7 @@ public class TestOrcRawRecordMerger {
             AcidUtils.getPaths(directory.getCurrentDirectories()), new OrcRawRecordMerger.Options().isCompacting(false));
     RecordIdentifier key = merger.createKey();
     OrcStruct value = merger.createValue();
-    assertEquals(false, merger.next(key, value));
+    assertFalse(merger.next(key, value));
   }
 
   /**
@@ -675,8 +785,8 @@ public class TestOrcRawRecordMerger {
 
     conf.set(ValidTxnList.VALID_TXNS_KEY,
         new ValidReadTxnList(new long[0], new BitSet(), 1000, Long.MAX_VALUE).writeToString());
-    ValidWriteIdList writeIdList = new ValidReaderWriteIdList("testNewBaseAndDelta:200:" + Long.MAX_VALUE);
-    AcidUtils.Directory directory = AcidUtils.getAcidState(root, conf, writeIdList);
+    ValidWriteIdList writeIdList = ValidReaderWriteIdList.fromValue("testNewBaseAndDelta:200:" + Long.MAX_VALUE);
+    AcidDirectory directory = AcidUtils.getAcidState(fs, root, conf, writeIdList, null, use130Format);
 
     assertEquals(new Path(root, "base_0000100"), directory.getBaseDirectory());
     assertEquals(new Path(root, use130Format ?
@@ -704,72 +814,52 @@ public class TestOrcRawRecordMerger {
         new OrcRawRecordMerger(conf, true, baseReader, false, BUCKET,
             createMaximalTxnList(), new Reader.Options(),
             new Path[] {deleteDeltaDir}, new OrcRawRecordMerger.Options().isCompacting(false));
-    assertEquals(null, merger.getMinKey());
-    assertEquals(null, merger.getMaxKey());
+    assertNull(merger.getMinKey());
+    assertNull(merger.getMaxKey());
     RecordIdentifier id = merger.createKey();
     OrcStruct event = merger.createValue();
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 0, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 0, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 1, 0), id);
-    assertEquals("second", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "second",
+        new ReaderKey(0, BUCKET_PROPERTY, 1, 0), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 2, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 2, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 3, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 3, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-        OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 4, 0), id);
-    assertEquals("fifth", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "fifth",
+        new ReaderKey(0, BUCKET_PROPERTY, 4, 0), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-        OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 5, 0), id);
-    assertEquals("sixth", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "sixth",
+        new ReaderKey(0, BUCKET_PROPERTY, 5, 0), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-        OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 6, 0), id);
-    assertEquals("seventh", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "seventh",
+        new ReaderKey(0, BUCKET_PROPERTY, 6, 0), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 7, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 7, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 8, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 8, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-        OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 9, 0), id);
-    assertEquals("tenth", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "tenth",
+        new ReaderKey(0, BUCKET_PROPERTY, 9, 0), id, event);
 
-    assertEquals(false, merger.next(id, event));
+    assertFalse(merger.next(id, event));
     merger.close();
 
     //second "split" is delta_200_200
@@ -779,58 +869,42 @@ public class TestOrcRawRecordMerger {
       new OrcRawRecordMerger(conf, true, baseReader, false, BUCKET,
         createMaximalTxnList(), new Reader.Options(),
         new Path[] {deleteDeltaDir}, new OrcRawRecordMerger.Options().isCompacting(false));
-    assertEquals(null, merger.getMinKey());
-    assertEquals(null, merger.getMaxKey());
+    assertNull(merger.getMinKey());
+    assertNull(merger.getMaxKey());
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 0, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 0, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 2, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 2, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 3, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 3, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 7, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 7, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 8, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 8, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(200, BUCKET_PROPERTY, 0, 200), id);
-    assertEquals("update 1", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "update 1",
+        new ReaderKey(200, BUCKET_PROPERTY, 0, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(200, BUCKET_PROPERTY, 1, 200), id);
-    assertEquals("update 2", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "update 2",
+        new ReaderKey(200, BUCKET_PROPERTY, 1, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(200, BUCKET_PROPERTY, 2, 200), id);
-    assertEquals("update 3", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "update 3",
+        new ReaderKey(200, BUCKET_PROPERTY, 2, 200), id, event);
 
-    assertEquals(false, merger.next(id, event));
+    assertFalse(merger.next(id, event));
     merger.close();
 
     //now run as if it's a minor Compaction so we don't collapse events
@@ -839,61 +913,45 @@ public class TestOrcRawRecordMerger {
       new OrcRawRecordMerger(conf, false, null, false, BUCKET,
         createMaximalTxnList(), new Reader.Options(),
         AcidUtils.getPaths(directory.getCurrentDirectories()), new OrcRawRecordMerger.Options().isCompacting(true));
-    assertEquals(null, merger.getMinKey());
-    assertEquals(null, merger.getMaxKey());
+    assertNull(merger.getMinKey());
+    assertNull(merger.getMaxKey());
 
-    assertEquals(true, merger.next(id, event));
+    assertTrue(merger.next(id, event));
     //minor comp, so we ignore 'base_0000100' files so all Deletes end up first since
     // they all modify primordial rows
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 0, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 0, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 2, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 2, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 3, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 3, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 7, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 7, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 8, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 8, 200), id, event);
 
     //data from delta_200_200
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(200, BUCKET_PROPERTY, 0, 200), id);
-    assertEquals("update 1", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "update 1",
+        new ReaderKey(200, BUCKET_PROPERTY, 0, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(200, BUCKET_PROPERTY, 1, 200), id);
-    assertEquals("update 2", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "update 2",
+        new ReaderKey(200, BUCKET_PROPERTY, 1, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(200, BUCKET_PROPERTY, 2, 200), id);
-    assertEquals("update 3", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "update 3",
+        new ReaderKey(200, BUCKET_PROPERTY, 2, 200), id, event);
 
-    assertEquals(false, merger.next(id, event));
+    assertFalse(merger.next(id, event));
     merger.close();
 
     //now run as if it's a major Compaction so we collapse events
@@ -905,93 +963,67 @@ public class TestOrcRawRecordMerger {
         createMaximalTxnList(), new Reader.Options(),
         AcidUtils.getPaths(directory.getCurrentDirectories()), new OrcRawRecordMerger.Options()
         .isCompacting(true).isMajorCompaction(true).baseDir(new Path(root, "base_0000100")));
-    assertEquals(null, merger.getMinKey());
-    assertEquals(null, merger.getMaxKey());
+    assertNull(merger.getMinKey());
+    assertNull(merger.getMaxKey());
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 0, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 0, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 1, 0), id);
-    assertEquals("second", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "second",
+        new ReaderKey(0, BUCKET_PROPERTY, 1, 0), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 2, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 2, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 3, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 3, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 4, 0), id);
-    assertEquals("fifth", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "fifth",
+        new ReaderKey(0, BUCKET_PROPERTY, 4, 0), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 5, 0), id);
-    assertEquals("sixth", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "sixth",
+        new ReaderKey(0, BUCKET_PROPERTY, 5, 0), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 6, 0), id);
-    assertEquals("seventh", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "seventh",
+        new ReaderKey(0, BUCKET_PROPERTY, 6, 0), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 7, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 7, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.DELETE_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 8, 200), id);
-    assertNull(OrcRecordUpdater.getRow(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.DELETE_OPERATION, null,
+        new ReaderKey(0, BUCKET_PROPERTY, 8, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(0, BUCKET_PROPERTY, 9, 0), id);
-    assertEquals("tenth", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "tenth",
+        new ReaderKey(0, BUCKET_PROPERTY, 9, 0), id, event);
 
     //data from delta_200_200
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(200, BUCKET_PROPERTY, 0, 200), id);
-    assertEquals("update 1", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "update 1",
+        new ReaderKey(200, BUCKET_PROPERTY, 0, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(200, BUCKET_PROPERTY, 1, 200), id);
-    assertEquals("update 2", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "update 2",
+        new ReaderKey(200, BUCKET_PROPERTY, 1, 200), id, event);
 
-    assertEquals(true, merger.next(id, event));
-    assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-      OrcRecordUpdater.getOperation(event));
-    assertEquals(new ReaderKey(200, BUCKET_PROPERTY, 2, 200), id);
-    assertEquals("update 3", getValue(event));
+    assertTrue(merger.next(id, event));
+    checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, "update 3",
+        new ReaderKey(200, BUCKET_PROPERTY, 2, 200), id, event);
 
-    assertEquals(false, merger.next(id, event));
+    assertFalse(merger.next(id, event));
     merger.close();
 
     // try ignoring the 200 transaction and make sure it works still
-    ValidWriteIdList writeIds = new ValidReaderWriteIdList("testNewBaseAndDelta:2000:200:200");
+    ValidWriteIdList writeIds = ValidReaderWriteIdList.fromValue("testNewBaseAndDelta:2000:200:200");
     //again 1st split is for base/
     baseReader = OrcFile.createReader(basePath,
       OrcFile.readerOptions(conf));
@@ -1000,18 +1032,16 @@ public class TestOrcRawRecordMerger {
               writeIds, new Reader.Options(),
         new Path[] {deleteDeltaDir}, new OrcRawRecordMerger.Options().isCompacting(false));
 
-    assertEquals(null, merger.getMinKey());
-    assertEquals(null, merger.getMaxKey());
+    assertNull(merger.getMinKey());
+    assertNull(merger.getMaxKey());
 
     for(int i=0; i < values.length; ++i) {
-      assertEquals(true, merger.next(id, event));
+      assertTrue(merger.next(id, event));
       LOG.info("id = " + id + "event = " + event);
-      assertEquals(OrcRecordUpdater.INSERT_OPERATION,
-          OrcRecordUpdater.getOperation(event));
-      assertEquals(new ReaderKey(0, BUCKET_PROPERTY, i, 0), id);
-      assertEquals(values[i], getValue(event));
+      checkMergerRecord(OrcRecordUpdater.INSERT_OPERATION, values[i],
+          new ReaderKey(0, BUCKET_PROPERTY, i, 0), id, event);
     }
-    assertEquals(false, merger.next(id, event));
+    assertFalse(merger.next(id, event));
     merger.close();
 
     // 2nd split is for delta_200_200 which is filtered out entirely by "txns"
@@ -1022,9 +1052,9 @@ public class TestOrcRawRecordMerger {
               writeIds, new Reader.Options(),
         new Path[] {deleteDeltaDir}, new OrcRawRecordMerger.Options().isCompacting(false));
 
-    assertEquals(null, merger.getMinKey());
-    assertEquals(null, merger.getMaxKey());
-    assertEquals(false, merger.next(id, event));
+    assertNull(merger.getMinKey());
+    assertNull(merger.getMaxKey());
+    assertFalse(merger.next(id, event));
     merger.close();
   }
 
@@ -1077,6 +1107,7 @@ public class TestOrcRawRecordMerger {
   public void testRecordReaderOldBaseAndDelta() throws Exception {
     final int BUCKET = 10;
     Configuration conf = new Configuration();
+    OrcConf.ROWS_BETWEEN_CHECKS.setLong(conf, 2);
     OrcOutputFormat of = new OrcOutputFormat();
     FileSystem fs = FileSystem.getLocal(conf);
     Path root = new Path(tmpDir, "testOldBaseAndDelta").makeQualified(fs);
@@ -1086,25 +1117,11 @@ public class TestOrcRawRecordMerger {
       inspector = ObjectInspectorFactory.getReflectionObjectInspector
           (BigRow.class, ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
     }
-
-    // write the base
-    MemoryManager mgr = new MemoryManagerImpl(conf){
-      int rowsAddedSinceCheck = 0;
-
-      @Override
-      public synchronized void addedRow(int rows) throws IOException {
-        rowsAddedSinceCheck += rows;
-        if (rowsAddedSinceCheck >= 2) {
-          notifyWriters();
-          rowsAddedSinceCheck = 0;
-        }
-      }
-    };
     // make 5 stripes with 2 rows each
     Writer writer = OrcFile.createWriter(new Path(root, "0000010_0"),
         OrcFile.writerOptions(conf).inspector(inspector).fileSystem(fs)
         .blockPadding(false).bufferSize(10000).compress(CompressionKind.NONE)
-        .stripeSize(1).memory(mgr).batchSize(2).version(OrcFile.Version.V_0_11));
+        .stripeSize(1).batchSize(2).version(OrcFile.Version.V_0_11));
     String[] values= new String[]{"ignore.1", "0.1", "ignore.2", "ignore.3",
        "2.0", "2.1", "3.0", "ignore.4", "ignore.5", "ignore.6"};
     for(int i=0; i < values.length; ++i) {
@@ -1189,12 +1206,12 @@ public class TestOrcRawRecordMerger {
         }
         if(i >= expected.length) {
           //not found
-          assertTrue("Found unexpected row: " + mr, false );
+          fail("Found unexpected row: " + mr);
         }
       }
     }
     for(MyResult mr : expected) {
-      assertTrue("Expected " + mr + " not found in any InputSplit", mr == null);
+      assertNull("Expected " + mr + " not found in any InputSplit", mr);
     }
   }
 
@@ -1210,6 +1227,7 @@ public class TestOrcRawRecordMerger {
   public void testRecordReaderNewBaseAndDelta() throws Exception {
     final int BUCKET = 11;
     Configuration conf = new Configuration();
+    OrcConf.ROWS_BETWEEN_CHECKS.setLong(conf, 2);
     OrcOutputFormat of = new OrcOutputFormat();
     FileSystem fs = FileSystem.getLocal(conf);
     Path root = new Path(tmpDir, "testRecordReaderNewBaseAndDelta").makeQualified(fs);
@@ -1220,20 +1238,6 @@ public class TestOrcRawRecordMerger {
           (BigRow.class, ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
     }
 
-    // write the base
-    MemoryManager mgr = new MemoryManagerImpl(conf){
-      int rowsAddedSinceCheck = 0;
-
-      @Override
-      public synchronized void addedRow(int rows) throws IOException {
-        rowsAddedSinceCheck += rows;
-        if (rowsAddedSinceCheck >= 2) {
-          notifyWriters();
-          rowsAddedSinceCheck = 0;
-        }
-      }
-    };
-
     // make 5 stripes with 2 rows each
     OrcRecordUpdater.OrcOptions options = (OrcRecordUpdater.OrcOptions)
         new OrcRecordUpdater.OrcOptions(conf)
@@ -1243,8 +1247,9 @@ public class TestOrcRawRecordMerger {
     final int BUCKET_PROPERTY = BucketCodec.V1.encode(options);
 
     options.orcOptions(OrcFile.writerOptions(conf)
-      .stripeSize(1).blockPadding(false).compress(CompressionKind.NONE)
-      .memory(mgr).batchSize(2));
+        .stripeSize(1).blockPadding(false)
+        .compress(CompressionKind.NONE)
+        .batchSize(2));
     options.finalDestination(root);
     RecordUpdater ru = of.getRecordUpdater(root, options);
     String[] values= new String[]{"ignore.1", "0.1", "ignore.2", "ignore.3",
@@ -1325,12 +1330,12 @@ public class TestOrcRawRecordMerger {
         }
         if(i >= expected.length) {
           //not found
-          assertTrue("Found unexpected row: " + mr, false );
+          fail("Found unexpected row: " + mr);
         }
       }
     }
     for(MyResult mr : expected) {
-      assertTrue("Expected " + mr + " not found in any InputSplit", mr == null);
+      assertNull("Expected " + mr + " not found in any InputSplit", mr);
     }
   }
   private static final class MyResult {
@@ -1415,10 +1420,10 @@ public class TestOrcRawRecordMerger {
       for (int i = 0; i < values[j].length; ++i) {
         System.out.println("Checking " + i);
         String msg = "split[" + j + "] at i=" + i;
-        assertEquals(msg, true, rr.next(NullWritable.get(), row));
+        assertTrue(msg, rr.next(NullWritable.get(), row));
         assertEquals(msg, values[j][i], row.getFieldValue(0).toString());
       }
-      assertEquals(false, rr.next(NullWritable.get(), row));
+      assertFalse(rr.next(NullWritable.get(), row));
     }
   }
 
@@ -1458,8 +1463,8 @@ public class TestOrcRawRecordMerger {
     }
     RecordUpdater ru = of.getRecordUpdater(root, options);
     String[] values= new String[]{"1", "2", "3", "4", "5"};
-    for(int i=0; i < values.length; ++i) {
-      ru.insert(0, new MyRow(values[i]));
+    for (String s : values) {
+      ru.insert(0, new MyRow(s));
     }
     ru.close(false);
 
@@ -1468,8 +1473,8 @@ public class TestOrcRawRecordMerger {
         .maximumWriteId(19);
     ru = of.getRecordUpdater(root, options);
     values = new String[]{"6", "7", "8"};
-    for(int i=0; i < values.length; ++i) {
-      ru.insert(1, new MyRow(values[i]));
+    for (String s : values) {
+      ru.insert(1, new MyRow(s));
     }
     InputFormat inf = new OrcInputFormat();
     JobConf job = new JobConf();
@@ -1494,16 +1499,16 @@ public class TestOrcRawRecordMerger {
     System.out.println("Looking at split " + splits[0]);
     for(int i=1; i < 6; ++i) {
       System.out.println("Checking row " + i);
-      assertEquals(true, rr.next(key, value));
+      assertTrue(rr.next(key, value));
       assertEquals(Integer.toString(i), value.getFieldValue(0).toString());
     }
-    assertEquals(false, rr.next(key, value));
+    assertFalse(rr.next(key, value));
 
     ru.flush();
     ru.flush();
     values = new String[]{"9", "10"};
-    for(int i=0; i < values.length; ++i) {
-      ru.insert(3, new MyRow(values[i]));
+    for (String s : values) {
+      ru.insert(3, new MyRow(s));
     }
     ru.flush();
 
@@ -1511,22 +1516,22 @@ public class TestOrcRawRecordMerger {
     assertEquals(2, splits.length);
     Path sideFile = new Path(root + "/" + (use130Format ? AcidUtils.deltaSubdir(10,19,0) :
       AcidUtils.deltaSubdir(10,19)) + "/bucket_00001_flush_length");
-    assertEquals(true, fs.exists(sideFile));
+    assertTrue(fs.exists(sideFile));
     assertEquals(32, fs.getFileStatus(sideFile).getLen());
 
     rr = inf.getRecordReader(splits[0], job, Reporter.NULL);
     for(int i=1; i <= 5; ++i) {
-      assertEquals(true, rr.next(key, value));
+      assertTrue(rr.next(key, value));
       assertEquals(Integer.toString(i), value.getFieldValue(0).toString());
     }
-    assertEquals(false, rr.next(key, value));
+    assertFalse(rr.next(key, value));
 
     rr = inf.getRecordReader(splits[1], job, Reporter.NULL);
     for(int i=6; i < 11; ++i) {
-      assertEquals("i="+ i, true, rr.next(key, value));
+      assertTrue("i=" + i, rr.next(key, value));
       assertEquals(Integer.toString(i), value.getFieldValue(0).toString());
     }
-    assertEquals(false, rr.next(key, value));
+    assertFalse(rr.next(key, value));
   }
 
 }

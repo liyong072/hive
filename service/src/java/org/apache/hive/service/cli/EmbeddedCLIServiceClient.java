@@ -9,15 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service.cli;
 
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 
@@ -236,5 +238,24 @@ public class EmbeddedCLIServiceClient extends CLIServiceClient {
   @Override
   public void setApplicationName(SessionHandle sh, String value) throws HiveSQLException {
     cliService.setApplicationName(sh, value);
+  }
+
+  @Override
+  public OperationHandle uploadData(
+      SessionHandle sessionHandle,
+      ByteBuffer values,
+      String tableName,
+      String path) throws HiveSQLException {
+    return cliService.uploadData(sessionHandle, values, tableName, path);
+  }
+
+  @Override
+  public OperationHandle downloadData(
+      SessionHandle sessionHandle,
+      String tableName,
+      String query,
+      String format,
+      Map<String, String> options) throws HiveSQLException {
+    return cliService.downloadData(sessionHandle, tableName, query, format, options);
   }
 }

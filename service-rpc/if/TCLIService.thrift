@@ -69,6 +69,9 @@ enum TProtocolVersion {
 
   // V11 adds timestamp with local time zone type
   HIVE_CLI_SERVICE_PROTOCOL_V11
+
+  // V12 adds variant type
+  HIVE_CLI_SERVICE_PROTOCOL_V12
 }
 
 enum TTypeId {
@@ -94,7 +97,9 @@ enum TTypeId {
   CHAR_TYPE,
   INTERVAL_YEAR_MONTH_TYPE,
   INTERVAL_DAY_TIME_TYPE,
-  TIMESTAMPLOCALTZ_TYPE
+  TIMESTAMPLOCALTZ_TYPE,
+  UNKNOWN_TYPE,
+  VARIANT_TYPE
 }
 
 const set<TTypeId> PRIMITIVE_TYPES = [
@@ -115,7 +120,8 @@ const set<TTypeId> PRIMITIVE_TYPES = [
   TTypeId.CHAR_TYPE,
   TTypeId.INTERVAL_YEAR_MONTH_TYPE,
   TTypeId.INTERVAL_DAY_TIME_TYPE,
-  TTypeId.TIMESTAMPLOCALTZ_TYPE
+  TTypeId.TIMESTAMPLOCALTZ_TYPE,
+  TTypeId.UNKNOWN_TYPE
 ]
 
 const set<TTypeId> COMPLEX_TYPES = [
@@ -124,6 +130,7 @@ const set<TTypeId> COMPLEX_TYPES = [
   TTypeId.STRUCT_TYPE
   TTypeId.UNION_TYPE
   TTypeId.USER_DEFINED_TYPE
+  TTypeId.VARIANT_TYPE
 ]
 
 const set<TTypeId> COLLECTION_TYPES = [
@@ -154,6 +161,8 @@ const map<TTypeId,string> TYPE_NAMES = {
   TTypeId.INTERVAL_YEAR_MONTH_TYPE: "INTERVAL_YEAR_MONTH"
   TTypeId.INTERVAL_DAY_TIME_TYPE: "INTERVAL_DAY_TIME"
   TTypeId.TIMESTAMPLOCALTZ_TYPE: "TIMESTAMP WITH LOCAL TIME ZONE"
+  TTypeId.UNKNOWN_TYPE: "UNKNOWN"
+  TTypeId.VARIANT_TYPE: "VARIANT"
 }
 
 // Thrift does not support recursively defined types or forward declarations,
@@ -523,6 +532,7 @@ enum TOperationType {
   GET_COLUMNS,
   GET_FUNCTIONS,
   UNKNOWN,
+  PROCEDURAL_SQL
 }
 
 // Client-side reference to a task running
@@ -750,6 +760,52 @@ struct TGetTypeInfoResp {
   2: optional TOperationHandle operationHandle
 }
 
+// UploadData()
+//
+// UploadData data to table or path. One of tableName or path must be set.
+struct TUploadDataReq {
+  // The session to execute the statement against
+  1: required TSessionHandle sessionHandle
+
+  // The table to be stored
+  2: optional string tableName
+
+  // The path to be stored
+  3: optional string path
+
+  // The data to be transferred
+  4: required binary values
+}
+
+struct TUploadDataResp {
+  1: required TStatus status
+  2: required TOperationHandle operationHandle
+}
+
+// DownloadData()
+//
+// Download data to JDBC client. One of tableName or query must be set.
+struct TDownloadDataReq {
+  // The session to download data
+  1: required TSessionHandle sessionHandle
+
+  // The download table name
+  2: optional TPatternOrIdentifier tableName
+
+  // The download query. For example: SELECT * FROM t1 JOIN t2 ON t1.id = t2.id
+  3: optional string query
+
+  // The download file format. For example: Parquet, ORC, CSV, JSON, Avro, etc.
+  4: optional string format
+
+  // The download options. For example: dateFormat=yyyy-MM-dd, compression=gzip
+  5: optional map<string, string> downloadOptions
+}
+
+struct TDownloadDataResp {
+  1: required TStatus status
+  2: required TOperationHandle operationHandle
+}
 
 // GetCatalogs()
 //
@@ -1239,6 +1295,7 @@ struct TProgressUpdateResp {
   4: required TJobExecutionStatus status
   5: required string footerSummary
   6: required i64 startTime
+  7: optional string queueMetrics
 }
 
 struct TGetQueryIdReq {
@@ -1296,4 +1353,8 @@ service TCLIService {
   TGetQueryIdResp GetQueryId(1:TGetQueryIdReq req);
 
   TSetClientInfoResp SetClientInfo(1:TSetClientInfoReq req);
+
+  TUploadDataResp UploadData(1:TUploadDataReq req);
+
+  TDownloadDataResp DownloadData(1:TDownloadDataReq req);
 }

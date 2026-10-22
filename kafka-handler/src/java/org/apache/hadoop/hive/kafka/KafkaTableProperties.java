@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.kafka;
@@ -53,7 +54,43 @@ enum KafkaTableProperties {
   /**
    * Table property that indicates if we should commit within the task or delay it to the Metadata Hook Commit call.
    */
-  HIVE_KAFKA_OPTIMISTIC_COMMIT("hive.kafka.optimistic.commit", "false");
+  HIVE_KAFKA_OPTIMISTIC_COMMIT("hive.kafka.optimistic.commit", "false"),
+
+  /**
+   * Table property indicating the location of the credential store containing passwords that would otherwise be
+   * exposed in Kafka's SSL parameters.
+   */
+  HIVE_KAFKA_SSL_CREDENTIAL_KEYSTORE("hive.kafka.ssl.credential.keystore", ""),
+
+  /**
+   * Table property indicating the key in the credential keystore for the truststore password. This is NOT
+   * the actual password.
+   */
+  HIVE_KAFKA_SSL_TRUSTSTORE_PASSWORD("hive.kafka.ssl.truststore.password", ""),
+
+  /**
+   * Table property indicating the key in the credential keystore for the keystore password. This is NOT
+   * the actual password. Only needed for two way authentication.
+   */
+  HIVE_KAFKA_SSL_KEYSTORE_PASSWORD("hive.kafka.ssl.keystore.password", ""),
+
+  /**
+   * Table property indicating the key in the credential keystore for the key password. This is NOT
+   * the actual password. Only needed for two way authentication.
+   */
+  HIVE_KAFKA_SSL_KEY_PASSWORD("hive.kafka.ssl.key.password", ""),
+
+  /**
+   * Table property indicating the location of the SSL truststore. Kafka cannot normally use an HDFS-based location,
+   * but we'll pull it down locally for each consumer/producer.
+   */
+  HIVE_SSL_TRUSTSTORE_LOCATION_CONFIG("hive.kafka.ssl.truststore.location", ""),
+
+  /**
+   * Table property indicating the location of the SSL keystore. Kafka cannot normally use an HDFS-based location,
+   * but we'll pull it down locally for each consumer/producer.
+   */
+  HIVE_SSL_KEYSTORE_LOCATION_CONFIG("hive.kafka.ssl.keystore.location", "");
 
   /**
    * Kafka storage handler table properties constructor.

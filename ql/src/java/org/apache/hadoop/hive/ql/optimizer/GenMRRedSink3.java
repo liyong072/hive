@@ -9,16 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer;
 
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Stack;
@@ -28,7 +28,7 @@ import org.apache.hadoop.hive.ql.exec.ReduceSinkOperator;
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.exec.UnionOperator;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.lib.Utils;
 import org.apache.hadoop.hive.ql.optimizer.GenMRProcContext.GenMapRedCtx;
@@ -39,7 +39,7 @@ import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 /**
  * Processor for the rule - union followed by reduce sink.
  */
-public class GenMRRedSink3 implements NodeProcessor {
+public class GenMRRedSink3 implements SemanticNodeProcessor {
 
   public GenMRRedSink3() {
   }
@@ -67,7 +67,7 @@ public class GenMRRedSink3 implements NodeProcessor {
         .getMapCurrCtx();
     GenMapRedCtx mapredCtx = mapCurrCtx.get(union);
 
-    Task<? extends Serializable> unionTask = null;
+    Task<?> unionTask = null;
     if(mapredCtx != null) {
       unionTask = mapredCtx.getCurrTask();
     } else {
@@ -76,9 +76,9 @@ public class GenMRRedSink3 implements NodeProcessor {
 
 
     MapredWork plan = (MapredWork) unionTask.getWork();
-    HashMap<Operator<? extends OperatorDesc>, Task<? extends Serializable>> opTaskMap = ctx
+    HashMap<Operator<? extends OperatorDesc>, Task<?>> opTaskMap = ctx
         .getOpTaskMap();
-    Task<? extends Serializable> reducerTask = opTaskMap.get(reducer);
+    Task<?> reducerTask = opTaskMap.get(reducer);
 
     ctx.setCurrTask(unionTask);
 

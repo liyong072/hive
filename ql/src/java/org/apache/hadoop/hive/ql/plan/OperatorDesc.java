@@ -9,17 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
 
 import java.io.Serializable;
 import java.util.Map;
+import java.util.Set;
 
 public interface OperatorDesc extends Serializable, Cloneable {
   public Object clone() throws CloneNotSupportedException;
@@ -31,7 +33,7 @@ public interface OperatorDesc extends Serializable, Cloneable {
   public long getMemoryNeeded();
   public void setMemoryNeeded(long memoryNeeded);
   public long getMaxMemoryAvailable();
-  public void setMaxMemoryAvailable(long memoryAvailble);
+  public void setMaxMemoryAvailable(long memoryAvailable);
   public String getRuntimeStatsTmpDir();
   public void setRuntimeStatsTmpDir(String runtimeStatsTmpDir);
 
@@ -40,4 +42,12 @@ public interface OperatorDesc extends Serializable, Cloneable {
   public void setColumnExprMap(Map<String, ExprNodeDesc> colExprMap);
 
   void fillSignature(Map<String, Object> ret);
+
+  public void setBucketingVersion(int bucketingVersion);
+
+  public int getBucketingVersion();
+
+  void addComputedField(String column);
+
+  Set<String> getComputedFields();
 }

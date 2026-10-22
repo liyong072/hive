@@ -9,17 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.security.authorization.plugin;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,9 +30,9 @@ import java.util.List;
 import org.apache.hadoop.hive.UtilsForTest;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.ql.DriverFactory;
 import org.apache.hadoop.hive.ql.IDriver;
-import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
 import org.apache.hadoop.hive.ql.security.HiveAuthenticationProvider;
 import org.apache.hadoop.hive.ql.security.SessionStateUserAuthenticator;
 import org.apache.hadoop.hive.ql.security.authorization.plugin.HivePrivilegeObject.HivePrivilegeObjectType;
@@ -72,8 +73,11 @@ public class TestHiveAuthorizerShowFilters {
    * HiveAuthorizer.filterListCmdObjects, and stores the list argument in
    * filterArguments
    */
-  protected static class MockedHiveAuthorizerFactory implements HiveAuthorizerFactory {
-    protected abstract class AuthorizerWithFilterCmdImpl implements HiveAuthorizer {
+  public static class MockedHiveAuthorizerFactory implements HiveAuthorizerFactory {
+    /**
+     * Abstracts HiveAuthorizer interface for hive authorization plugins
+     */
+    public abstract class AuthorizerWithFilterCmdImpl implements HiveAuthorizer {
       @Override
       public List<HivePrivilegeObject> filterListCmdObjects(List<HivePrivilegeObject> listObjs,
           HiveAuthzContext context) throws HiveAuthzPluginException, HiveAccessControlException {
@@ -111,7 +115,7 @@ public class TestHiveAuthorizerShowFilters {
 
   @BeforeClass
   public static void beforeTest() throws Exception {
-    conf = new HiveConf();
+    conf = new HiveConfForTest(TestHiveAuthorizerShowFilters.class);
 
     // Turn on mocked authorization
     conf.setVar(ConfVars.HIVE_AUTHORIZATION_MANAGER, MockedHiveAuthorizerFactory.class.getName());
@@ -251,13 +255,12 @@ public class TestHiveAuthorizerShowFilters {
         dbname = "default";
         tabname = obj;
       }
-      filteredResults.add(new HivePrivilegeObject(type, dbname, tabname));
+      filteredResults.add(new HivePrivilegeObject(type, "hive", dbname, tabname));
     }
   }
 
   private static void runCmd(String cmd) throws Exception {
-    CommandProcessorResponse resp = driver.run(cmd);
-    assertEquals(0, resp.getResponseCode());
+    driver.run(cmd);
   }
 
   private static List<String> getSortedList(String... strings) {

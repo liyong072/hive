@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.stats;
 
@@ -35,6 +36,7 @@ import org.apache.calcite.util.ImmutableBitSet;
 import com.google.common.collect.ImmutableSet;
 import org.apache.calcite.util.Util;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveAggregate;
+import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveAntiJoin;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveFilter;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveJoin;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveProject;
@@ -95,8 +97,7 @@ public final class EstimateUniqueKeys {
 
     RelMetadataQuery mq = rel.getCluster().getMetadataQuery();
     double numRows = mq.getRowCount(tScan);
-    List<ColStatistics> colStats = tScan.getColStat(BitSets
-                                                        .toList(projectedCols));
+    List<ColStatistics> colStats = tScan.getColStat(BitSets.toList(projectedCols));
     Set<ImmutableBitSet> keys = new HashSet<ImmutableBitSet>();
 
     colStatsPos = 0;
@@ -270,6 +271,12 @@ public final class EstimateUniqueKeys {
     return getUniqueKeys(rel.getLeft());
   }
 
+  private static Set<ImmutableBitSet> getUniqueKeys(HiveAntiJoin rel) {
+    // only return the unique keys from the LHS since a anti join only
+    // returns the LHS
+    return getUniqueKeys(rel.getLeft());
+  }
+
   private static Set<ImmutableBitSet> getUniqueKeys(HiveAggregate rel) {
     // group by keys form a unique key
     return ImmutableSet.of(rel.getGroupSet());
@@ -298,6 +305,8 @@ public final class EstimateUniqueKeys {
       return getUniqueKeys((HiveJoin) rel);
     } else if (rel instanceof HiveSemiJoin) {
       return getUniqueKeys((HiveSemiJoin) rel);
+    } else if (rel instanceof HiveAntiJoin) {
+      return getUniqueKeys((HiveAntiJoin) rel);
     } else if (rel instanceof HiveAggregate) {
       return getUniqueKeys((HiveAggregate) rel);
     } else if (rel instanceof SetOp) {

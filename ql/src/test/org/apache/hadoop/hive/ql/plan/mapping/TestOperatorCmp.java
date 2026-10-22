@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.plan.mapping;
 
@@ -34,6 +35,7 @@ import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.optimizer.signature.TestOperatorSignature;
 import org.apache.hadoop.hive.ql.parse.ParseException;
 import org.apache.hadoop.hive.ql.plan.mapper.PlanMapper;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorException;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.ql.stats.OperatorStatsReaderHook;
 import org.apache.hive.testutils.HiveTestEnvSetup;
@@ -68,8 +70,7 @@ public class TestOperatorCmp {
         // @formatter:on
     };
     for (String cmd : cmds) {
-      int ret = driver.run(cmd).getResponseCode();
-      assertEquals("Checking command success", 0, ret);
+      driver.run(cmd);
     }
   }
 
@@ -82,20 +83,18 @@ public class TestOperatorCmp {
   public static void dropTables(IDriver driver) throws Exception {
     String tables[] = { "tu", "tv", "tw" };
     for (String t : tables) {
-      int ret = driver.run("drop table if exists " + t).getResponseCode();
-      assertEquals("Checking command success", 0, ret);
+      driver.run("drop table if exists " + t);
     }
   }
 
-  private PlanMapper getMapperForQuery(IDriver driver, String query) {
-    int ret = driver.run(query).getResponseCode();
-    assertEquals("Checking command success", 0, ret);
+  private PlanMapper getMapperForQuery(IDriver driver, String query) throws CommandProcessorException {
+    driver.run(query);
     PlanMapper pm0 = driver.getContext().getPlanMapper();
     return pm0;
   }
 
   @Test
-  public void testUnrelatedFiltersAreNotMatched0() throws ParseException {
+  public void testUnrelatedFiltersAreNotMatched0() throws ParseException, CommandProcessorException {
     IDriver driver = createDriver();
     String query = "select u from tu where id_uv = 1 union all select v from tv where id_uv = 1";
 
@@ -117,7 +116,7 @@ public class TestOperatorCmp {
   }
 
   @Test
-  public void testUnrelatedFiltersAreNotMatched1() throws ParseException {
+  public void testUnrelatedFiltersAreNotMatched1() throws ParseException, CommandProcessorException {
     IDriver driver = createDriver();
     PlanMapper pm0 = getMapperForQuery(driver, "select u from tu where id_uv = 1 group by u");
     PlanMapper pm1 = getMapperForQuery(driver, "select v from tv where id_uv = 1 group by v");
@@ -130,13 +129,11 @@ public class TestOperatorCmp {
   }
 
   @Test
-  public void testDifferentFiltersAreNotMatched() throws ParseException {
+  public void testDifferentFiltersAreNotMatched() throws ParseException, CommandProcessorException {
     IDriver driver = createDriver();
     PlanMapper pm0 = getMapperForQuery(driver, "select u from tu where id_uv = 1 group by u");
     PlanMapper pm1 = getMapperForQuery(driver, "select u from tu where id_uv = 2 group by u");
 
-    //Since we have hive.optimize.index.filter=true we will have different table scan operator
-    assertHelper(AssertHelperOp.NOT_SAME, pm0, pm1, TableScanOperator.class);
     assertHelper(AssertHelperOp.NOT_SAME, pm0, pm1, FilterOperator.class);
 
   }
@@ -194,9 +191,11 @@ public class TestOperatorCmp {
   private static IDriver createDriver() {
     HiveConf conf = env_setup.getTestCtx().hiveConf;
 
+    conf.setBoolVar(ConfVars.HIVE_OPT_PPD, false);
     conf.setBoolVar(ConfVars.HIVE_QUERY_REEXECUTION_ENABLED, true);
     conf.setBoolVar(ConfVars.HIVE_VECTORIZATION_ENABLED, false);
     conf.setBoolVar(ConfVars.HIVE_QUERY_REEXECUTION_ALWAYS_COLLECT_OPERATOR_STATS, true);
+    conf.setVar(ConfVars.HIVE_CBO_FALLBACK_STRATEGY, "NEVER");
     conf.setVar(ConfVars.HIVE_QUERY_REEXECUTION_STRATEGIES, "reoptimize");
     conf.set("zzz", "1");
     conf.set("reexec.overlay.zzz", "2000");
@@ -204,7 +203,7 @@ public class TestOperatorCmp {
     conf.setVar(HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
         "org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory");
     HiveConf.setBoolVar(conf, HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY, false);
-    HiveConf.setVar(conf, HiveConf.ConfVars.POSTEXECHOOKS, OperatorStatsReaderHook.class.getName());
+    HiveConf.setVar(conf, HiveConf.ConfVars.POST_EXEC_HOOKS, OperatorStatsReaderHook.class.getName());
     SessionState.start(conf);
 
     IDriver driver = DriverFactory.newDriver(conf);

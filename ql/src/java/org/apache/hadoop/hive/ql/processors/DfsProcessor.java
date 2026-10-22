@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.processors;
@@ -23,6 +24,7 @@ import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Map;
 
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -42,8 +44,8 @@ import org.apache.hadoop.hive.ql.session.SessionState.LogHelper;
  */
 public class DfsProcessor implements CommandProcessor {
 
-  public static final Logger LOG = LoggerFactory.getLogger(DfsProcessor.class.getName());
-  public static final LogHelper console = new LogHelper(LOG);
+  private static final Logger LOG = LoggerFactory.getLogger(DfsProcessor.class.getName());
+  private static final LogHelper console = new LogHelper(LOG);
   public static final String DFS_RESULT_HEADER = "DFS Output";
 
   private final FsShell dfs;
@@ -56,11 +58,11 @@ public class DfsProcessor implements CommandProcessor {
   public DfsProcessor(Configuration conf, boolean addSchema) {
     dfs = new FsShell(conf);
     dfsSchema = new Schema();
-    dfsSchema.addToFieldSchemas(new FieldSchema(DFS_RESULT_HEADER, "string", ""));
+    dfsSchema.addToFieldSchemas(new FieldSchema(DFS_RESULT_HEADER, serdeConstants.STRING_TYPE_NAME, ""));
   }
 
   @Override
-  public CommandProcessorResponse run(String command) {
+  public CommandProcessorResponse run(String command) throws CommandProcessorException {
 
 
     try {
@@ -87,18 +89,19 @@ public class DfsProcessor implements CommandProcessor {
       }
 
       int ret = dfs.run(tokens);
+      System.setOut(oldOut);
       if (ret != 0) {
         console.printError("Command " + command + " failed with exit code = " + ret);
+        throw new CommandProcessorException(ret);
       }
-
-      System.setOut(oldOut);
-      return new CommandProcessorResponse(ret, null, null, dfsSchema);
-
+      return new CommandProcessorResponse(dfsSchema, null);
+    } catch (CommandProcessorException e) {
+      throw e;
     } catch (Exception e) {
       console.printError("Exception raised from DFSShell.run "
           + e.getLocalizedMessage(), org.apache.hadoop.util.StringUtils
           .stringifyException(e));
-      return new CommandProcessorResponse(1);
+      throw new CommandProcessorException(1);
     }
   }
 

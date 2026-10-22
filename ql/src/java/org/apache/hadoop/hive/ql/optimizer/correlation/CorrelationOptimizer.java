@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.correlation;
@@ -50,12 +51,12 @@ import org.apache.hadoop.hive.ql.exec.UnionOperator;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.optimizer.MapJoinProcessor;
@@ -178,7 +179,7 @@ public class CorrelationOptimizer extends Transform {
       }
 
       long ThresholdOfSmallTblSizeSum = HiveConf.getLongVar(pCtx.getConf(),
-          HiveConf.ConfVars.HIVESMALLTABLESFILESIZE);
+          HiveConf.ConfVars.HIVE_SMALL_TABLES_FILESIZE);
       for (int i = 0; i < numAliases; i++) {
         // this table cannot be big table
         if (!bigTableCandidates.contains(i)) {
@@ -212,18 +213,18 @@ public class CorrelationOptimizer extends Transform {
 
     pCtx = pctx;
 
-    if (HiveConf.getBoolVar(pCtx.getConf(),HiveConf.ConfVars.HIVECONVERTJOIN)) {
+    if (HiveConf.getBoolVar(pCtx.getConf(),HiveConf.ConfVars.HIVE_CONVERT_JOIN)) {
       findPossibleAutoConvertedJoinOperators();
     }
 
     // detect correlations
     CorrelationNodeProcCtx corrCtx = new CorrelationNodeProcCtx(pCtx);
-    Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
+    Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
     opRules.put(new RuleRegExp("R1", ReduceSinkOperator.getOperatorName() + "%"),
         new CorrelationNodeProc());
 
-    Dispatcher disp = new DefaultRuleDispatcher(getDefaultProc(), opRules, corrCtx);
-    GraphWalker ogw = new DefaultGraphWalker(disp);
+    SemanticDispatcher disp = new DefaultRuleDispatcher(getDefaultProc(), opRules, corrCtx);
+    SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
 
     // Create a list of topOp nodes
     List<Node> topNodes = new ArrayList<Node>();
@@ -240,7 +241,7 @@ public class CorrelationOptimizer extends Transform {
       }
     } else {
       // transform the operator tree
-      LOG.info("Begain query plan transformation based on intra-query correlations. " +
+      LOG.info("Begin query plan transformation based on intra-query correlations. " +
           corrCtx.getCorrelations().size() + " correlation(s) to be applied");
       for (IntraQueryCorrelation correlation : corrCtx.getCorrelations()) {
         QueryPlanTreeTransformation.applyCorrelation(pCtx, corrCtx, correlation);
@@ -249,24 +250,25 @@ public class CorrelationOptimizer extends Transform {
     return pCtx;
   }
 
-  private class CorrelationNodeProc implements NodeProcessor {
+  private class CorrelationNodeProc implements SemanticNodeProcessor {
 
     private void analyzeReduceSinkOperatorsOfJoinOperator(JoinCondDesc[] joinConds,
-        List<Operator<? extends OperatorDesc>> rsOps, Operator<? extends OperatorDesc> curentRsOp,
+        List<Operator<? extends OperatorDesc>> rsOps, Operator<? extends OperatorDesc> currentRsOp,
         Set<ReduceSinkOperator> correlatedRsOps) {
-      if (correlatedRsOps.contains(curentRsOp)) {
+      if (correlatedRsOps.contains(currentRsOp)) {
         return;
       }
-      correlatedRsOps.add((ReduceSinkOperator) curentRsOp);
+      correlatedRsOps.add((ReduceSinkOperator) currentRsOp);
 
-      int pos = rsOps.indexOf(curentRsOp);
+      int pos = rsOps.indexOf(currentRsOp);
       for (int i = 0; i < joinConds.length; i++) {
         JoinCondDesc joinCond = joinConds[i];
         int type = joinCond.getType();
         if (pos == joinCond.getLeft()) {
           if (type == JoinDesc.INNER_JOIN ||
               type == JoinDesc.LEFT_OUTER_JOIN ||
-              type == JoinDesc.LEFT_SEMI_JOIN) {
+              type == JoinDesc.LEFT_SEMI_JOIN ||
+              type == JoinDesc.ANTI_JOIN) {
             Operator<? extends OperatorDesc> newCurrentRsOps = rsOps.get(joinCond.getRight());
             analyzeReduceSinkOperatorsOfJoinOperator(joinConds, rsOps, newCurrentRsOps,
                 correlatedRsOps);
@@ -630,11 +632,11 @@ public class CorrelationOptimizer extends Transform {
     }
   }
 
-  private NodeProcessor getDefaultProc() {
-    return new NodeProcessor() {
+  private SemanticNodeProcessor getDefaultProc() {
+    return new SemanticNodeProcessor() {
       @Override
       public Object process(Node nd, Stack<Node> stack,
-          NodeProcessorCtx ctx, Object... nodeOutputs) throws SemanticException {
+                            NodeProcessorCtx ctx, Object... nodeOutputs) throws SemanticException {
         Operator<? extends OperatorDesc> op = (Operator<? extends OperatorDesc>) nd;
         LOG.info("Walk to operator " + op.getIdentifier() + " "
             + op.getName() + ". No actual work to do");

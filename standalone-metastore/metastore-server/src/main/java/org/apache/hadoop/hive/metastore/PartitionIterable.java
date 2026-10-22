@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
@@ -23,16 +24,24 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
+import org.apache.hadoop.hive.metastore.api.GetPartitionsByNamesRequest;
+import org.apache.hadoop.hive.metastore.api.GetPartitionsFilterSpec;
+import org.apache.hadoop.hive.metastore.api.GetPartitionsRequest;
 import org.apache.hadoop.hive.metastore.api.MetastoreException;
 import org.apache.hadoop.hive.metastore.api.Partition;
+import org.apache.hadoop.hive.metastore.api.PartitionFilterMode;
 import org.apache.hadoop.hive.metastore.api.Table;
+import org.apache.hadoop.hive.metastore.utils.MetaStoreServerUtils;
+
+import static org.apache.hadoop.hive.metastore.utils.MetaStoreUtils.convertToGetPartitionsByNamesRequest;
+import static org.apache.hadoop.hive.metastore.utils.MetaStoreUtils.prependCatalogToDbName;
 
 
 /**
- * PartitionIterable - effectively a lazy Iterable<Partition>
+ * PartitionIterable - effectively a lazy Iterable&lt;Partition&gt;
  * Sometimes, we have a need for iterating through a list of partitions,
  * but the list of partitions can be too big to fetch as a single object.
- * Thus, the goal of PartitionIterable is to act as an Iterable<Partition>
+ * Thus, the goal of PartitionIterable is to act as an Iterable&lt;Partition&gt;
  * while lazily fetching each relevant partition, one after the other as
  * independent metadata calls.
  * It is very likely that any calls to PartitionIterable are going to result
@@ -99,8 +108,18 @@ public class PartitionIterable implements Iterable<Partition> {
           batch_counter++;
         }
         try {
-          batchIter =
-            msc.getPartitionsByNames(table.getCatName(), table.getDbName(), table.getTableName(), nameBatch).iterator();
+          if (request != null) {
+            GetPartitionsFilterSpec getPartitionsFilterSpec = new GetPartitionsFilterSpec();
+            getPartitionsFilterSpec.setFilterMode(PartitionFilterMode.BY_NAMES);
+            getPartitionsFilterSpec.setFilters(nameBatch);
+            request.setFilterSpec(getPartitionsFilterSpec);
+            batchIter = MetaStoreServerUtils.getPartitionsByProjectSpec(msc, request).iterator();
+          } else {
+            String dbName = prependCatalogToDbName(table.getCatName(), table.getDbName(), null);
+            GetPartitionsByNamesRequest req = convertToGetPartitionsByNamesRequest(dbName, table.getTableName(),
+                nameBatch);
+            batchIter = msc.getPartitionsByNames(req).getPartitionsIterator();
+          }
         } catch (Exception e) {
           throw new RuntimeException(e);
         }
@@ -128,12 +147,13 @@ public class PartitionIterable implements Iterable<Partition> {
   private IMetaStoreClient msc = null; // Assumes one instance of this + single-threaded compilation for each query.
   private Table table = null;
   private List<String> partitionNames = null;
+  private GetPartitionsRequest request = null;
   private int batch_size;
 
   /**
    * Dummy constructor, which simply acts as an iterator on an already-present
    * list of partitions, allows for easy drop-in replacement for other methods
-   * that already have a List<Partition>
+   * that already have a List&lt;Partition&gt;
    */
   public PartitionIterable(Collection<Partition> ptnsProvided) {
     this.currType = Type.LIST_PROVIDED;
@@ -145,6 +165,9 @@ public class PartitionIterable implements Iterable<Partition> {
    * a Hive object and a table object, and a partial partition spec.
    */
   public PartitionIterable(IMetaStoreClient msc, Table table, int batch_size) throws MetastoreException {
+    if (batch_size < 1) {
+      throw new MetastoreException("Invalid batch size for partition iterable. Please use a batch size greater than 0");
+    }
     this.currType = Type.LAZY_FETCH_PARTITIONS;
     this.msc = msc;
     this.table = table;
@@ -159,5 +182,10 @@ public class PartitionIterable implements Iterable<Partition> {
     } catch (Exception e) {
       throw new MetastoreException(e);
     }
+  }
+
+  public PartitionIterable withProjectSpec(GetPartitionsRequest request) {
+    this.request = request;
+    return this;
   }
 }

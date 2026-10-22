@@ -1,25 +1,26 @@
 /*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- *  Licensed to the Apache Software Foundation (ASF) under one
- *  or more contributor license agreements.  See the NOTICE file
- *  distributed with this work for additional information
- *  regarding copyright ownership.  The ASF licenses this file
- *  to you under the Apache License, Version 2.0 (the
- *  "License"); you may not use this file except in compliance
- *  with the License.  You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Suppliers;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf.ConfVars;
@@ -41,8 +42,8 @@ import org.datanucleus.NucleusContext;
 import org.datanucleus.PropertyNames;
 import org.datanucleus.api.jdo.JDOPersistenceManager;
 import org.datanucleus.api.jdo.JDOPersistenceManagerFactory;
-import org.datanucleus.store.scostore.Store;
-import org.datanucleus.util.WeakValueMap;
+import org.datanucleus.util.ConcurrentReferenceHashMap;
+import org.datanucleus.store.types.scostore.Store;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,6 +69,8 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
+import static org.apache.hadoop.hive.metastore.conf.MetastoreConf.ConfVars.COMPACTOR_USE_CUSTOM_POOL;
+
 /**
  * This class is a wrapper class around PersistenceManagerFactory and its properties
  * These objects are static and need to be carefully modified together such that there are no
@@ -79,6 +82,8 @@ import java.util.function.Supplier;
  */
 public class PersistenceManagerProvider {
   private static PersistenceManagerFactory pmf;
+  private static PersistenceManagerFactory compactorPmf;
+  private static DatabaseProduct databaseProduct;
   private static Properties prop;
   private static final ReentrantReadWriteLock pmfLock = new ReentrantReadWriteLock();
   private static final Lock pmfReadLock = pmfLock.readLock();
@@ -88,6 +93,7 @@ public class PersistenceManagerProvider {
   private static boolean forTwoMetastoreTesting;
   private static int retryLimit;
   private static long retryInterval;
+  private static com.google.common.base.Supplier<String> passwordProvider;
 
   static {
     Map<String, Class<?>> map = new HashMap<>();
@@ -131,6 +137,89 @@ public class PersistenceManagerProvider {
     }
     return isRetriableException(e.getCause());
   }
+
+  /**
+   * When closing PersistenceManagerFactory, the connection factory should be closed as well,
+   * otherwise the underlying dangling connections would be accumulated resulting to connection leaks.
+   * See TestDataSourceProviderFactory#testClosePersistenceManagerProvider for details.
+   * @param pmf the PersistenceManagerFactory tended to be closed
+   */
+  @VisibleForTesting
+  public static void closePmfInternal(PersistenceManagerFactory pmf) {
+    if (pmf != null) {
+      LOG.debug("Closing PersistenceManagerFactory");
+      pmf.close();
+      // close the underlying connection pool to avoid leaks
+      if (pmf.getConnectionFactory() instanceof AutoCloseable) {
+        try (AutoCloseable closeable = (AutoCloseable) pmf.getConnectionFactory()) {
+        } catch (Exception e) {
+          LOG.warn("Failed to close connection factory of PersistenceManagerFactory: " + pmf, e);
+        }
+      }
+      if (pmf.getConnectionFactory2() instanceof AutoCloseable) {
+        try (AutoCloseable closeable = (AutoCloseable) pmf.getConnectionFactory2()) {
+        } catch (Exception e) {
+          LOG.warn("Failed to close connection factory2 of PersistenceManagerFactory: " + pmf, e);
+        }
+      }
+      LOG.debug("PersistenceManagerFactory closed");
+    }
+  }
+
+  // Output the changed properties
+  private static void logPropChanges(Properties newProps) {
+    if (prop == null) {
+      LOG.info("Current pmf properties are uninitialized");
+      return;
+    }
+    LOG.info("Updating the pmf due to property change");
+    if (!newProps.equals(prop)) {
+      for (String key : prop.stringPropertyNames()) {
+        if (!key.equals(newProps.get(key))) {
+          if (MetastoreConf.isPrintable(key)) {
+            // The jdbc connection url can contain sensitive information like username and password
+            // which should be masked out before logging.
+            String oldVal = prop.getProperty(key);
+            String newVal = newProps.getProperty(key);
+            if (key.equals(ConfVars.CONNECT_URL_KEY.getVarname())) {
+              oldVal = MetaStoreServerUtils.anonymizeConnectionURL(oldVal);
+              newVal = MetaStoreServerUtils.anonymizeConnectionURL(newVal);
+            }
+            LOG.warn("Found {} to be different. Old val : {} : New Val : {}", key,
+                oldVal, newVal);
+          } else {
+            LOG.warn("Found masked property {} to be different", key);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Close the corresponding PersistenceManagerFactory
+   * @param forCompactor true for compactorPmf, otherwise pmf
+   * @param shouldClose close the PersistenceManagerFactory if true
+   */
+  public static void closePmfIfNeeded(boolean forCompactor, boolean shouldClose) {
+    pmfWriteLock.lock();
+    try {
+      PersistenceManagerFactory factory = forCompactor ? compactorPmf : pmf;
+      if (factory != null && shouldClose) {
+        clearOutPmfClassLoaderCache(factory);
+        if (!forTwoMetastoreTesting) {
+          closePmfInternal(factory);
+        }
+        if (forCompactor) {
+          compactorPmf = null;
+        } else {
+          pmf = null;
+        }
+      }
+    } finally {
+      pmfWriteLock.unlock();
+    }
+  }
+
   /**
    * This method updates the PersistenceManagerFactory and its properties if the given
    * configuration is different from its current set of properties. Most common case is that
@@ -147,6 +236,7 @@ public class PersistenceManagerProvider {
   public static void updatePmfProperties(Configuration conf) {
     // take a read lock to check if the datasource properties changed.
     // Most common case is that datasource properties do not change
+    boolean useCompactorPool = MetastoreConf.getBoolVar(conf, COMPACTOR_USE_CUSTOM_POOL);
     Properties propsFromConf = PersistenceManagerProvider.getDataSourceProps(conf);
     pmfReadLock.lock();
     // keep track of if the read-lock is acquired by this thread
@@ -157,57 +247,35 @@ public class PersistenceManagerProvider {
     boolean readLockAcquired = true;
     try {
       // if pmf properties change, need to update, release read lock and take write lock
-      if (prop == null || pmf == null || !propsFromConf.equals(prop)) {
+      if (pmf == null || (compactorPmf == null && useCompactorPool) || !propsFromConf.equals(prop)) {
         pmfReadLock.unlock();
         readLockAcquired = false;
         pmfWriteLock.lock();
         try {
           // check if we need to update pmf again here in case some other thread already did it
           // for us after releasing readlock and before acquiring write lock above
-          if (prop == null || pmf == null || !propsFromConf.equals(prop)) {
+          boolean propChanged = !propsFromConf.equals(prop);
+          if (pmf == null || (compactorPmf == null && useCompactorPool)  || propChanged) {
+            logPropChanges(propsFromConf);
             // OK, now we really need to re-initialize pmf and pmf properties
-            if (LOG.isInfoEnabled()) {
-              LOG.info("Updating the pmf due to property change");
-              if (prop == null) {
-                LOG.info("Current pmf properties are uninitialized");
-              } else {
-                for (String key : prop.stringPropertyNames()) {
-                  if (!key.equals(propsFromConf.get(key))) {
-                     if (LOG.isDebugEnabled() && MetastoreConf.isPrintable(key)) {
-                       // The jdbc connection url can contain sensitive information like username and password
-                       // which should be masked out before logging.
-                       String oldVal = prop.getProperty(key);
-                       String newVal = propsFromConf.getProperty(key);
-                       if (key.equals(ConfVars.CONNECT_URL_KEY.getVarname())) {
-                         oldVal = MetaStoreServerUtils.anonymizeConnectionURL(oldVal);
-                         newVal = MetaStoreServerUtils.anonymizeConnectionURL(newVal);
-                       }
-                       LOG.debug("Found {} to be different. Old val : {} : New Val : {}", key,
-                           oldVal, newVal);
-                     } else {
-                      LOG.debug("Found masked property {} to be different", key);
-                    }
-                  }
-                }
-              }
-            }
-            if (pmf != null) {
-              clearOutPmfClassLoaderCache();
-              if (!forTwoMetastoreTesting) {
-                // close the underlying connection pool to avoid leaks
-                LOG.debug("Closing PersistenceManagerFactory");
-                pmf.close();
-                LOG.debug("PersistenceManagerFactory closed");
-              }
-              pmf = null;
-            }
+            closePmfIfNeeded(true, propChanged);
+            closePmfIfNeeded(false, propChanged);
             // update the pmf properties object then initialize pmf using them
             prop = propsFromConf;
             retryLimit = MetastoreConf.getIntVar(conf, ConfVars.HMS_HANDLER_ATTEMPTS);
             retryInterval = MetastoreConf
                 .getTimeVar(conf, ConfVars.HMS_HANDLER_INTERVAL, TimeUnit.MILLISECONDS);
             // init PMF with retry logic
-            retry(() -> {initPMF(conf); return null;});
+            if (pmf == null) {
+              pmf = retry(() -> initPMF(conf, false));
+            }
+            if (compactorPmf == null && useCompactorPool) {
+              compactorPmf = retry(() -> initPMF(conf, true));
+            }
+            if (databaseProduct == null) {
+              String url = MetastoreConf.getVar(conf, MetastoreConf.ConfVars.CONNECT_URL_KEY);
+              databaseProduct = DatabaseProduct.determineDatabaseProduct(url, conf);
+            }
           }
           // downgrade by acquiring read lock before releasing write lock
           pmfReadLock.lock();
@@ -223,35 +291,63 @@ public class PersistenceManagerProvider {
     }
   }
 
-  private static void initPMF(Configuration conf) {
+  private static PersistenceManagerFactory initPMF(Configuration conf, boolean forCompactor) {
     DataSourceProvider dsp = DataSourceProviderFactory.tryGetDataSourceProviderOrNull(conf);
+    PersistenceManagerFactory pmf = null;
 
+    // Any preexisting datanucleus property should be passed along
+    Map<Object, Object> dsProp = new HashMap<>(prop);
+    int maxPoolSize = -1;
+    
+    if (forCompactor) {
+      maxPoolSize = MetastoreConf.getIntVar(conf, ConfVars.HIVE_COMPACTOR_CONNECTION_POOLING_MAX_CONNECTIONS);
+      dsProp.put(ConfVars.CONNECTION_POOLING_MAX_CONNECTIONS.getVarname(), maxPoolSize);
+    }
     if (dsp == null) {
-      pmf = JDOHelper.getPersistenceManagerFactory(prop);
+      pmf = JDOHelper.getPersistenceManagerFactory(dsProp);
     } else {
-      try {
-        DataSource ds = dsp.create(conf);
-        Map<Object, Object> dsProperties = new HashMap<>();
-        //Any preexisting datanucleus property should be passed along
-        dsProperties.putAll(prop);
-        dsProperties.put(PropertyNames.PROPERTY_CONNECTION_FACTORY, ds);
-        dsProperties.put(PropertyNames.PROPERTY_CONNECTION_FACTORY2, ds);
-        dsProperties.put(ConfVars.MANAGER_FACTORY_CLASS.getVarname(),
+      DataSource ds = null;
+      DataSource ds2 = null;
+      String sourceName = forCompactor ? "objectstore-compactor" : "objectstore";
+      try (DataSourceProvider.DataSourceNameConfigurator configurator =
+               new DataSourceProvider.DataSourceNameConfigurator(conf, sourceName)) {
+        ds = (maxPoolSize > 0) ? dsp.create(conf, maxPoolSize) : dsp.create(conf);
+        databaseProduct = DatabaseProduct.determineDatabaseProduct(ds, conf);
+        // The secondary connection factory is used for schema generation, and for value generation operations.
+        // We use a different pool for the secondary connection factory to avoid resource starvation.
+        // DataNucleus uses locks for schema generation and value generation, under normal circumstances 2 connections
+        // should be sufficient.
+        configurator.resetName(sourceName + "-secondary");
+        int maxSecondaryPoolSize = Math.max(2, MetastoreConf.getIntVar(conf, ConfVars.CONNECTION_POOLING_MAX_SECONDARY_CONNECTIONS));
+        ds2 = dsp.create(conf, maxSecondaryPoolSize);
+        dsProp.put(PropertyNames.PROPERTY_CONNECTION_FACTORY, ds);
+        dsProp.put(PropertyNames.PROPERTY_CONNECTION_FACTORY2, ds2);
+        dsProp.put(ConfVars.MANAGER_FACTORY_CLASS.getVarname(),
             "org.datanucleus.api.jdo.JDOPersistenceManagerFactory");
-        pmf = JDOHelper.getPersistenceManagerFactory(dsProperties);
+        pmf = JDOHelper.getPersistenceManagerFactory(dsProp);
       } catch (SQLException e) {
         LOG.warn("Could not create PersistenceManagerFactory using "
             + "connection pool properties, will fall back", e);
         pmf = JDOHelper.getPersistenceManagerFactory(prop);
+      } finally {
+        if (pmf == null && ds instanceof AutoCloseable) {
+          try (AutoCloseable close1 = (AutoCloseable) ds;
+               AutoCloseable close2 = (AutoCloseable) ds2 ) {
+            LOG.debug("Trying to close the dangling datasource as the pmf is null");
+          } catch (Exception e) {
+            LOG.warn("Failed to close the DataSource", e);
+          }
+        }
       }
     }
+    assert pmf != null;
     DataStoreCache dsc = pmf.getDataStoreCache();
     if (dsc != null) {
       String objTypes = MetastoreConf.getVar(conf, ConfVars.CACHE_PINOBJTYPES);
       LOG.info(
           "Setting MetaStore object pin classes with hive.metastore.cache.pinobjtypes=\"{}\"",
           objTypes);
-      if (org.apache.commons.lang.StringUtils.isNotEmpty(objTypes)) {
+      if (org.apache.commons.lang3.StringUtils.isNotEmpty(objTypes)) {
         String[] typeTokens = objTypes.toLowerCase().split(",");
         for (String type : typeTokens) {
           type = type.trim();
@@ -259,7 +355,7 @@ public class PersistenceManagerProvider {
             dsc.pinAll(true, PINCLASSMAP.get(type));
           } else {
             LOG.warn("{} is not one of the pinnable object types: {}", type,
-                org.apache.commons.lang.StringUtils.join(PINCLASSMAP.keySet(), " "));
+                org.apache.commons.lang3.StringUtils.join(PINCLASSMAP.keySet(), " "));
           }
         }
       }
@@ -267,6 +363,7 @@ public class PersistenceManagerProvider {
       LOG.warn("PersistenceManagerFactory returned null DataStoreCache object. "
           + "Unable to initialize object pin types defined by hive.metastore.cache.pinobjtypes");
     }
+    return pmf;
   }
 
   /**
@@ -283,108 +380,113 @@ public class PersistenceManagerProvider {
   public static void clearOutPmfClassLoaderCache() {
     pmfWriteLock.lock();
     try {
-      if ((pmf == null) || (!(pmf instanceof JDOPersistenceManagerFactory))) {
-        return;
-      }
-      // NOTE : This is hacky, and this section of code is fragile depending on DN code varnames
-      // so it's likely to stop working at some time in the future, especially if we upgrade DN
-      // versions, so we actively need to find a better way to make sure the leak doesn't happen
-      // instead of just clearing out the cache after every call.
-      JDOPersistenceManagerFactory jdoPmf = (JDOPersistenceManagerFactory) pmf;
-      NucleusContext nc = jdoPmf.getNucleusContext();
-      try {
-        Field pmCache = pmf.getClass().getDeclaredField("pmCache");
-        pmCache.setAccessible(true);
-        Set<JDOPersistenceManager> pmSet = (Set<JDOPersistenceManager>) pmCache.get(pmf);
-        for (JDOPersistenceManager pm : pmSet) {
-          org.datanucleus.ExecutionContext ec = pm.getExecutionContext();
-          if (ec instanceof org.datanucleus.ExecutionContextThreadedImpl) {
-            ClassLoaderResolver clr =
-                ((org.datanucleus.ExecutionContextThreadedImpl) ec).getClassLoaderResolver();
-            clearClr(clr);
-          }
-        }
-        org.datanucleus.plugin.PluginManager pluginManager =
-            jdoPmf.getNucleusContext().getPluginManager();
-        Field registryField = pluginManager.getClass().getDeclaredField("registry");
-        registryField.setAccessible(true);
-        org.datanucleus.plugin.PluginRegistry registry =
-            (org.datanucleus.plugin.PluginRegistry) registryField.get(pluginManager);
-        if (registry instanceof org.datanucleus.plugin.NonManagedPluginRegistry) {
-          org.datanucleus.plugin.NonManagedPluginRegistry nRegistry =
-              (org.datanucleus.plugin.NonManagedPluginRegistry) registry;
-          Field clrField = nRegistry.getClass().getDeclaredField("clr");
-          clrField.setAccessible(true);
-          ClassLoaderResolver clr = (ClassLoaderResolver) clrField.get(nRegistry);
-          clearClr(clr);
-        }
-        if (nc instanceof org.datanucleus.PersistenceNucleusContextImpl) {
-          org.datanucleus.PersistenceNucleusContextImpl pnc =
-              (org.datanucleus.PersistenceNucleusContextImpl) nc;
-          org.datanucleus.store.types.TypeManagerImpl tm =
-              (org.datanucleus.store.types.TypeManagerImpl) pnc.getTypeManager();
-          Field clrField = tm.getClass().getDeclaredField("clr");
-          clrField.setAccessible(true);
-          ClassLoaderResolver clr = (ClassLoaderResolver) clrField.get(tm);
-          clearClr(clr);
-          Field storeMgrField = pnc.getClass().getDeclaredField("storeMgr");
-          storeMgrField.setAccessible(true);
-          org.datanucleus.store.rdbms.RDBMSStoreManager storeMgr =
-              (org.datanucleus.store.rdbms.RDBMSStoreManager) storeMgrField.get(pnc);
-          Field backingStoreField =
-              storeMgr.getClass().getDeclaredField("backingStoreByMemberName");
-          backingStoreField.setAccessible(true);
-          Map<String, Store> backingStoreByMemberName =
-              (Map<String, Store>) backingStoreField.get(storeMgr);
-          for (Store store : backingStoreByMemberName.values()) {
-            org.datanucleus.store.rdbms.scostore.BaseContainerStore baseStore =
-                (org.datanucleus.store.rdbms.scostore.BaseContainerStore) store;
-            clrField = org.datanucleus.store.rdbms.scostore.BaseContainerStore.class
-                .getDeclaredField("clr");
-            clrField.setAccessible(true);
-            clr = (ClassLoaderResolver) clrField.get(baseStore);
-            clearClr(clr);
-          }
-        }
-        Field classLoaderResolverMap =
-            AbstractNucleusContext.class.getDeclaredField("classLoaderResolverMap");
-        classLoaderResolverMap.setAccessible(true);
-        Map<String, ClassLoaderResolver> loaderMap =
-            (Map<String, ClassLoaderResolver>) classLoaderResolverMap.get(nc);
-        for (ClassLoaderResolver clr : loaderMap.values()) {
-          clearClr(clr);
-        }
-        classLoaderResolverMap.set(nc, new HashMap<String, ClassLoaderResolver>());
-        LOG.debug("Removed cached classloaders from DataNucleus NucleusContext");
-      } catch (Exception e) {
-        LOG.warn("Failed to remove cached classloaders from DataNucleus NucleusContext", e);
-      }
+      clearOutPmfClassLoaderCache(pmf);
+      clearOutPmfClassLoaderCache(compactorPmf);
     } finally {
       pmfWriteLock.unlock();
     }
   }
-
-  private static void clearClr(ClassLoaderResolver clr) throws Exception {
-    if (clr != null) {
-      if (clr instanceof ClassLoaderResolverImpl) {
-        ClassLoaderResolverImpl clri = (ClassLoaderResolverImpl) clr;
-        long resourcesCleared = clearFieldMap(clri, "resources");
-        long loadedClassesCleared = clearFieldMap(clri, "loadedClasses");
-        long unloadedClassesCleared = clearFieldMap(clri, "unloadedClasses");
-        LOG.debug("Cleared ClassLoaderResolverImpl: {}, {}, {}", resourcesCleared,
-            loadedClassesCleared, unloadedClassesCleared);
+  
+  private static void clearOutPmfClassLoaderCache (PersistenceManagerFactory pmf) {
+    if (!(pmf instanceof JDOPersistenceManagerFactory)) {
+      return;
+    }
+    // NOTE : This is hacky, and this section of code is fragile depending on DN code varnames
+    // so it's likely to stop working at some time in the future, especially if we upgrade DN
+    // versions, so we actively need to find a better way to make sure the leak doesn't happen
+    // instead of just clearing out the cache after every call.
+    JDOPersistenceManagerFactory jdoPmf = (JDOPersistenceManagerFactory) pmf;
+    NucleusContext nc = jdoPmf.getNucleusContext();
+    try {
+      Field pmCache = pmf.getClass().getDeclaredField("pmCache");
+      pmCache.setAccessible(true);
+      Set<JDOPersistenceManager> pmSet = (Set<JDOPersistenceManager>) pmCache.get(pmf);
+      for (JDOPersistenceManager pm : pmSet) {
+        org.datanucleus.ExecutionContext ec = pm.getExecutionContext();
+        if (ec instanceof org.datanucleus.ExecutionContextThreadedImpl) {
+          ClassLoaderResolver clr =
+              ((org.datanucleus.ExecutionContextThreadedImpl) ec).getClassLoaderResolver();
+          clearClr(clr);
+        }
       }
+      org.datanucleus.plugin.PluginManager pluginManager =
+          jdoPmf.getNucleusContext().getPluginManager();
+      Field registryField = pluginManager.getClass().getDeclaredField("registry");
+      registryField.setAccessible(true);
+      org.datanucleus.plugin.PluginRegistry registry =
+          (org.datanucleus.plugin.PluginRegistry) registryField.get(pluginManager);
+      if (registry instanceof org.datanucleus.plugin.NonManagedPluginRegistry) {
+        org.datanucleus.plugin.NonManagedPluginRegistry nRegistry =
+            (org.datanucleus.plugin.NonManagedPluginRegistry) registry;
+        Field clrField = nRegistry.getClass().getDeclaredField("clr");
+        clrField.setAccessible(true);
+        ClassLoaderResolver clr = (ClassLoaderResolver) clrField.get(nRegistry);
+        clearClr(clr);
+      }
+      if (nc instanceof org.datanucleus.PersistenceNucleusContextImpl) {
+        org.datanucleus.PersistenceNucleusContextImpl pnc =
+            (org.datanucleus.PersistenceNucleusContextImpl) nc;
+        org.datanucleus.store.types.TypeManagerImpl tm =
+            (org.datanucleus.store.types.TypeManagerImpl) pnc.getTypeManager();
+        Field clrField = tm.getClass().getDeclaredField("clr");
+        clrField.setAccessible(true);
+        ClassLoaderResolver clr = (ClassLoaderResolver) clrField.get(tm);
+        clearClr(clr);
+        Field storeMgrField = pnc.getClass().getDeclaredField("storeMgr");
+        storeMgrField.setAccessible(true);
+        org.datanucleus.store.rdbms.RDBMSStoreManager storeMgr =
+            (org.datanucleus.store.rdbms.RDBMSStoreManager) storeMgrField.get(pnc);
+        Field backingStoreField =
+            storeMgr.getClass().getDeclaredField("backingStoreByMemberName");
+        backingStoreField.setAccessible(true);
+        Map<String, Store> backingStoreByMemberName =
+            (Map<String, Store>) backingStoreField.get(storeMgr);
+        for (Store store : backingStoreByMemberName.values()) {
+          org.datanucleus.store.rdbms.scostore.BaseContainerStore baseStore =
+              (org.datanucleus.store.rdbms.scostore.BaseContainerStore) store;
+          clrField = org.datanucleus.store.rdbms.scostore.BaseContainerStore.class
+              .getDeclaredField("clr");
+          clrField.setAccessible(true);
+          clr = (ClassLoaderResolver) clrField.get(baseStore);
+          clearClr(clr);
+        }
+      }
+      Field classLoaderResolverMap =
+          AbstractNucleusContext.class.getDeclaredField("classLoaderResolverMap");
+      classLoaderResolverMap.setAccessible(true);
+      Map<String, ClassLoaderResolver> loaderMap =
+          (Map<String, ClassLoaderResolver>) classLoaderResolverMap.get(nc);
+      for (ClassLoaderResolver clr : loaderMap.values()) {
+        clearClr(clr);
+      }
+      classLoaderResolverMap.set(nc, new HashMap<String, ClassLoaderResolver>());
+      LOG.debug("Removed cached classloaders from DataNucleus NucleusContext");
+    } catch (Exception e) {
+      LOG.warn("Failed to remove cached classloaders from DataNucleus NucleusContext", e);
     }
   }
 
-  private static long clearFieldMap(ClassLoaderResolverImpl clri, String mapFieldName)
+  private static void clearClr(ClassLoaderResolver clr) throws Exception {
+    if (clr instanceof ClassLoaderResolverImpl) {
+      ClassLoaderResolverImpl clri = (ClassLoaderResolverImpl) clr;
+      int resourcesCleared = clearFieldMap(clri, "resources");
+      int loadedClassesCleared = clearFieldMap(clri, "loadedClasses");
+      int unloadedClassesCleared = clearFieldMap(clri, "unloadedClasses");
+
+      LOG.debug(
+          "Cleared ClassLoaderResolverImpl: resources: {}, loaded classes: {}, unloaded classes: {}",
+          resourcesCleared, loadedClassesCleared, unloadedClassesCleared);
+    }
+  }
+
+  private static int clearFieldMap(ClassLoaderResolverImpl clri, String mapFieldName)
       throws Exception {
     Field mapField = ClassLoaderResolverImpl.class.getDeclaredField(mapFieldName);
     mapField.setAccessible(true);
 
-    Map<String, Class> map = (Map<String, Class>) mapField.get(clri);
-    long sz = map.size();
-    mapField.set(clri, Collections.synchronizedMap(new WeakValueMap()));
+    Map map = (Map) mapField.get(clri);
+    final int sz = map.size();
+    mapField.set(clri, new ConcurrentReferenceHashMap<>());
     return sz;
   }
 
@@ -397,18 +499,32 @@ public class PersistenceManagerProvider {
    * @return PersistenceManager from the current PersistenceManagerFactory instance
    */
   public static PersistenceManager getPersistenceManager() {
+    return getPersistenceManager(false);
+  }
+
+  public static PersistenceManager getPersistenceManager(boolean forCompactor) {
     pmfReadLock.lock();
     try {
-      if (pmf == null) {
+      if (pmf == null || (forCompactor && compactorPmf == null)) {
         throw new RuntimeException(
             "Cannot create PersistenceManager. PersistenceManagerFactory is not yet initialized");
       }
-      return retry(pmf::getPersistenceManager);
+      return forCompactor ?
+              retry(compactorPmf::getPersistenceManager) :
+              retry(pmf::getPersistenceManager);
     } catch (Exception e) {
       throw new RuntimeException(e);
     } finally {
       pmfReadLock.unlock();
     }
+  }
+
+  public static DatabaseProduct getDatabaseProduct() {
+    if (databaseProduct == null) {
+      throw new IllegalStateException(
+          "Cannot determine the database product. PersistenceManagerFactory has not been initialized yet");
+    }
+    return databaseProduct;
   }
 
   /**
@@ -450,16 +566,18 @@ public class PersistenceManagerProvider {
     */
 
     // Password may no longer be in the conf, use getPassword()
-    try {
-      String passwd = MetastoreConf.getPassword(conf, MetastoreConf.ConfVars.PWD);
-      if (org.apache.commons.lang.StringUtils.isNotEmpty(passwd)) {
-        // We can get away with the use of varname here because varname == hiveName for PWD
-        prop.setProperty(ConfVars.PWD.getVarname(), passwd);
+    passwordProvider = passwordProvider != null ? passwordProvider : Suppliers.memoize(() -> {
+      try {
+        return MetastoreConf.getPassword(conf, ConfVars.PWD);
+      } catch (IOException err) {
+        throw new RuntimeException("Error getting metastore password: " + err.getMessage(), err);
       }
-    } catch (IOException err) {
-      throw new RuntimeException("Error getting metastore password: " + err.getMessage(), err);
+    });
+    String passwd = passwordProvider.get();
+    if (org.apache.commons.lang3.StringUtils.isNotEmpty(passwd)) {
+      // We can get away with the use of varname here because varname == hiveName for PWD
+      prop.setProperty(ConfVars.PWD.getVarname(), passwd);
     }
-
     if (LOG.isDebugEnabled()) {
       for (Entry<Object, Object> e : prop.entrySet()) {
         if (MetastoreConf.isPrintable(e.getKey().toString())) {
@@ -483,6 +601,11 @@ public class PersistenceManagerProvider {
     final String autoStartKey = "datanucleus.autoStartMechanismMode";
     final String autoStartIgnore = "ignored";
     String currentAutoStartVal = conf.get(autoStartKey);
+    if (currentAutoStartVal == null) {
+      LOG.info("Configuration {} is not set. Defaulting to '{}'", autoStartKey,
+          autoStartIgnore);
+      currentAutoStartVal = autoStartIgnore;
+    }
     if (!autoStartIgnore.equalsIgnoreCase(currentAutoStartVal)) {
       LOG.warn("{} is set to unsupported value {} . Setting it to value: {}", autoStartKey,
           conf.get(autoStartKey), autoStartIgnore);

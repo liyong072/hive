@@ -9,17 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.lazy;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -45,6 +47,8 @@ import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.UnionObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.StructTypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.io.BinaryComparable;
 import org.apache.hadoop.io.Text;
@@ -86,17 +90,23 @@ public class LazySimpleSerDe extends AbstractEncodingAwareSerDe {
 
   @Override
   public String toString() {
-    return getClass().toString()
-        + "["
-        + Arrays.asList(serdeParams.getSeparators())
-        + ":"
-        + ((StructTypeInfo) serdeParams.getRowTypeInfo()).getAllStructFieldNames()
-        + ":"
-        + ((StructTypeInfo) serdeParams.getRowTypeInfo())
-            .getAllStructFieldTypeInfos() + "]";
-  }
+    StringBuilder sb = new StringBuilder(128);
+    sb.append(getClass() + " [serdeParams=" + serdeParams + ", cachedObjectInspector=" + cachedObjectInspector
+        + ", serializedSize=" + serializedSize + ", stats=" + stats + ", lastOperationSerialize="
+        + lastOperationSerialize + ", lastOperationDeserialize=" + lastOperationDeserialize);
 
-  public LazySimpleSerDe() throws SerDeException {
+    if (serdeParams != null) {
+      sb.append(' ').append(Arrays.toString(serdeParams.getSeparators()));
+      if (serdeParams.getRowTypeInfo() != null) {
+        sb.append(" : ");
+        sb.append(((StructTypeInfo) serdeParams.getRowTypeInfo()).getAllStructFieldNames());
+        sb.append(" : ");
+        sb.append(((StructTypeInfo) serdeParams.getRowTypeInfo()).getAllStructFieldTypeInfos());
+      }
+    }
+
+    sb.append(']');
+    return sb.toString();
   }
 
   /**
@@ -104,16 +114,13 @@ public class LazySimpleSerDe extends AbstractEncodingAwareSerDe {
    * char or byte code (only supports byte-value up to 127) columns:
    * ","-separated column names columns.types: ",", ":", or ";"-separated column
    * types
-   *
-   * @see  org.apache.hadoop.hive.serde2.AbstractSerDe#initialize(Configuration, Properties)
    */
   @Override
-  public void initialize(Configuration job, Properties tbl)
+  public void initialize(Configuration configuration, Properties tableProperties, Properties partitionProperties)
       throws SerDeException {
+    super.initialize(configuration, tableProperties, partitionProperties);
 
-    super.initialize(job, tbl);
-
-    serdeParams = new LazySerDeParameters(job, tbl, getClass().getName());
+    serdeParams = new LazySerDeParameters(configuration, this.properties, getClass().getName());
 
     // Create the ObjectInspectors for the fields
     cachedObjectInspector = LazyFactory.createLazyStructInspector(serdeParams
@@ -127,6 +134,16 @@ public class LazySimpleSerDe extends AbstractEncodingAwareSerDe {
     stats = new SerDeStats();
     lastOperationSerialize = false;
     lastOperationDeserialize = false;
+  }
+
+  /**
+   *  NOTE: if "columns.types" is missing, all columns will be of String type.
+   */
+  @Override
+  protected List<TypeInfo> parseColumnTypes() {
+    List<TypeInfo> columnTypes = super.parseColumnTypes();
+    return (!columnTypes.isEmpty()) ? columnTypes
+        : Collections.nCopies(getColumnNames().size(), TypeInfoFactory.stringTypeInfo);
   }
 
   // The object for storing row data

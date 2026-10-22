@@ -1,7 +1,9 @@
 PREHOOK: query: DROP TABLE part_tiny
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: DROP TABLE part_tiny
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE TABLE part_tiny(
   p_partkey INT,
   p_name STRING,
@@ -34,11 +36,11 @@ POSTHOOK: type: CREATETABLE
 POSTHOOK: Input: ### test.blobstore.path ###/ptf_general_queries/part_tiny
 POSTHOOK: Output: database:default
 POSTHOOK: Output: default@part_tiny
-PREHOOK: query: LOAD DATA LOCAL INPATH '../../data/files/part_tiny.txt' INTO TABLE part_tiny
+PREHOOK: query: LOAD DATA LOCAL INPATH '../../data/files/tpch/tiny/part.tbl.bz2' INTO TABLE part_tiny
 PREHOOK: type: LOAD
 #### A masked pattern was here ####
 PREHOOK: Output: default@part_tiny
-POSTHOOK: query: LOAD DATA LOCAL INPATH '../../data/files/part_tiny.txt' INTO TABLE part_tiny
+POSTHOOK: query: LOAD DATA LOCAL INPATH '../../data/files/tpch/tiny/part.tbl.bz2' INTO TABLE part_tiny
 POSTHOOK: type: LOAD
 #### A masked pattern was here ####
 POSTHOOK: Output: default@part_tiny

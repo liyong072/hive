@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.orc;
@@ -21,7 +22,8 @@ package org.apache.hadoop.hive.ql.io.orc;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.util.List;
+import java.nio.ByteBuffer;
+import java.util.Map;
 
 import org.apache.hadoop.io.WritableComparable;
 import org.apache.orc.OrcProto;
@@ -35,14 +37,14 @@ public class OrcFileValueWrapper implements WritableComparable<OrcFileValueWrapp
 
   protected StripeInformation stripeInformation;
   protected OrcProto.StripeStatistics stripeStatistics;
-  protected List<OrcProto.UserMetadataItem> userMetadata;
+  protected Map<String, ByteBuffer> userMetadata;
   protected boolean lastStripeInFile;
 
-  public List<OrcProto.UserMetadataItem> getUserMetadata() {
+  public Map<String, ByteBuffer> getUserMetadata() {
     return userMetadata;
   }
 
-  public void setUserMetadata(List<OrcProto.UserMetadataItem> userMetadata) {
+  public void setUserMetadata(Map<String, ByteBuffer> userMetadata) {
     this.userMetadata = userMetadata;
   }
 

@@ -9,20 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common;
 
 import java.io.File;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.net.URL;
-import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -31,11 +29,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.appender.FileAppender;
 import org.apache.logging.log4j.core.appender.RollingFileAppender;
-import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.appender.RollingRandomAccessFileAppender;
-import org.apache.logging.log4j.core.appender.routing.RoutingAppender;
 import org.apache.logging.log4j.core.config.Configurator;
-import org.apache.logging.log4j.core.config.LoggerConfig;
 import org.apache.logging.log4j.core.impl.Log4jContextFactory;
 import org.apache.logging.log4j.spi.DefaultThreadContextMap;
 import org.slf4j.Logger;
@@ -64,7 +59,9 @@ public class LogUtils {
    */
   public static final String SESSIONID_LOG_KEY = "sessionId";
   public static final String QUERYID_LOG_KEY = "queryId";
+  public static final String DAGID_KEY = "dagId";
   public static final String OPERATIONLOG_LEVEL_KEY = "operationLogLevel";
+  public static final String OPERATIONLOG_LOCATION_KEY = "operationLogLocation";
 
   @SuppressWarnings("serial")
   public static class LogInitializationException extends Exception {
@@ -118,14 +115,14 @@ public class LogUtils {
         return initHiveLog4jDefault(
           conf, "Not able to find conf file: " + log4jConfigFile, confVarName);
       } else {
-        // property speficied file found in local file system
+        // property specified file found in local file system
         // use the specified file
         if (confVarName == HiveConf.ConfVars.HIVE_EXEC_LOG4J_FILE) {
-          String queryId = HiveConf.getVar(conf, HiveConf.ConfVars.HIVEQUERYID);
+          String queryId = HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_QUERY_ID);
           if(queryId == null || (queryId = queryId.trim()).isEmpty()) {
             queryId = "unknown-" + System.currentTimeMillis();
           }
-          System.setProperty(HiveConf.ConfVars.HIVEQUERYID.toString(), queryId);
+          System.setProperty(HiveConf.ConfVars.HIVE_QUERY_ID.toString(), queryId);
         }
         final boolean async = checkAndSetAsyncLogging(conf);
         // required for MDC based routing appender so that child threads can inherit the MDC context
@@ -161,8 +158,8 @@ public class LogUtils {
         if (hive_l4j == null) {
           hive_l4j = LogUtils.class.getClassLoader().getResource(HIVE_L4J);
         }
-        System.setProperty(HiveConf.ConfVars.HIVEQUERYID.toString(),
-          HiveConf.getVar(conf, HiveConf.ConfVars.HIVEQUERYID));
+        System.setProperty(HiveConf.ConfVars.HIVE_QUERY_ID.toString(),
+          HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_QUERY_ID));
         break;
       case HIVE_LOG4J_FILE:
         hive_l4j = LogUtils.class.getClassLoader().getResource(HIVE_L4J);
@@ -219,10 +216,14 @@ public class LogUtils {
    * Register logging context so that log system can print QueryId, SessionId, etc for each message
    */
   public static void registerLoggingContext(Configuration conf) {
-    MDC.put(SESSIONID_LOG_KEY, HiveConf.getVar(conf, HiveConf.ConfVars.HIVESESSIONID));
-    MDC.put(QUERYID_LOG_KEY, HiveConf.getVar(conf, HiveConf.ConfVars.HIVEQUERYID));
     if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVE_SERVER2_LOGGING_OPERATION_ENABLED)) {
+      MDC.put(SESSIONID_LOG_KEY, HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_SESSION_ID));
+      MDC.put(QUERYID_LOG_KEY, HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_QUERY_ID));
       MDC.put(OPERATIONLOG_LEVEL_KEY, HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_SERVER2_LOGGING_OPERATION_LEVEL));
+      MDC.put(OPERATIONLOG_LOCATION_KEY, HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_SERVER2_LOGGING_OPERATION_LOG_LOCATION));
+      l4j.info("Thread context registration is done.");
+    } else {
+      l4j.info("Thread context registration is skipped.");
     }
   }
 
@@ -230,7 +231,13 @@ public class LogUtils {
    * Unregister logging context
    */
   public static void unregisterLoggingContext() {
-    MDC.clear();
+    // Remove the keys added, don't use clear, as it may clear all other things which are not intended to be removed.
+    MDC.remove(SESSIONID_LOG_KEY);
+    MDC.remove(QUERYID_LOG_KEY);
+    MDC.remove(DAGID_KEY); // it was put by TezTask after submitting DAG
+    MDC.remove(OPERATIONLOG_LEVEL_KEY);
+    MDC.remove(OPERATIONLOG_LOCATION_KEY);
+    l4j.info("Unregistered logging context.");
   }
 
   /**
@@ -239,46 +246,21 @@ public class LogUtils {
   public static String getLogFilePath() {
     String logFilePath = null;
     org.apache.logging.log4j.Logger rootLogger = LogManager.getRootLogger();
-    if (rootLogger instanceof org.apache.logging.log4j.core.Logger) {
-      org.apache.logging.log4j.core.Logger coreLogger =
-          (org.apache.logging.log4j.core.Logger)rootLogger;
+    if (rootLogger instanceof org.apache.logging.log4j.core.Logger coreLogger) {
       for (Appender appender : coreLogger.getAppenders().values()) {
-        if (appender instanceof FileAppender) {
-          logFilePath = ((FileAppender) appender).getFileName();
-        } else if (appender instanceof RollingFileAppender) {
-          logFilePath = ((RollingFileAppender) appender).getFileName();
-        } else if (appender instanceof RollingRandomAccessFileAppender) {
-          logFilePath = ((RollingRandomAccessFileAppender) appender).getFileName();
+        if (appender instanceof FileAppender fileAppender) {
+          logFilePath = fileAppender.getFileName();
+        } else if (appender instanceof RollingFileAppender fileAppender) {
+          logFilePath = fileAppender.getFileName();
+        } else if (appender instanceof RollingRandomAccessFileAppender fileAppender) {
+          logFilePath = fileAppender.getFileName();
         }
       }
     }
     return logFilePath;
   }
 
-  /**
-   * Stop the subordinate appender for the operation log so it will not leak a file descriptor.
-   * @param routingAppenderName the name of the RoutingAppender
-   * @param queryId the id of the query that is closing
-   */
-  public static void stopQueryAppender(String routingAppenderName, String queryId) {
-    LoggerContext context = (LoggerContext) LogManager.getContext(false);
-    org.apache.logging.log4j.core.config.Configuration configuration = context.getConfiguration();
-    LoggerConfig loggerConfig = configuration.getRootLogger();
-    Map<String, Appender> appenders = loggerConfig.getAppenders();
-    RoutingAppender routingAppender = (RoutingAppender) appenders.get(routingAppenderName);
-    // routingAppender can be null if it has not been registered
-    if (routingAppender != null) {
-      // The appender is configured to use ${ctx:queryId} by registerRoutingAppender()
-      try {
-        Class<? extends RoutingAppender> clazz = routingAppender.getClass();
-        Method method = clazz.getDeclaredMethod("deleteAppender", String.class);
-        method.setAccessible(true);
-        method.invoke(routingAppender, queryId);
-      } catch (NoSuchMethodException | SecurityException | IllegalAccessException |
-          IllegalArgumentException | InvocationTargetException e) {
-        l4j.warn("Unable to close the operation log appender for query id " + queryId, e);
-      }
-    }
+  public static void putToMDC(String key, String value) {
+    MDC.put(key, value);
   }
-
 }

@@ -9,16 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
 
 import org.apache.hadoop.hive.ql.exec.vector.ColumnVector;
-import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.VectorExpressionDescriptor;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -34,23 +34,17 @@ import java.util.Arrays;
 public class VectorCoalesce extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private final int[] inputColumns;
-
   // The unassigned batchIndex for the rows that have not received a non-NULL value yet.
   // A temporary work array.
   private transient int[] unassignedBatchIndices;
 
   public VectorCoalesce(int [] inputColumns, int outputColumnNum) {
-    super(outputColumnNum);
-    this.inputColumns = inputColumns;
-    Preconditions.checkArgument(this.inputColumns.length > 0);
+    super(inputColumns, outputColumnNum);
+    Preconditions.checkArgument(inputColumns.length > 0);
   }
 
   public VectorCoalesce() {
     super();
-
-    // Dummy final assignments.
-    inputColumns = null;
   }
 
   @Override
@@ -85,7 +79,7 @@ public class VectorCoalesce extends VectorExpression {
     //           work on BytesColumnVector output columns???
     outputColVector.init();
 
-    final int columnCount = inputColumns.length;
+    final int columnCount = inputColumnNum.length;
 
     /*
      * Process the input columns to find a non-NULL value for each row.
@@ -96,8 +90,8 @@ public class VectorCoalesce extends VectorExpression {
     boolean isAllUnassigned = true;
     int unassignedColumnCount = 0;
 
-    for (int k = 0; k < inputColumns.length; k++) {
-      ColumnVector cv = batch.cols[inputColumns[k]];
+    for (int k = 0; k < inputColumnNum.length; k++) {
+      ColumnVector cv = batch.cols[inputColumnNum[k]];
       if (cv.isRepeating) {
 
         if (cv.noNulls || !cv.isNull[0]) {
@@ -239,7 +233,7 @@ public class VectorCoalesce extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return "columns " + Arrays.toString(inputColumns);
+    return "columns " + Arrays.toString(inputColumnNum);
   }
 
   @Override

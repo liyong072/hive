@@ -9,15 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.lazybinary.objectinspector;
 
-import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -37,11 +39,11 @@ import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 
 public final class LazyBinaryObjectInspectorFactory {
 
-  static ConcurrentHashMap<ArrayList<Object>, LazyBinaryStructObjectInspector> cachedLazyBinaryStructObjectInspector =
-      new ConcurrentHashMap<ArrayList<Object>, LazyBinaryStructObjectInspector>();
+  static ConcurrentHashMap<List<Object>, LazyBinaryStructObjectInspector> cachedLazyBinaryStructObjectInspector =
+      new ConcurrentHashMap<>();
 
-  static ConcurrentHashMap<ArrayList<Object>, LazyBinaryUnionObjectInspector> cachedLazyBinaryUnionObjectInspector =
-          new ConcurrentHashMap<ArrayList<Object>, LazyBinaryUnionObjectInspector>();
+  static ConcurrentHashMap<List<Object>, LazyBinaryUnionObjectInspector> cachedLazyBinaryUnionObjectInspector =
+          new ConcurrentHashMap<>();
 
   public static LazyBinaryStructObjectInspector getLazyBinaryStructObjectInspector(
       List<String> structFieldNames,
@@ -53,12 +55,9 @@ public final class LazyBinaryObjectInspectorFactory {
   public static LazyBinaryStructObjectInspector getLazyBinaryStructObjectInspector(
       List<String> structFieldNames,
       List<ObjectInspector> structFieldObjectInspectors, List<String> structFieldComments) {
-    ArrayList<Object> signature = new ArrayList<Object>(3);
-    signature.add(structFieldNames);
-    signature.add(structFieldObjectInspectors);
-    if(structFieldComments != null) {
-      signature.add(structFieldComments);
-    }
+    List<Object> signature = structFieldComments == null ? Arrays.asList(structFieldNames, structFieldObjectInspectors)
+        : Arrays.asList(structFieldNames, structFieldObjectInspectors, structFieldComments);
+
     LazyBinaryStructObjectInspector result = cachedLazyBinaryStructObjectInspector
         .get(signature);
     if (result == null) {
@@ -75,8 +74,7 @@ public final class LazyBinaryObjectInspectorFactory {
 
   public static LazyBinaryUnionObjectInspector getLazyBinaryUnionObjectInspector(
           List<ObjectInspector> unionFieldObjectInspectors) {
-    ArrayList<Object> signature = new ArrayList<Object>(1);
-    signature.add(unionFieldObjectInspectors);
+    List<Object> signature = Collections.singletonList(unionFieldObjectInspectors);
 
     LazyBinaryUnionObjectInspector result = cachedLazyBinaryUnionObjectInspector
             .get(signature);
@@ -91,13 +89,12 @@ public final class LazyBinaryObjectInspectorFactory {
     return result;
   }
 
-  static ConcurrentHashMap<ArrayList<Object>, LazyBinaryListObjectInspector> cachedLazyBinaryListObjectInspector =
-      new ConcurrentHashMap<ArrayList<Object>, LazyBinaryListObjectInspector>();
+  static ConcurrentHashMap<List<Object>, LazyBinaryListObjectInspector> cachedLazyBinaryListObjectInspector =
+      new ConcurrentHashMap<>();
 
   public static LazyBinaryListObjectInspector getLazyBinaryListObjectInspector(
       ObjectInspector listElementObjectInspector) {
-    ArrayList<Object> signature = new ArrayList<Object>();
-    signature.add(listElementObjectInspector);
+    List<Object> signature = Collections.singletonList(listElementObjectInspector);
     LazyBinaryListObjectInspector result = cachedLazyBinaryListObjectInspector
         .get(signature);
     if (result == null) {
@@ -111,15 +108,13 @@ public final class LazyBinaryObjectInspectorFactory {
     return result;
   }
 
-  static ConcurrentHashMap<ArrayList<Object>, LazyBinaryMapObjectInspector> cachedLazyBinaryMapObjectInspector =
-      new ConcurrentHashMap<ArrayList<Object>, LazyBinaryMapObjectInspector>();
+  static ConcurrentHashMap<List<Object>, LazyBinaryMapObjectInspector> cachedLazyBinaryMapObjectInspector =
+      new ConcurrentHashMap<>();
 
   public static LazyBinaryMapObjectInspector getLazyBinaryMapObjectInspector(
       ObjectInspector mapKeyObjectInspector,
       ObjectInspector mapValueObjectInspector) {
-    ArrayList<Object> signature = new ArrayList<Object>();
-    signature.add(mapKeyObjectInspector);
-    signature.add(mapValueObjectInspector);
+    List<Object> signature = Arrays.asList(mapKeyObjectInspector, mapValueObjectInspector);
     LazyBinaryMapObjectInspector result = cachedLazyBinaryMapObjectInspector
         .get(signature);
     if (result == null) {

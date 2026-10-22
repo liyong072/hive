@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.metadata;
@@ -36,10 +37,16 @@ public class UniqueConstraint implements Serializable {
   public class UniqueConstraintCol {
     public String colName;
     public Integer position;
+    public String enable;
+    public String validate;
+    public String rely;
 
-    public UniqueConstraintCol(String colName, Integer position) {
+    public UniqueConstraintCol(String colName, Integer position, String enable, String validate, String rely) {
       this.colName = colName;
       this.position = position;
+      this.enable = enable;
+      this.validate = validate;
+      this.rely = rely;
     }
   }
 
@@ -53,15 +60,18 @@ public class UniqueConstraint implements Serializable {
   public UniqueConstraint(List<SQLUniqueConstraint> uks, String tableName, String databaseName) {
     this.tableName = tableName;
     this.databaseName = databaseName;
-    uniqueConstraints = new TreeMap<String, List<UniqueConstraintCol>>();
+    uniqueConstraints = new TreeMap<>();
     if (uks == null) {
       return;
     }
     for (SQLUniqueConstraint uk : uks) {
       if (uk.getTable_db().equalsIgnoreCase(databaseName) &&
           uk.getTable_name().equalsIgnoreCase(tableName)) {
+        String enable = uk.isEnable_cstr()? "ENABLE": "DISABLE";
+        String validate = uk.isValidate_cstr()? "VALIDATE": "NOVALIDATE";
+        String rely = uk.isRely_cstr()? "RELY": "NORELY";
         UniqueConstraintCol currCol = new UniqueConstraintCol(
-                uk.getColumn_name(), uk.getKey_seq());
+                uk.getColumn_name(), uk.getKey_seq(), enable, validate, rely);
         String constraintName = uk.getUk_name();
         if (uniqueConstraints.containsKey(constraintName)) {
           uniqueConstraints.get(constraintName).add(currCol);
@@ -107,5 +117,9 @@ public class UniqueConstraint implements Serializable {
     }
     sb.append("]");
     return sb.toString();
+  }
+
+  public static boolean isNotEmpty(UniqueConstraint info) {
+    return info != null && !info.getUniqueConstraints().isEmpty();
   }
 }

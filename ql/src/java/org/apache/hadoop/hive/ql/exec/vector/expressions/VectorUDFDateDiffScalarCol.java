@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -30,30 +31,25 @@ import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector.Pr
 import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
 import org.apache.hadoop.io.Text;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.Date;
 import java.sql.Timestamp;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.Arrays;
 
 public class VectorUDFDateDiffScalarCol extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private final int colNum;
-
   private long longValue;
   private Timestamp timestampValue = null;
   private byte[] stringValue;
 
-  private transient final SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
   private transient final Text text = new Text();
   private transient final Date date = new Date(0);
 
   private int baseDate;
 
   public VectorUDFDateDiffScalarCol(Object object, int colNum, int outputColumnNum) {
-    super(outputColumnNum);
-    this.colNum = colNum;
+    super(colNum, outputColumnNum);
 
     if (object instanceof Long) {
       this.longValue = (Long) object;
@@ -68,9 +64,6 @@ public class VectorUDFDateDiffScalarCol extends VectorExpression {
 
   public VectorUDFDateDiffScalarCol() {
     super();
-
-    // Dummy final assignments.
-    colNum = -1;
   }
 
   @Override
@@ -81,7 +74,7 @@ public class VectorUDFDateDiffScalarCol extends VectorExpression {
     }
 
     LongColumnVector outputColVector = (LongColumnVector) batch.cols[outputColumnNum];
-    ColumnVector inputCol = batch.cols[this.colNum];
+    ColumnVector inputCol = batch.cols[this.inputColumnNum[0]];
     /* every line below this is identical for evaluateLong & evaluateString */
     final int n = inputCol.isRepeating ? 1 : batch.size;
     int[] sel = batch.selected;
@@ -112,8 +105,9 @@ public class VectorUDFDateDiffScalarCol extends VectorExpression {
       case CHAR:
       case VARCHAR:
         try {
-          date.setTime(formatter.parse(new String(stringValue, "UTF-8")).getTime());
-          baseDate = DateWritableV2.dateToDays(date);
+          org.apache.hadoop.hive.common.type.Date hiveDate
+              = org.apache.hadoop.hive.common.type.Date.valueOf(new String(stringValue, StandardCharsets.UTF_8));
+          baseDate = hiveDate.toEpochDay();
           break;
         } catch (Exception e) {
           outputColVector.noNulls = false;
@@ -358,9 +352,10 @@ public class VectorUDFDateDiffScalarCol extends VectorExpression {
     BytesColumnVector bcv = (BytesColumnVector) columnVector;
     text.set(bcv.vector[i], bcv.start[i], bcv.length[i]);
     try {
-      date.setTime(formatter.parse(text.toString()).getTime());
-      output.vector[i] = baseDate - DateWritableV2.dateToDays(date);
-    } catch (ParseException e) {
+      org.apache.hadoop.hive.common.type.Date hiveDate
+          = org.apache.hadoop.hive.common.type.Date.valueOf(text.toString());
+      output.vector[i] = baseDate - hiveDate.toEpochDay();
+    } catch (IllegalArgumentException e) {
       output.vector[i] = 1;
       output.isNull[i] = true;
     }
@@ -368,7 +363,7 @@ public class VectorUDFDateDiffScalarCol extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return "val " + stringValue + ", " + getColumnParamString(1, colNum);
+    return "val " + stringValue + ", " + getColumnParamString(1, inputColumnNum[0]);
   }
 
   @Override

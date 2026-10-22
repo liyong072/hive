@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.physical;
@@ -99,7 +100,7 @@ public final class GenMRSkewJoinProcessor {
    * </ul>
    * For each table, we launch one mapjoin job, taking the directory containing
    * big keys in this table and corresponding dirs in other tables as input.
-   * (Actally one job for one row in the above.)
+   * (Actually one job for one row in the above.)
    *
    * <p>
    * For more discussions, please check
@@ -108,7 +109,7 @@ public final class GenMRSkewJoinProcessor {
    */
   @SuppressWarnings("unchecked")
   public static void processSkewJoin(JoinOperator joinOp,
-      Task<? extends Serializable> currTask, ParseContext parseCtx)
+      Task<?> currTask, ParseContext parseCtx)
       throws SemanticException {
 
     // We are trying to adding map joins to handle skew keys, and map join right
@@ -117,7 +118,7 @@ public final class GenMRSkewJoinProcessor {
       return;
     }
 
-    List<Task<? extends Serializable>> children = currTask.getChildTasks();
+    List<Task<?>> children = currTask.getChildTasks();
 
     Path baseTmpDir = parseCtx.getContext().getMRTmpPath();
 
@@ -147,12 +148,12 @@ public final class GenMRSkewJoinProcessor {
     joinDescriptor.setBigKeysDirMap(bigKeysDirMap);
     joinDescriptor.setSmallKeysDirMap(smallKeysDirMap);
     joinDescriptor.setSkewKeyDefinition(HiveConf.getIntVar(parseCtx.getConf(),
-        HiveConf.ConfVars.HIVESKEWJOINKEY));
+        HiveConf.ConfVars.HIVE_SKEWJOIN_KEY));
 
-    HashMap<Path, Task<? extends Serializable>> bigKeysDirToTaskMap =
-      new HashMap<Path, Task<? extends Serializable>>();
+    HashMap<Path, Task<?>> bigKeysDirToTaskMap =
+      new HashMap<Path, Task<?>>();
     List<Serializable> listWorks = new ArrayList<Serializable>();
-    List<Task<? extends Serializable>> listTasks = new ArrayList<Task<? extends Serializable>>();
+    List<Task<?>> listTasks = new ArrayList<Task<?>>();
     MapredWork currPlan = (MapredWork) currTask.getWork();
 
     TableDesc keyTblDesc = (TableDesc) currPlan.getReduceWork().getKeyDesc().clone();
@@ -271,7 +272,7 @@ public final class GenMRSkewJoinProcessor {
       PartitionDesc part = new PartitionDesc(tableDescList.get(src), null);
 
       newPlan.addPathToPartitionInfo(bigKeyDirPath, part);
-      newPlan.getAliasToPartnInfo().put(alias, part);
+      newPlan.putPartitionDesc(alias, part);
 
       Operator<? extends OperatorDesc> reducer = clonePlan.getReduceWork().getReducer();
       assert reducer instanceof JoinOperator;
@@ -319,19 +320,18 @@ public final class GenMRSkewJoinProcessor {
       }
       mapJoinOp.setChildOperators(childOps);
 
-      HiveConf jc = new HiveConf(parseCtx.getConf(),
-          GenMRSkewJoinProcessor.class);
+      HiveConf jc = new HiveConf(parseCtx.getConf());
 
       newPlan.setNumMapTasks(HiveConf
-          .getIntVar(jc, HiveConf.ConfVars.HIVESKEWJOINMAPJOINNUMMAPTASK));
+          .getIntVar(jc, HiveConf.ConfVars.HIVE_SKEWJOIN_MAPJOIN_NUM_MAP_TASK));
       newPlan
-          .setMinSplitSize(HiveConf.getLongVar(jc, HiveConf.ConfVars.HIVESKEWJOINMAPJOINMINSPLIT));
+          .setMinSplitSize(HiveConf.getLongVar(jc, HiveConf.ConfVars.HIVE_SKEWJOIN_MAPJOIN_MIN_SPLIT));
       newPlan.setInputformat(HiveInputFormat.class.getName());
 
       MapredWork w = new MapredWork();
       w.setMapWork(newPlan);
 
-      Task<? extends Serializable> skewJoinMapJoinTask = TaskFactory.get(w);
+      Task<?> skewJoinMapJoinTask = TaskFactory.get(w);
       skewJoinMapJoinTask.setFetchSource(currTask.isFetchSource());
 
       bigKeysDirToTaskMap.put(bigKeyDirPath, skewJoinMapJoinTask);
@@ -339,13 +339,13 @@ public final class GenMRSkewJoinProcessor {
       listTasks.add(skewJoinMapJoinTask);
     }
     if (children != null) {
-      for (Task<? extends Serializable> tsk : listTasks) {
-        for (Task<? extends Serializable> oldChild : children) {
+      for (Task<?> tsk : listTasks) {
+        for (Task<?> oldChild : children) {
           tsk.addDependentTask(oldChild);
         }
       }
-      currTask.setChildTasks(new ArrayList<Task<? extends Serializable>>());
-      for (Task<? extends Serializable> oldChild : children) {
+      currTask.setChildTasks(new ArrayList<Task<?>>());
+      for (Task<?> oldChild : children) {
         oldChild.getParentTasks().remove(currTask);
       }
       listTasks.addAll(children);
@@ -358,7 +358,7 @@ public final class GenMRSkewJoinProcessor {
     cndTsk.setListTasks(listTasks);
     cndTsk.setResolver(new ConditionalResolverSkewJoin());
     cndTsk.setResolverCtx(context);
-    currTask.setChildTasks(new ArrayList<Task<? extends Serializable>>());
+    currTask.setChildTasks(new ArrayList<Task<?>>());
     currTask.addDependentTask(cndTsk);
 
     return;
@@ -366,7 +366,7 @@ public final class GenMRSkewJoinProcessor {
 
   public static boolean skewJoinEnabled(HiveConf conf, JoinOperator joinOp) {
 
-    if (conf != null && !conf.getBoolVar(HiveConf.ConfVars.HIVESKEWJOIN)) {
+    if (conf != null && !conf.getBoolVar(HiveConf.ConfVars.HIVE_SKEW_JOIN)) {
       return false;
     }
 

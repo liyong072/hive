@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
@@ -22,7 +23,7 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 
 /**
- * A simple implementation of <tt>GenericUDAFParameterInfo</tt>.
+ * A simple implementation of <pre>GenericUDAFParameterInfo</pre>.
  *
  */
 public class SimpleGenericUDAFParameterInfo implements GenericUDAFParameterInfo
@@ -32,13 +33,20 @@ public class SimpleGenericUDAFParameterInfo implements GenericUDAFParameterInfo
   private final boolean isWindowing;
   private final boolean distinct;
   private final boolean allColumns;
+  private final boolean respectNulls;
 
   public SimpleGenericUDAFParameterInfo(ObjectInspector[] params, boolean isWindowing, boolean distinct,
       boolean allColumns) {
+    this(params, isWindowing, distinct, allColumns, true);
+  }
+
+  public SimpleGenericUDAFParameterInfo(ObjectInspector[] params, boolean isWindowing, boolean distinct,
+      boolean allColumns, boolean respectNulls) {
     this.parameters = params;
     this.isWindowing = isWindowing;
     this.distinct = distinct;
     this.allColumns = allColumns;
+    this.respectNulls = respectNulls;
   }
 
   @Override
@@ -69,5 +77,10 @@ public class SimpleGenericUDAFParameterInfo implements GenericUDAFParameterInfo
   @Override
   public boolean isWindowing() {
     return isWindowing;
+  }
+
+  @Override
+  public boolean respectNulls() {
+    return respectNulls;
   }
 }

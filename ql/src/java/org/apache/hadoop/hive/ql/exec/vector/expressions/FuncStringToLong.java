@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -27,20 +28,15 @@ import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 
 /**
- * Superclass to support vectorized functions that take a long
- * and return a string, optionally with additional configuration arguments.
+ * Superclass to support vectorized functions that take a string
+ * and return a long, optionally with additional configuration arguments.
  * Used for cast(string), length(string), etc
  */
 public abstract class FuncStringToLong extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private int inputCol;
-  private int outputCol;
-
   public FuncStringToLong(int inputCol, int outputCol) {
-    super(outputCol);
-    this.inputCol = inputCol;
-    this.outputCol = outputCol;
+    super(inputCol, outputCol);
   }
 
   public FuncStringToLong() {
@@ -53,10 +49,10 @@ public abstract class FuncStringToLong extends VectorExpression {
       super.evaluateChildren(batch);
     }
 
-    BytesColumnVector inputColVector = (BytesColumnVector) batch.cols[inputCol];
+    BytesColumnVector inputColVector = (BytesColumnVector) batch.cols[inputColumnNum[0]];
     int[] sel = batch.selected;
     int n = batch.size;
-    LongColumnVector outputColVector = (LongColumnVector) batch.cols[outputCol];
+    LongColumnVector outputColVector = (LongColumnVector) batch.cols[outputColumnNum];
     boolean[] inputIsNull = inputColVector.isNull;
     boolean[] outputIsNull = outputColVector.isNull;
 
@@ -141,24 +137,24 @@ public abstract class FuncStringToLong extends VectorExpression {
   protected abstract void func(LongColumnVector outputColVector, BytesColumnVector inputColVector, int i);
 
   public int getOutputCol() {
-    return outputCol;
+    return outputColumnNum;
   }
 
   public void setOutputCol(int outputCol) {
-    this.outputCol = outputCol;
+    this.outputColumnNum = outputCol;
   }
 
   public int getInputCol() {
-    return inputCol;
+    return inputColumnNum[0];
   }
 
   public void setInputCol(int inputCol) {
-    this.inputCol = inputCol;
+    this.inputColumnNum[0] = inputCol;
   }
 
   @Override
   public String vectorExpressionParameters() {
-    return "col " + inputCol;
+    return "col " + inputColumnNum[0];
   }
 
   @Override

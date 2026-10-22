@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.persistence;
@@ -67,10 +68,8 @@ public abstract class MapJoinKey {
   private static final HashSet<PrimitiveCategory> SUPPORTED_PRIMITIVES
       = new HashSet<PrimitiveCategory>();
   static {
-    // All but decimal.
     SUPPORTED_PRIMITIVES.add(PrimitiveCategory.BOOLEAN);
     SUPPORTED_PRIMITIVES.add(PrimitiveCategory.VOID);
-    SUPPORTED_PRIMITIVES.add(PrimitiveCategory.BOOLEAN);
     SUPPORTED_PRIMITIVES.add(PrimitiveCategory.BYTE);
     SUPPORTED_PRIMITIVES.add(PrimitiveCategory.SHORT);
     SUPPORTED_PRIMITIVES.add(PrimitiveCategory.INT);
@@ -85,6 +84,13 @@ public abstract class MapJoinKey {
     SUPPORTED_PRIMITIVES.add(PrimitiveCategory.BINARY);
     SUPPORTED_PRIMITIVES.add(PrimitiveCategory.VARCHAR);
     SUPPORTED_PRIMITIVES.add(PrimitiveCategory.CHAR);
+    /**
+     * No matter what scale/precision join keys are, they end up cast to common in query plan.
+     * We should be ok comparing them byte by byte. See
+     * {@link org.apache.hadoop.hive.ql.exec.FunctionRegistry#getCommonClassForComparison(TypeInfo, TypeInfo)}
+     * Q test: mapjoin_decimal_vectorized.q
+     */
+    SUPPORTED_PRIMITIVES.add(PrimitiveCategory.DECIMAL);
   }
 
   public static boolean isSupportedField(ObjectInspector foi) {

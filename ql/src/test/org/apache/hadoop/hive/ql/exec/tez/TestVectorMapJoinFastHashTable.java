@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.tez;
@@ -22,6 +23,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.Properties;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -30,6 +32,7 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.optimizer.ConvertJoinMapJoin;
 import org.apache.hadoop.hive.ql.plan.MapJoinDesc;
 import org.apache.hadoop.hive.ql.plan.Statistics;
+import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc;
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableImplementationType;
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableKeyType;
@@ -44,6 +47,7 @@ import org.slf4j.LoggerFactory;
 
 public class TestVectorMapJoinFastHashTable {
 
+  // TODO HIVE-25145
   long keyCount = 15_000_000;
 
   private static final Logger LOG = LoggerFactory.getLogger(TestVectorMapJoinFastHashTable.class.getName());
@@ -66,8 +70,11 @@ public class TestVectorMapJoinFastHashTable {
     vectorDesc.setHashTableImplementationType(HashTableImplementationType.FAST);
     vectorDesc.setHashTableKind(HashTableKind.HASH_MAP);
     desc.setVectorDesc(vectorDesc);
+    TableDesc keyTblDesc = new TableDesc();
+    keyTblDesc.setProperties(new Properties());
+    desc.setKeyTblDesc(keyTblDesc);
     Configuration hconf = new HiveConf();
-    VectorMapJoinFastTableContainer container = new VectorMapJoinFastTableContainer(desc, hconf, keyCount);
+    VectorMapJoinFastTableContainer container = new VectorMapJoinFastTableContainer(desc, hconf, keyCount, 1);
 
     container.setSerde(null, null);
 
@@ -91,7 +98,7 @@ public class TestVectorMapJoinFastHashTable {
       dataSize += 8;
     }
 
-    Statistics stat = new Statistics(keyCount, dataSize, 0);
+    Statistics stat = new Statistics(keyCount, dataSize, 0, 0);
 
     Long realObjectSize = getObjectSize(container);
     Long executionEstimate = container.getEstimatedMemorySize();

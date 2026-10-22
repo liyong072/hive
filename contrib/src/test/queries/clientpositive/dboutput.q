@@ -1,4 +1,6 @@
+--!qt:database:derby:qdb
 --! qt:dataset:src
+set hive.optimize.limit=false;
 set hive.mapred.mode=nonstrict;
 ADD JAR ${system:maven.local.repository}/org/apache/hive/hive-contrib/${system:hive.version}/hive-contrib-${system:hive.version}.jar;
 
@@ -19,13 +21,13 @@ DESCRIBE FUNCTION EXTENDED dboutput;
 
 EXPLAIN FROM src
 
-SELECT dboutput ( 'jdbc:derby:../build/test_dboutput_db\;create=true','','',
+SELECT dboutput ( '${system:hive.test.database.qdb.jdbc.url}','','',
 'CREATE TABLE app_info ( kkey VARCHAR(255) NOT NULL, vvalue VARCHAR(255) NOT NULL, UNIQUE(kkey))' ),
 
-dboutput('jdbc:derby:../build/test_dboutput_db','','',
+dboutput('${system:hive.test.database.qdb.jdbc.url}','','',
 'INSERT INTO app_info (kkey,vvalue) VALUES (?,?)','20','a'),
 
-dboutput('jdbc:derby:../build/test_dboutput_db','','',
+dboutput('${system:hive.test.database.qdb.jdbc.url}','','',
 'INSERT INTO app_info (kkey,vvalue) VALUES (?,?)','20','b')
 
 limit 1;
@@ -33,20 +35,20 @@ limit 1;
 
 FROM src 
 
-SELECT dboutput ( 'jdbc:derby:../build/test_dboutput_db\;create=true','','',
+SELECT dboutput ( '${system:hive.test.database.qdb.jdbc.url}','','',
 'CREATE TABLE app_info ( kkey INTEGER NOT NULL, vvalue VARCHAR(255) NOT NULL, UNIQUE(kkey))' ),
 
-dboutput('jdbc:derby:../build/test_dboutput_db','','',
+dboutput('${system:hive.test.database.qdb.jdbc.url}','','',
 'INSERT INTO app_info (kkey,vvalue) VALUES (?,?)','20','a'),
 
-dboutput('jdbc:derby:../build/test_dboutput_db','','',
+dboutput('${system:hive.test.database.qdb.jdbc.url}','','',
 'INSERT INTO app_info (kkey,vvalue) VALUES (?,?)','20','b')
 
 limit 1;
 
 EXPLAIN SELECT
 
-dboutput('jdbc:derby:../build/test_dboutput_db','','',
+dboutput('${system:hive.test.database.qdb.jdbc.url}','','',
 'INSERT INTO app_info (kkey,vvalue) VALUES (?,?)',key,value)
 
 FROM src WHERE key < 10;
@@ -54,12 +56,11 @@ FROM src WHERE key < 10;
 
 SELECT
 
-dboutput('jdbc:derby:../build/test_dboutput_db','','',
+dboutput('${system:hive.test.database.qdb.jdbc.url}','','',
 'INSERT INTO app_info (kkey,vvalue) VALUES (?,?)',key,value)
 
 FROM src WHERE key < 10;
 
-dfs -rmr ../build/test_dboutput_db;
 dfs -rmr derby.log;
 
 DROP TEMPORARY FUNCTION dboutput;

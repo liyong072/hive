@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -41,11 +42,11 @@ public class BasicStatsWork implements Serializable {
   private boolean statsReliable;        // are stats completely reliable
 
   // If stats aggregator is not present, clear the current aggregator stats.
-  // For eg. if a merge is being performed, stats already collected by aggregator (numrows etc.)
+  // For example, if a merge is being performed, stats already collected by aggregator (numrows etc.)
   // are still valid. However, if a load file is being performed, the old stats collected by
   // aggregator are not valid. It might be a good idea to clear them instead of leaving wrong
   // and old stats.
-  // Since HIVE-12661, we maintain the old stats (although may be wrong) for CBO
+  // Since HIVE-12661, we maintain the old stats (although it may be wrong) for CBO
   // purpose. We use a flag COLUMN_STATS_ACCURATE to
   // show the accuracy of the stats.
 
@@ -57,7 +58,7 @@ public class BasicStatsWork implements Serializable {
 
   // sourceTask for TS is not changed (currently) but that of FS might be changed
   // by various optimizers (auto.convert.join, for example)
-  // so this is set by DriverContext in runtime
+  // so this is set by TaskQueue in runtime
   private transient Task sourceTask;
 
   private boolean isFollowedByColStats = false;
@@ -195,9 +196,9 @@ public class BasicStatsWork implements Serializable {
     if (work.getLoadTableDesc() != null) {
       return work.getLoadTableDesc().getTable().getTableName();
     } else if (work.getTableSpecs() != null) {
-      return work.getTableSpecs().tableName;
+      return work.getTableSpecs().getTableName().getTable();
     } else if (getLoadFileDesc().getCtasCreateTableDesc() != null) {
-      return getLoadFileDesc().getCtasCreateTableDesc().getTableName();
+      return getLoadFileDesc().getCtasCreateTableDesc().getDbTableName();
     } else {
       return getLoadFileDesc().getCreateViewDesc().getViewName();
     }

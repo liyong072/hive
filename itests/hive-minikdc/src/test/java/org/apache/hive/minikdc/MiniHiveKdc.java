@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.minikdc;
@@ -36,6 +37,7 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hive.jdbc.miniHS2.MiniHS2;
 
 import com.google.common.io.Files;
+import org.apache.hive.service.server.HiveServer2;
 
 /**
  * Wrapper around Hadoop's MiniKdc for use in hive tests.
@@ -52,8 +54,8 @@ public class MiniHiveKdc {
   public static String AUTHENTICATION_TYPE = "KERBEROS";
   private static final String HIVE_METASTORE_SERVICE_PRINCIPAL = "hive";
 
-  private final MiniKdc miniKdc;
-  private final File workDir;
+  final MiniKdc miniKdc;
+  final File workDir;
   private final Map<String, String> userPrincipals =
       new HashMap<String, String>();
   private final Properties kdcConf = MiniKdc.createConf();
@@ -159,6 +161,10 @@ public class MiniHiveKdc {
     return HIVE_TEST_USER_1;
   }
 
+  String getHiveMetastoreServicePrincipal() {
+    return HIVE_METASTORE_SERVICE_PRINCIPAL;
+  }
+
   /**
    * Create a MiniHS2 with the hive service principal and keytab in MiniHiveKdc
    * @param miniHiveKdc
@@ -178,15 +184,21 @@ public class MiniHiveKdc {
   * @return new MiniHS2 instance
   * @throws Exception
   */
- public static MiniHS2 getMiniHS2WithKerb(MiniHiveKdc miniHiveKdc, HiveConf hiveConf,
+  public static MiniHS2 getMiniHS2WithKerb(MiniHiveKdc miniHiveKdc, HiveConf hiveConf,
      String authType) throws Exception {
-   String hivePrincipal =
-       miniHiveKdc.getFullyQualifiedServicePrincipal(MiniHiveKdc.HIVE_SERVICE_PRINCIPAL);
-   String hiveKeytab = miniHiveKdc.getKeyTabFile(
-       miniHiveKdc.getServicePrincipalForUser(MiniHiveKdc.HIVE_SERVICE_PRINCIPAL));
+    String hivePrincipal =
+            miniHiveKdc.getFullyQualifiedServicePrincipal(MiniHiveKdc.HIVE_SERVICE_PRINCIPAL);
+    String hiveKeytab = miniHiveKdc.getKeyTabFile(
+            miniHiveKdc.getServicePrincipalForUser(MiniHiveKdc.HIVE_SERVICE_PRINCIPAL));
 
-   return new MiniHS2.Builder().withConf(hiveConf).withMiniKdc(hivePrincipal, hiveKeytab).
-       withAuthenticationType(authType).build();
+    MiniHS2.Builder miniHS2Builder = new MiniHS2.Builder()
+                                              .withConf(hiveConf)
+                                              .withMiniKdc(hivePrincipal, hiveKeytab)
+                                              .withAuthenticationType(authType);
+    if (HiveServer2.isHttpTransportMode(hiveConf)) {
+      miniHS2Builder.withHTTPTransport();
+    }
+    return miniHS2Builder.build();
  }
 
   /**
@@ -227,10 +239,13 @@ public class MiniHiveKdc {
     String hiveMetastoreKeytab = miniHiveKdc.getKeyTabFile(
         miniHiveKdc.getServicePrincipalForUser(MiniHiveKdc.HIVE_METASTORE_SERVICE_PRINCIPAL));
 
-    return new MiniHS2.Builder().withConf(hiveConf)
+    MiniHS2.Builder b = new MiniHS2.Builder().withTransactionalTables(false).withConf(hiveConf)
         .withSecureRemoteMetastore(hiveMetastorePrincipal, hiveMetastoreKeytab).
-            withMiniKdc(hivePrincipal, hiveKeytab).withAuthenticationType(authenticationType)
-        .build();
+            withMiniKdc(hivePrincipal, hiveKeytab).withAuthenticationType(authenticationType);
+    if(HiveServer2.isHttpTransportMode(hiveConf)){
+      b.withHTTPTransport();
+    }
+    return b.build();
   }
 
   /**

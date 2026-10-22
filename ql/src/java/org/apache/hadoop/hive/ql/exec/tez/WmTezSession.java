@@ -9,29 +9,28 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.tez;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
-
-import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import org.apache.hadoop.hive.conf.HiveConf;
+
 import org.apache.hadoop.hive.registry.impl.TezAmInstance;
 import org.apache.hive.common.util.Ref;
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonProperty;
-import org.codehaus.jackson.map.annotate.JsonSerialize;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.SettableFuture;
 
 @JsonSerialize
 public class WmTezSession extends TezSessionPoolSession implements AmPluginNode {
@@ -55,8 +54,9 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
   @JsonProperty("queryId")
   private String queryId;
   private SettableFuture<Boolean> returnFuture = null;
+  private boolean isDelayedMove;
 
-  private final WorkloadManager wmParent;
+  private final WorkloadManager wmManager;
 
   /** The actual state of the guaranteed task, and the update state, for the session. */
   // Note: hypothetically, a generic WM-aware-session should not know about guaranteed tasks.
@@ -68,17 +68,18 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
   }
   private final ActualWmState actualState = new ActualWmState();
 
-  public WmTezSession(String sessionId, WorkloadManager parent,
-      SessionExpirationTracker expiration, HiveConf conf) {
-    super(sessionId, parent, expiration, conf);
-    wmParent = parent;
+  public WmTezSession(
+      WorkloadManager manager, SessionExpirationTracker expiration, TezSessionState baseSession) {
+    super(manager, expiration, baseSession);
+    wmManager = manager;
+    isDelayedMove = false;
   }
 
   @VisibleForTesting
-  WmTezSession(String sessionId, Manager testParent,
-      SessionExpirationTracker expiration, HiveConf conf) {
-    super(sessionId, testParent, expiration, conf);
-    wmParent = null;
+  WmTezSession(Manager testParent, SessionExpirationTracker expiration, TezSessionState baseSession) {
+    super(testParent, expiration, baseSession);
+    wmManager = null;
+    isDelayedMove = false;
   }
 
   public ListenableFuture<WmTezSession> waitForAmRegistryAsync(
@@ -91,7 +92,7 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
       }
       if (amRegistryFuture != null) {
         // We don't need this for now, so do not support it.
-        future.setException(new RuntimeException("Multiple waits are not suported"));
+        future.setException(new RuntimeException("Multiple waits are not supported"));
         return future;
       }
       amRegistryFuture = future;
@@ -105,7 +106,7 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
 
 
   @Override
-  void updateFromRegistry(TezAmInstance si, int ephSeqVersion) {
+  public void updateFromRegistry(TezAmInstance si, int ephSeqVersion) {
     updateAmEndpointInfo(si, ephSeqVersion);
     if (si != null) {
       handleGuaranteedTasksChange(si.getGuaranteedCount());
@@ -138,7 +139,7 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
       }
     }
   }
-  
+
 
   private void handleGuaranteedTasksChange(int guaranteedCount) {
     boolean doNotify = false;
@@ -149,7 +150,7 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
       doNotify = actualState.target != guaranteedCount;
     }
     if (!doNotify) return;
-    wmParent.notifyOfInconsistentAllocation(this);
+    wmManager.notifyOfInconsistentAllocation(this);
   }
 
   @Override
@@ -168,6 +169,14 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
     return poolName;
   }
 
+  public void setDelayedMove(boolean isDelayedMove) {
+    this.isDelayedMove = isDelayedMove;
+  }
+
+  public boolean isDelayedMove() {
+    return isDelayedMove;
+  }
+
   void setClusterFraction(double fraction) {
     this.clusterFraction = fraction;
   }
@@ -175,6 +184,7 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
   void clearWm() {
     this.poolName = null;
     this.clusterFraction = null;
+    this.isDelayedMove = false;
   }
 
   public boolean hasClusterFraction() {
@@ -199,7 +209,7 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
       return intAlloc;
     }
   }
-  
+
   public String getAllocationState() {
     synchronized (actualState) {
       return "actual/target " + actualState.sent + "/" + actualState.target
@@ -227,7 +237,7 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
   }
 
   public void handleUpdateError(int endpointVersion) {
-    wmParent.addUpdateError(this, endpointVersion);
+    wmManager.addUpdateError(this, endpointVersion);
   }
 
   @Override
@@ -294,5 +304,4 @@ public class WmTezSession extends TezSessionPoolSession implements AmPluginNode 
     return super.toString() +  ", WM state poolName=" + poolName + ", clusterFraction="
         + clusterFraction + ", queryId=" + queryId + ", killReason=" + killReason;
   }
-
 }

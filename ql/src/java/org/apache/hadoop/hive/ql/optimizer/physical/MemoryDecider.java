@@ -7,17 +7,17 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.physical;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -37,12 +37,12 @@ import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.exec.tez.TezTask;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.lib.TaskGraphWalker;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -63,9 +63,9 @@ import org.slf4j.LoggerFactory;
  */
 public class MemoryDecider implements PhysicalPlanResolver {
 
-  protected static transient final Logger LOG = LoggerFactory.getLogger(MemoryDecider.class);
+  protected static final Logger LOG = LoggerFactory.getLogger(MemoryDecider.class);
 
-  public class MemoryCalculator implements Dispatcher {
+  public class MemoryCalculator implements SemanticDispatcher {
 
     private final long totalAvailableMemory; // how much to we have
     private final long minimumHashTableSize; // minimum size of ht completely in memory
@@ -74,9 +74,9 @@ public class MemoryDecider implements PhysicalPlanResolver {
 
     public MemoryCalculator(PhysicalContext pctx) {
       this.pctx = pctx;
-      this.totalAvailableMemory = HiveConf.getLongVar(pctx.conf, HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
-      this.minimumHashTableSize = HiveConf.getIntVar(pctx.conf, HiveConf.ConfVars.HIVEHYBRIDGRACEHASHJOINMINNUMPARTITIONS)
-        * HiveConf.getIntVar(pctx.conf, HiveConf.ConfVars.HIVEHYBRIDGRACEHASHJOINMINWBSIZE);
+      this.totalAvailableMemory = HiveConf.getLongVar(pctx.conf, HiveConf.ConfVars.HIVE_CONVERT_JOIN_NOCONDITIONAL_TASK_THRESHOLD);
+      this.minimumHashTableSize = HiveConf.getIntVar(pctx.conf, HiveConf.ConfVars.HIVE_HYBRIDGRACE_HASHJOIN_MIN_NUM_PARTITIONS)
+        * HiveConf.getIntVar(pctx.conf, HiveConf.ConfVars.HIVE_HYBRIDGRACE_HASHJOIN_MIN_WB_SIZE);
       this.inflationFactor = HiveConf.getFloatVar(pctx.conf, HiveConf.ConfVars.HIVE_HASH_TABLE_INFLATION_FACTOR);
     }
 
@@ -84,7 +84,7 @@ public class MemoryDecider implements PhysicalPlanResolver {
     @Override
     public Object dispatch(Node nd, Stack<Node> stack, Object... nodeOutputs)
       throws SemanticException {
-      Task<? extends Serializable> currTask = (Task<? extends Serializable>) nd;
+      Task<?> currTask = (Task<?>) nd;
       if (currTask instanceof StatsTask) {
         currTask = ((StatsTask) currTask).getWork().getSourceTask();
       }
@@ -126,12 +126,12 @@ public class MemoryDecider implements PhysicalPlanResolver {
 
     private void evaluateOperators(BaseWork w, PhysicalContext pctx) throws SemanticException {
       // lets take a look at the operator memory requirements.
-      Dispatcher disp = null;
+      SemanticDispatcher disp = null;
       final Set<MapJoinOperator> mapJoins = new LinkedHashSet<MapJoinOperator>();
 
-      LinkedHashMap<Rule, NodeProcessor> rules = new LinkedHashMap<Rule, NodeProcessor>();
+      LinkedHashMap<SemanticRule, SemanticNodeProcessor> rules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
       rules.put(new RuleRegExp("Map join memory estimator",
-              MapJoinOperator.getOperatorName() + "%"), new NodeProcessor() {
+              MapJoinOperator.getOperatorName() + "%"), new SemanticNodeProcessor() {
           @Override
           public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
               Object... nodeOutputs) {
@@ -141,7 +141,7 @@ public class MemoryDecider implements PhysicalPlanResolver {
         });
       disp = new DefaultRuleDispatcher(null, rules, null);
 
-      GraphWalker ogw = new DefaultGraphWalker(disp);
+      SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
 
       ArrayList<Node> topNodes = new ArrayList<Node>();
       topNodes.addAll(w.getAllRootOperators());
@@ -198,9 +198,7 @@ public class MemoryDecider implements PhysicalPlanResolver {
           }
 
           if (size < remainingSize) {
-            if (LOG.isInfoEnabled()) {
-              LOG.info("Setting " + size + " bytes needed for " + mj + " (in-mem)");
-            }
+            LOG.info("Setting " + size + " bytes needed for " + mj + " (in-mem)");
 
             mj.getConf().setMemoryNeeded(size);
             remainingSize -= size;
@@ -227,23 +225,17 @@ public class MemoryDecider implements PhysicalPlanResolver {
 
         for (MapJoinOperator mj : sortedMapJoins) {
           long size = (long)(weight * sizes.get(mj));
-          if (LOG.isInfoEnabled()) {
-            LOG.info("Setting " + size + " bytes needed for " + mj + " (spills)");
-          }
+          LOG.info("Setting " + size + " bytes needed for " + mj + " (spills)");
 
           mj.getConf().setMemoryNeeded(size);
         }
       } catch (HiveException e) {
         // if we have issues with stats, just scale linearily
         long size = totalAvailableMemory / mapJoins.size();
-        if (LOG.isInfoEnabled()) {
-          LOG.info("Scaling mapjoin memory w/o stats");
-        }
+        LOG.info("Scaling mapjoin memory w/o stats");
 
         for (MapJoinOperator mj : mapJoins) {
-          if (LOG.isInfoEnabled()) {
-            LOG.info("Setting " + size + " bytes needed for " + mj + " (fallback)");
-          }
+          LOG.info("Setting " + size + " bytes needed for " + mj + " (fallback)");
           mj.getConf().setMemoryNeeded(size);
         }
       }
@@ -268,7 +260,7 @@ public class MemoryDecider implements PhysicalPlanResolver {
       return size;
     }
 
-    public class DefaultRule implements NodeProcessor {
+    public class DefaultRule implements SemanticNodeProcessor {
 
       @Override
       public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -284,7 +276,7 @@ public class MemoryDecider implements PhysicalPlanResolver {
     pctx.getConf();
 
     // create dispatcher and graph walker
-    Dispatcher disp = new MemoryCalculator(pctx);
+    SemanticDispatcher disp = new MemoryCalculator(pctx);
     TaskGraphWalker ogw = new TaskGraphWalker(disp);
 
     // get all the tasks nodes from root task

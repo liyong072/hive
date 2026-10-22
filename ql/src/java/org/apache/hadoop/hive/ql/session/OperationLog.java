@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.session;
 
@@ -29,9 +30,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.io.IOUtils;
 import org.slf4j.Logger;
@@ -54,6 +55,7 @@ public class OperationLog {
   // requested.
   private final boolean isShortLogs;
   // True if the logs should be removed after the operation. Should be used only in test mode
+  // or the historic operation log is enabled
   private final boolean isRemoveLogs;
 
   private final LoggingLevel opLoggingLevel;
@@ -87,7 +89,9 @@ public class OperationLog {
     } else {
       testLogFile = null;
       isShortLogs = false;
-      isRemoveLogs = true;
+      // If the historic operation log is enabled, don't remove it, the operation log will be cleaned by
+      // a daemon when the query info of the operation is no longer found at webui
+      isRemoveLogs = !hiveConf.getBoolVar(HiveConf.ConfVars.HIVE_SERVER2_HISTORIC_OPERATION_LOG_ENABLED);
     }
   }
 
@@ -133,7 +137,7 @@ public class OperationLog {
       logFile.close(isRemoveLogs);
       testLogFile.close(isRemoveLogs);
     } else {
-      logFile.close(true);
+      logFile.close(isRemoveLogs);
     }
   }
 

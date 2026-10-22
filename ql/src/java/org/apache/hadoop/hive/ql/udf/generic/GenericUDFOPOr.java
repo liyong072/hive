@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
@@ -26,6 +27,7 @@ import org.apache.hadoop.hive.ql.exec.vector.expressions.ColOrCol;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.FilterColOrScalar;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.FilterExprOrExpr;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.FilterScalarOrColumn;
+import org.apache.hadoop.hive.ql.exec.vector.expressions.ScalarNullOrCol;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.udf.UDFType;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -37,8 +39,8 @@ import org.apache.hadoop.io.BooleanWritable;
  * GenericUDF Class for computing or.
  */
 @Description(name = "or", value = "a1 _FUNC_ a2 _FUNC_ ... _FUNC_ an - Logical or")
-@VectorizedExpressions({ColOrCol.class, FilterExprOrExpr.class, FilterColOrScalar.class,
-    FilterScalarOrColumn.class})
+@VectorizedExpressions({ ColOrCol.class, ScalarNullOrCol.class, FilterExprOrExpr.class,
+    FilterColOrScalar.class, FilterScalarOrColumn.class })
 @NDV(maxNdv = 2)
 @UDFType(deterministic = true, commutative = true)
 public class GenericUDFOPOr extends GenericUDF {

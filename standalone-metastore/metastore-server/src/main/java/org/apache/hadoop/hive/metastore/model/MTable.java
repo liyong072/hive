@@ -1,4 +1,3 @@
-
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -10,17 +9,21 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.model;
 
+import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.hadoop.hive.metastore.model.MConstraint.PK;
 
 public class MTable {
 
@@ -40,6 +43,34 @@ public class MTable {
   private boolean rewriteEnabled;
   private String tableType;
   private long writeId;
+
+  @SuppressWarnings("serial")
+  public static class PK implements Serializable {
+    public long id;
+
+    public PK() {}
+
+    public PK(long id) {
+      this.id = id;
+    }
+
+    public String toString() {
+      return String.format("%d", id);
+    }
+
+    public int hashCode() {
+      return toString().hashCode();
+    }
+
+    public boolean equals(Object other) {
+      if (other != null && (other instanceof PK)) {
+        PK otherPK = (PK) other;
+        return
+            otherPK.id == id;
+      }
+      return false;
+    }
+  }
 
   public MTable() {}
 

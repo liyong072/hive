@@ -9,15 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.hplsql;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.util.Calendar;
@@ -61,12 +63,13 @@ public class Expression {
       else {
         visitChildren(ctx);
       }
-    }
-    catch (Exception e) {
+    } catch (HplValidationException e) {
+      throw e;
+    } catch (Exception e) {
       exec.signal(e);
     }
   }
-  
+
   /**
    * Evaluate an expression in executable SQL statement
    */
@@ -108,7 +111,13 @@ public class Expression {
     }
     else {
       visitChildren(ctx);
-      sql.append(exec.stackPop().toString());
+      Var value = exec.stackPop();
+      if (value.type == Type.NULL && sql.toString().length() == 0) {
+        exec.stackPush(new Var());
+        return;
+      } else {
+        sql.append(value.toSqlString());
+      }
     }
     exec.stackPush(sql);
   }
@@ -307,18 +316,18 @@ public class Expression {
   public void execCursorAttribute(HplsqlParser.Expr_cursor_attributeContext ctx) {
     String name = ctx.ident().getText();
     Var val = new Var(Var.Type.BOOL);
-    Var cursor = exec.findCursor(name);
-    if (cursor != null) {
-      Query query = (Query)cursor.value;
-      if (query != null) {
+    Var cursorVar = exec.findCursor(name);
+    if (cursorVar != null) {
+      Cursor cursor = (Cursor)cursorVar.value;
+      if (cursor != null) {
         if (ctx.T_ISOPEN() != null) {
-          val.setValue(query.isOpen());
+          val.setValue(cursor.isOpen());
         }
         else if (ctx.T_FOUND() != null) {
-          val.setValue(query.isFound());
+          val.setValue(cursor.isFound());
         }
         else if (ctx.T_NOTFOUND() != null) {
-          val.setValue(query.isNotFound());
+          val.setValue(cursor.isNotFound());
         }
       }
       exec.stackPush(val);
@@ -337,27 +346,36 @@ public class Expression {
     Var v2 = evalPop(ctx.expr(1));
     if (v1.value == null || v2.value == null) {
       evalNull();
-    }
-    else if (v1.type == Type.BIGINT && v2.type == Type.BIGINT) {
-      exec.stackPush(new Var((Long)v1.value + (Long)v2.value)); 
-    }
-    else if (v1.type == Type.BIGINT && v2.type == Type.DATE) {
-      exec.stackPush(changeDateByInt((Date)v2.value, (Long)v1.value, true /*add*/));
-    }
-    else if (v1.type == Type.DATE && v2.type == Type.BIGINT) {
-      exec.stackPush(changeDateByInt((Date)v1.value, (Long)v2.value, true /*add*/));
-    }
-    else if (v1.type == Type.STRING && v2.type == Type.STRING) {
+    } else if (v1.type == Type.BIGINT && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var((long)v1.value + (long)v2.value));
+    } else if (v1.type == Type.BIGINT && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var((new BigDecimal((long)v1.value)).add((BigDecimal)v2.value )));
+    } else if (v1.type == Type.BIGINT && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var((long)v1.value + (double)v2.value));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var(((BigDecimal) v1.value).add((BigDecimal) v2.value)));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var(((BigDecimal)v1.value).add(new BigDecimal((long)v2.value))));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var(((BigDecimal) v1.value).add(new BigDecimal((double) v2.value))));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var((double) v1.value + (double) v2.value));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var((new BigDecimal((double) v1.value)).add((BigDecimal) v2.value)));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var(((double) v1.value) + (long)v2.value));
+    } else if (v1.type == Type.BIGINT && v2.type == Type.DATE) {
+      exec.stackPush(changeDateByInt((Date)v2.value, (long)v1.value, true /*add*/));
+    } else if (v1.type == Type.DATE && v2.type == Type.BIGINT) {
+      exec.stackPush(changeDateByInt((Date)v1.value, (long)v2.value, true /*add*/));
+    } else if (v1.type == Type.STRING && v2.type == Type.STRING) {
       exec.stackPush(((String)v1.value) + ((String)v2.value));
-    }
-    else if (v1.type == Type.DATE && v2.type == Type.INTERVAL) {
+    } else if (v1.type == Type.DATE && v2.type == Type.INTERVAL) {
       exec.stackPush(new Var(((Interval)v2.value).dateChange((Date)v1.value, true /*add*/)));
-    }
-    else if (v1.type == Type.TIMESTAMP && v2.type == Type.INTERVAL) {
+    } else if (v1.type == Type.TIMESTAMP && v2.type == Type.INTERVAL) {
       exec.stackPush(new Var(((Interval)v2.value).timestampChange((Timestamp)v1.value, true /*add*/), v1.scale));
-    }
-    else {
-      evalNull();
+    } else {
+      unsupported(ctx, v1, v2, "+");
     }
   }
 
@@ -369,21 +387,32 @@ public class Expression {
     Var v2 = evalPop(ctx.expr(1));
     if (v1.value == null || v2.value == null) {
       evalNull();
-    }
-    else if (v1.type == Type.BIGINT && v2.type == Type.BIGINT) {
-      exec.stackPush(new Var((Long)v1.value - (Long)v2.value)); 
-    }
-    else if (v1.type == Type.DATE && v2.type == Type.BIGINT) {
-      exec.stackPush(changeDateByInt((Date)v1.value, (Long)v2.value, false /*subtract*/));
-    }
-    else if (v1.type == Type.DATE && v2.type == Type.INTERVAL) {
+    } else if (v1.type == Type.BIGINT && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var((long)v1.value - (long)v2.value));
+    } else if (v1.type == Type.BIGINT && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var((new BigDecimal((long)v1.value)).subtract((BigDecimal)v2.value)));
+    } else if (v1.type == Type.BIGINT && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var((long)v1.value - (double)v2.value));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var(((BigDecimal) v1.value).subtract((BigDecimal) v2.value)));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var(((BigDecimal)v1.value).subtract(new BigDecimal((long)v2.value))));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var(((BigDecimal) v1.value).subtract(new BigDecimal((double) v2.value))));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var((double) v1.value - (double) v2.value));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var((new BigDecimal((double) v1.value)).subtract((BigDecimal) v2.value)));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var(((double) v1.value) - (long)v2.value));
+    } else if (v1.type == Type.DATE && v2.type == Type.BIGINT) {
+      exec.stackPush(changeDateByInt((Date)v1.value, (long)v2.value, false /*subtract*/));
+    } else if (v1.type == Type.DATE && v2.type == Type.INTERVAL) {
       exec.stackPush(new Var(((Interval)v2.value).dateChange((Date)v1.value, false /*subtract*/)));
-    }
-    else if (v1.type == Type.TIMESTAMP && v2.type == Type.INTERVAL) {
+    } else if (v1.type == Type.TIMESTAMP && v2.type == Type.INTERVAL) {
       exec.stackPush(new Var(((Interval)v2.value).timestampChange((Timestamp)v1.value, false /*subtract*/), v1.scale));
-    }
-    else {
-      evalNull();
+    } else {
+      unsupported(ctx, v1, v2, "-");
     }
   }
   
@@ -395,15 +424,29 @@ public class Expression {
     Var v2 = evalPop(ctx.expr(1));
     if (v1.value == null || v2.value == null) {
       evalNull();
-    }
-    else if (v1.type == Type.BIGINT && v2.type == Type.BIGINT) {
-      exec.stackPush(new Var((Long)v1.value * (Long)v2.value)); 
-    }
-    else {
-      exec.signal(Signal.Type.UNSUPPORTED_OPERATION, "Unsupported data types in multiplication operator");
+    } else if (v1.type == Type.BIGINT && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var((long)v1.value * (long)v2.value));
+    } else if (v1.type == Type.BIGINT && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var((new BigDecimal((long)v1.value)).multiply((BigDecimal)v2.value)));
+    } else if (v1.type == Type.BIGINT && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var((long)v1.value * (double)v2.value));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var(((BigDecimal) v1.value).multiply((BigDecimal) v2.value)));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var(((BigDecimal)v1.value).multiply(new BigDecimal((long)v2.value))));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var(((BigDecimal) v1.value).multiply(new BigDecimal((double) v2.value))));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var((double) v1.value * (double) v2.value));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var((new BigDecimal((double) v1.value)).multiply((BigDecimal) v2.value)));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var(((double) v1.value) * (long)v2.value));
+    } else {
+      unsupported(ctx, v1, v2, "*");
     }
   }
-  
+
   /**
    * Division operator
    */
@@ -412,15 +455,35 @@ public class Expression {
     Var v2 = evalPop(ctx.expr(1));
     if (v1.value == null || v2.value == null) {
       evalNull();
-    }
-    else if (v1.type == Type.BIGINT && v2.type == Type.BIGINT) {
-      exec.stackPush(new Var((Long)v1.value / (Long)v2.value)); 
-    }
-    else {
-      exec.signal(Signal.Type.UNSUPPORTED_OPERATION, "Unsupported data types in division operator");
+    } else if (v1.type == Type.BIGINT && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var((long)v1.value / (long)v2.value));
+    } else if (v1.type == Type.BIGINT && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var((new BigDecimal((long)v1.value)).divide((BigDecimal)v2.value)));
+    } else if (v1.type == Type.BIGINT && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var((long)v1.value / (double)v2.value));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var(((BigDecimal) v1.value).divide((BigDecimal) v2.value)));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var(((BigDecimal)v1.value).divide(new BigDecimal((long)v2.value))));
+    } else if (v1.type == Type.DECIMAL && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var(((BigDecimal) v1.value).divide(new BigDecimal((double) v2.value))));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.DOUBLE) {
+      exec.stackPush(new Var((double) v1.value / (double) v2.value));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.DECIMAL) {
+      exec.stackPush(new Var((new BigDecimal((double) v1.value)).divide((BigDecimal) v2.value)));
+    } else if (v1.type == Type.DOUBLE && v2.type == Type.BIGINT) {
+      exec.stackPush(new Var(((double) v1.value) / (long)v2.value));
+    } else {
+      unsupported(ctx, v1, v2, "/");
     }
   }
-  
+
+  private void unsupported(HplsqlParser.ExprContext ctx, Var op1, Var op2, String operator) {
+    String msg = String.format("Unsupported data types in '%s' operator (%s%s%s)", operator, op1.type, operator, op2.type);
+    if (ctx != null) msg = "Ln:" + ctx.getStart().getLine() + " " + msg;
+    exec.signal(Signal.Type.UNSUPPORTED_OPERATION, msg);
+  }
+
   /**
    * Add or subtract the specified number of days from DATE
    */
@@ -509,13 +572,14 @@ public class Expression {
     sql.append("CONCAT(");
     int cnt = ctx.expr_concat_item().size();
     for (int i = 0; i < cnt; i++) {
-      sql.append(evalPop(ctx.expr_concat_item(i)).toString());
+      sql.append(evalPop(ctx.expr_concat_item(i)).toSqlString());
       if (i + 1 < cnt) {
         sql.append(", ");
       }
     }
     sql.append(")");
-    exec.stackPush(sql);
+    Var var = new Var(Type.SQL_STRING, sql);
+    exec.stackPush(var);
   }
   
   /**

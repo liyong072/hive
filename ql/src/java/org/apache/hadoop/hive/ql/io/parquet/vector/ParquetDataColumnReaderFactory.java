@@ -9,20 +9,24 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.parquet.vector;
 
 import org.apache.hadoop.hive.common.type.HiveBaseChar;
+import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.common.type.Timestamp;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.StringExpr;
+import org.apache.hadoop.hive.ql.io.parquet.convert.ETypeConverter;
 import org.apache.hadoop.hive.ql.io.parquet.timestamp.NanoTime;
 import org.apache.hadoop.hive.ql.io.parquet.timestamp.NanoTimeUtils;
+import org.apache.hadoop.hive.ql.io.parquet.timestamp.ParquetTimestampUtils;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable;
 import org.apache.hadoop.hive.serde2.typeinfo.CharTypeInfo;
@@ -37,7 +41,12 @@ import org.apache.parquet.bytes.ByteBufferInputStream;
 import org.apache.parquet.column.Dictionary;
 import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.io.api.Binary;
-import org.apache.parquet.schema.OriginalType;
+import org.apache.parquet.schema.LogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.DecimalLogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.LogicalTypeAnnotationVisitor;
+import org.apache.parquet.schema.LogicalTypeAnnotation.StringLogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.TimeUnit;
+import org.apache.parquet.schema.LogicalTypeAnnotation.TimestampLogicalTypeAnnotation;
 import org.apache.parquet.schema.PrimitiveType;
 
 import java.io.IOException;
@@ -45,7 +54,12 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.Optional;
+import java.util.TimeZone;
+
+import static com.google.common.base.MoreObjects.firstNonNull;
 
 /**
  * Parquet file has self-describing schema which may differ from the user required schema (e.g.
@@ -70,7 +84,7 @@ public final class ParquetDataColumnReaderFactory {
     protected Dictionary dict;
 
     // After the data is read in the parquet type, isValid will be set to true if the data can be
-    // returned in the type defined in HMS.  Otherwise isValid is set to false.
+    // returned in the type defined in HMS. Otherwise, isValid is set to false.
     boolean isValid = true;
 
     protected int hivePrecision = 0;
@@ -259,7 +273,7 @@ public final class ParquetDataColumnReaderFactory {
     }
 
     /**
-     * Enforce the max legnth of varchar or char.
+     * Enforce the max length of varchar or char.
      */
     protected String enforceMaxLength(String value) {
       return HiveBaseChar.enforceMaxLength(value, length);
@@ -369,6 +383,19 @@ public final class ParquetDataColumnReaderFactory {
       }
     }
 
+    // Validate a raw unscaled decimal64 long (already at the Hive scale) against the Hive precision.
+    // Sets isValid; returns the value unchanged when in range, else 0 (caller marks the entry NULL).
+    // Used by the Decimal64 identity fast path; bounds via HiveDecimalWritable to avoid hand-rolling.
+    long validatedDecimal64(long unscaledValue) {
+      long absMax = HiveDecimalWritable.getDecimal64AbsMax(hivePrecision);
+      if (unscaledValue >= -absMax && unscaledValue <= absMax) {
+        this.isValid = true;
+        return unscaledValue;
+      }
+      this.isValid = false;
+      return 0;
+    }
+
     /**
      * Helper function to validate double data.  Sets the isValid to true if the data is valid
      * for the type it will be read in, otherwise false.
@@ -421,12 +448,27 @@ public final class ParquetDataColumnReaderFactory {
    */
   public static class TypesFromInt64PageReader extends DefaultParquetDataColumnReader {
 
+    private boolean isAdjustedToUTC;
+    private TimeUnit timeUnit;
+
     public TypesFromInt64PageReader(ValuesReader realReader, int length, int precision, int scale) {
       super(realReader, length, precision, scale);
     }
 
     public TypesFromInt64PageReader(Dictionary dict, int length, int precision, int scale) {
       super(dict, length, precision, scale);
+    }
+
+    public TypesFromInt64PageReader(ValuesReader realReader, int length, boolean isAdjustedToUTC, TimeUnit timeUnit) {
+      super(realReader, length);
+      this.isAdjustedToUTC = isAdjustedToUTC;
+      this.timeUnit = timeUnit;
+    }
+
+    public TypesFromInt64PageReader(Dictionary dict, int length, boolean isAdjustedToUTC, TimeUnit timeUnit) {
+      super(dict, length);
+      this.isAdjustedToUTC = isAdjustedToUTC;
+      this.timeUnit = timeUnit;
     }
 
     @Override
@@ -525,6 +567,21 @@ public final class ParquetDataColumnReaderFactory {
       String value = enforceMaxLength(
           convertToString(dict.decodeToLong(id)));
       return convertToBytes(value);
+    }
+
+    private Timestamp convert(Long value) {
+      Timestamp timestamp = ParquetTimestampUtils.getTimestamp(value, timeUnit, isAdjustedToUTC);
+      return timestamp;
+    }
+
+    @Override
+    public Timestamp readTimestamp(int id) {
+      return convert(dict.decodeToLong(id));
+    }
+
+    @Override
+    public Timestamp readTimestamp() {
+      return convert(valuesReader.readLong());
     }
 
     private static String convertToString(long value) {
@@ -1172,21 +1229,20 @@ public final class ParquetDataColumnReaderFactory {
    * The reader who reads from the underlying Timestamp value value.
    */
   public static class TypesFromInt96PageReader extends DefaultParquetDataColumnReader {
-    private boolean skipTimestampConversion = false;
-    private ZoneId writerTimezone;
+    private final ZoneId targetZone;
+    private boolean legacyConversionEnabled;
 
-    public TypesFromInt96PageReader(ValuesReader realReader, int length,
-                                    boolean skipTimestampConversion, ZoneId writerTimezone) {
+    public TypesFromInt96PageReader(ValuesReader realReader, int length, ZoneId targetZone,
+        boolean legacyConversionEnabled) {
       super(realReader, length);
-      this.skipTimestampConversion = skipTimestampConversion;
-      this.writerTimezone = writerTimezone;
+      this.targetZone = targetZone;
+      this.legacyConversionEnabled = legacyConversionEnabled;
     }
 
-    public TypesFromInt96PageReader(Dictionary dict, int length, boolean skipTimestampConversion,
-        ZoneId writerTimezone) {
+    public TypesFromInt96PageReader(Dictionary dict, int length, ZoneId targetZone, boolean legacyConversionEnabled) {
       super(dict, length);
-      this.skipTimestampConversion = skipTimestampConversion;
-      this.writerTimezone = writerTimezone;
+      this.targetZone = targetZone;
+      this.legacyConversionEnabled = legacyConversionEnabled;
     }
 
     private Timestamp convert(Binary binary) {
@@ -1195,7 +1251,7 @@ public final class ParquetDataColumnReaderFactory {
       long timeOfDayNanos = buf.getLong();
       int julianDay = buf.getInt();
       NanoTime nt = new NanoTime(julianDay, timeOfDayNanos);
-      return NanoTimeUtils.getTimestamp(nt, skipTimestampConversion, writerTimezone);
+      return NanoTimeUtils.getTimestamp(nt, targetZone, legacyConversionEnabled);
     }
 
     @Override
@@ -1262,17 +1318,21 @@ public final class ParquetDataColumnReaderFactory {
    * and returned as per the type defined in HMS.
    */
   public static class TypesFromDecimalPageReader extends DefaultParquetDataColumnReader {
-    private short scale;
+    // Parquet file decimal precision and scale.
+    private final int precision;
+    private final short scale;
 
-    public TypesFromDecimalPageReader(ValuesReader realReader, int length, short scale,
+    public TypesFromDecimalPageReader(ValuesReader realReader, int length, int precision, short scale,
         int hivePrecision, int hiveScale) {
       super(realReader, length, hivePrecision, hiveScale);
+      this.precision = precision;
       this.scale = scale;
     }
 
-    public TypesFromDecimalPageReader(Dictionary dict, int length, short scale, int hivePrecision,
-        int hiveScale) {
+    public TypesFromDecimalPageReader(Dictionary dict, int length, int precision, short scale,
+        int hivePrecision, int hiveScale) {
       super(dict, length, hivePrecision, hiveScale);
+      this.precision = precision;
       this.scale = scale;
     }
 
@@ -1418,6 +1478,405 @@ public final class ParquetDataColumnReaderFactory {
       hiveDecimalWritable.set(dict.decodeToBinary(id).getBytesUnsafe(), scale);
       return super.validatedScaledDecimal(scale);
     }
+
+    /**
+     * Decimal64 identity fast path for FIXED_LEN_BYTE_ARRAY/BINARY decimals: the stored big-endian
+     * two's-complement unscaled value is read straight into a long with only a bounds check, instead
+     * of the per-row HiveDecimal materialization {@link #readDecimal()} performs via
+     * {@code fastSetFromBigIntegerBytesAndScale}. Rescaled or wider decimals fall back to
+     * {@link #readDecimal()}.
+     */
+    @Override
+    public boolean isFastDecimal64() {
+      // Valid only with no rescale (file scale == Hive scale) and precision <= 18, so the unscaled
+      // value fits a long.
+      return scale == hiveScale && HiveDecimalWritable.isPrecisionDecimal64(precision);
+    }
+
+    @Override
+    public long readDecimal64() {
+      return validatedDecimal64(binaryToUnscaledLong(valuesReader.readBytes()));
+    }
+
+    @Override
+    public long readDecimal64(int id) {
+      return validatedDecimal64(binaryToUnscaledLong(dict.decodeToBinary(id)));
+    }
+
+    /**
+     * Big-endian two's-complement bytes -> unscaled long (the low 64 bits). The fast path runs only
+     * for file precision <= 18 (see isFastDecimal64), so a value conforming to that precision fits a
+     * long; the leading bytes of a wider-than-8-byte array are sign extension and shift out losslessly.
+     */
+    private static long binaryToUnscaledLong(Binary value) {
+      ByteBuffer buf = value.toByteBuffer();
+      int pos = buf.position();
+      int len = buf.remaining();
+      // Sign-extend from the most significant byte so negative values are reconstructed correctly.
+      long v = (len > 0 && buf.get(pos) < 0) ? -1L : 0L;
+      for (int i = 0; i < len; i++) {
+        v = (v << 8) | (buf.get(pos + i) & 0xFF);
+      }
+      return v;
+    }
+  }
+
+  /**
+   * The reader who reads from the underlying decimal value which is stored in an INT32 physical type.
+   *
+   * The data is read as INT32 from the reader treated as a decimal, then validated, converted
+   * and returned as per the type defined in HMS.
+   */
+  public static class TypesFromInt32DecimalPageReader extends DefaultParquetDataColumnReader {
+    private final short scale;
+
+    public TypesFromInt32DecimalPageReader(ValuesReader realReader, int length, short scale, int hivePrecision,
+        int hiveScale) {
+      super(realReader, length, hivePrecision, hiveScale);
+      this.scale = scale;
+    }
+
+    public TypesFromInt32DecimalPageReader(Dictionary dict, int length, short scale, int hivePrecision, int hiveScale) {
+      super(dict, length, hivePrecision, hiveScale);
+      this.scale = scale;
+    }
+
+    @Override
+    public byte[] readString() {
+      return convertToBytes(valuesReader.readInteger());
+    }
+
+    @Override
+    public byte[] readString(int id) {
+      return convertToBytes(dict.decodeToInt(id));
+    }
+
+    @Override
+    public byte[] readVarchar() {
+      String value = enforceMaxLength(convertToString(valuesReader.readInteger()));
+      return convertToBytes(value);
+    }
+
+    @Override
+    public byte[] readVarchar(int id) {
+      String value = enforceMaxLength(convertToString(dict.decodeToInt(id)));
+      return convertToBytes(value);
+    }
+
+    @Override
+    public byte[] readChar() {
+      String value = enforceMaxLength(convertToString(valuesReader.readInteger()));
+      return convertToBytes(value);
+    }
+
+    @Override
+    public byte[] readChar(int id) {
+      String value = enforceMaxLength(convertToString(dict.decodeToInt(id)));
+      return convertToBytes(value);
+    }
+
+    @Override
+    public float readFloat() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readInteger(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (float) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.FLOAT_TYPE_NAME));
+    }
+
+    @Override
+    public float readFloat(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToInt(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (float) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.FLOAT_TYPE_NAME));
+    }
+
+    @Override
+    public double readDouble() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readInteger(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.DOUBLE_TYPE_NAME));
+    }
+
+    @Override
+    public double readDouble(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToInt(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.DOUBLE_TYPE_NAME));
+    }
+
+    @Override
+    public long readLong() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readInteger(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.BIGINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readLong(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToInt(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.BIGINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readInteger() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readInteger(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.INT_TYPE_NAME));
+    }
+
+    @Override
+    public long readInteger(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToInt(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.INT_TYPE_NAME));
+    }
+
+    @Override
+    public long readSmallInt() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readInteger(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.SMALLINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readSmallInt(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToInt(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.SMALLINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readTinyInt() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readInteger(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.TINYINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readTinyInt(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToInt(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.TINYINT_TYPE_NAME));
+    }
+
+    private String convertToString(int value) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(value, scale);
+      return hiveDecimal.toString();
+    }
+
+    private byte[] convertToBytes(int value) {
+      return convertToBytes(convertToString(value));
+    }
+
+    @Override
+    public byte[] readDecimal() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readInteger(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return super.validatedScaledDecimal(scale);
+    }
+
+    @Override
+    public byte[] readDecimal(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToInt(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return super.validatedScaledDecimal(scale);
+    }
+
+    @Override
+    public boolean isFastDecimal64() {
+      // Identity fast path: the file scale equals the Hive scale, so the stored unscaled value IS the
+      // Decimal64 value -- no rescale/rounding, only a precision bounds check.
+      return scale == hiveScale;
+    }
+
+    @Override
+    public long readDecimal64() {
+      return validatedDecimal64(valuesReader.readInteger());
+    }
+
+    @Override
+    public long readDecimal64(int id) {
+      return validatedDecimal64(dict.decodeToInt(id));
+    }
+  }
+
+  /**
+   * The reader who reads from the underlying decimal value which is stored in an INT64 physical type.
+   *
+   * The data is read as INT64 from the reader treated as a decimal, then validated, converted
+   * and returned as per the type defined in HMS.
+   */
+  public static class TypesFromInt64DecimalPageReader extends DefaultParquetDataColumnReader {
+    private final short scale;
+
+    public TypesFromInt64DecimalPageReader(ValuesReader realReader, int length, short scale, int hivePrecision,
+        int hiveScale) {
+      super(realReader, length, hivePrecision, hiveScale);
+      this.scale = scale;
+    }
+
+    public TypesFromInt64DecimalPageReader(Dictionary dict, int length, short scale, int hivePrecision, int hiveScale) {
+      super(dict, length, hivePrecision, hiveScale);
+      this.scale = scale;
+    }
+
+    @Override
+    public byte[] readString() {
+      return convertToBytes(valuesReader.readLong());
+    }
+
+    @Override
+    public byte[] readString(int id) {
+      return convertToBytes(dict.decodeToLong(id));
+    }
+
+    @Override
+    public byte[] readVarchar() {
+      String value = enforceMaxLength(convertToString(valuesReader.readLong()));
+      return convertToBytes(value);
+    }
+
+    @Override
+    public byte[] readVarchar(int id) {
+      String value = enforceMaxLength(convertToString(dict.decodeToLong(id)));
+      return convertToBytes(value);
+    }
+
+    @Override
+    public byte[] readChar() {
+      String value = enforceMaxLength(convertToString(valuesReader.readLong()));
+      return convertToBytes(value);
+    }
+
+    @Override
+    public byte[] readChar(int id) {
+      String value = enforceMaxLength(convertToString(dict.decodeToLong(id)));
+      return convertToBytes(value);
+    }
+
+    @Override
+    public float readFloat() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readLong(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (float) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.FLOAT_TYPE_NAME));
+    }
+
+    @Override
+    public float readFloat(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToLong(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (float) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.FLOAT_TYPE_NAME));
+    }
+
+    @Override
+    public double readDouble() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readLong(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.DOUBLE_TYPE_NAME));
+    }
+
+    @Override
+    public double readDouble(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToLong(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.DOUBLE_TYPE_NAME));
+    }
+
+    @Override
+    public long readLong() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readLong(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.BIGINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readLong(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToLong(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.BIGINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readInteger() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readLong(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.INT_TYPE_NAME));
+    }
+
+    @Override
+    public long readInteger(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToLong(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.INT_TYPE_NAME));
+    }
+
+    @Override
+    public long readSmallInt() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readLong(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.SMALLINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readSmallInt(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToLong(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.SMALLINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readTinyInt() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readLong(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.TINYINT_TYPE_NAME));
+    }
+
+    @Override
+    public long readTinyInt(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToLong(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return (long) (super.validatedDouble(hiveDecimalWritable.doubleValue(), serdeConstants.TINYINT_TYPE_NAME));
+    }
+
+    private String convertToString(long value) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(value, scale);
+      return hiveDecimal.toString();
+    }
+
+    private byte[] convertToBytes(long value) {
+      return convertToBytes(convertToString(value));
+    }
+
+    @Override
+    public byte[] readDecimal() {
+      HiveDecimal hiveDecimal = HiveDecimal.create(valuesReader.readLong(), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return super.validatedScaledDecimal(scale);
+    }
+
+    @Override
+    public byte[] readDecimal(int id) {
+      HiveDecimal hiveDecimal = HiveDecimal.create(dict.decodeToLong(id), scale);
+      hiveDecimalWritable.set(hiveDecimal);
+      return super.validatedScaledDecimal(scale);
+    }
+
+    @Override
+    public boolean isFastDecimal64() {
+      // Identity fast path: the file scale equals the Hive scale, so the stored unscaled long IS the
+      // Decimal64 value -- no rescale/rounding, only a precision bounds check.
+      return scale == hiveScale;
+    }
+
+    @Override
+    public long readDecimal64() {
+      return validatedDecimal64(valuesReader.readLong());
+    }
+
+    @Override
+    public long readDecimal64(int id) {
+      return validatedDecimal64(dict.decodeToLong(id));
+    }
   }
 
   /**
@@ -1481,9 +1940,9 @@ public final class ParquetDataColumnReaderFactory {
                                                                          TypeInfo hiveType,
                                                                          Dictionary dictionary,
                                                                          ValuesReader valuesReader,
-                                                                         boolean
-                                                                             skipTimestampConversion,
-                                                                         ZoneId writerTimezone)
+                                                                         boolean skipTimestampConversion,
+                                                                         ZoneId writerTimezone,
+                                                                         boolean legacyConversionEnabled)
       throws IOException {
     // max length for varchar and char cases
     int length = getVarcharLength(hiveType);
@@ -1499,38 +1958,53 @@ public final class ParquetDataColumnReaderFactory {
 
     switch (parquetType.getPrimitiveTypeName()) {
     case INT32:
-      if (OriginalType.UINT_8 == parquetType.getOriginalType() ||
-          OriginalType.UINT_16 == parquetType.getOriginalType() ||
-          OriginalType.UINT_32 == parquetType.getOriginalType() ||
-          OriginalType.UINT_64 == parquetType.getOriginalType()) {
+      if (ETypeConverter.isUnsignedInteger(parquetType)) {
         return isDictionary ? new TypesFromUInt32PageReader(dictionary, length, hivePrecision,
             hiveScale) : new TypesFromUInt32PageReader(valuesReader, length, hivePrecision,
             hiveScale);
+      } else if (parquetType.getLogicalTypeAnnotation() instanceof DecimalLogicalTypeAnnotation) {
+        DecimalLogicalTypeAnnotation logicalType = (DecimalLogicalTypeAnnotation) parquetType.getLogicalTypeAnnotation();
+        final short scale = (short) logicalType.getScale();
+        return isDictionary ? new TypesFromInt32DecimalPageReader(dictionary, length, scale, hivePrecision, hiveScale)
+          : new TypesFromInt32DecimalPageReader(valuesReader, length, scale, hivePrecision, hiveScale);
       } else {
         return isDictionary ? new TypesFromInt32PageReader(dictionary, length, hivePrecision,
             hiveScale) : new TypesFromInt32PageReader(valuesReader, length, hivePrecision,
             hiveScale);
       }
     case INT64:
-      if (OriginalType.UINT_8 == parquetType.getOriginalType() ||
-          OriginalType.UINT_16 == parquetType.getOriginalType() ||
-          OriginalType.UINT_32 == parquetType.getOriginalType() ||
-          OriginalType.UINT_64 == parquetType.getOriginalType()) {
-        return isDictionary ? new TypesFromUInt64PageReader(dictionary, length, hivePrecision,
-            hiveScale) : new TypesFromUInt64PageReader(valuesReader, length, hivePrecision,
-            hiveScale);
-      } else {
-        return isDictionary ? new TypesFromInt64PageReader(dictionary, length, hivePrecision,
-            hiveScale) : new TypesFromInt64PageReader(valuesReader, length, hivePrecision,
-            hiveScale);
+      LogicalTypeAnnotation logicalType = parquetType.getLogicalTypeAnnotation();
+      if (logicalType instanceof TimestampLogicalTypeAnnotation) {
+        TimestampLogicalTypeAnnotation timestampLogicalType = (TimestampLogicalTypeAnnotation) logicalType;
+        boolean isAdjustedToUTC = timestampLogicalType.isAdjustedToUTC();
+        TimeUnit timeUnit = timestampLogicalType.getUnit();
+        return isDictionary ? new TypesFromInt64PageReader(dictionary, length, isAdjustedToUTC, timeUnit)
+          : new TypesFromInt64PageReader(valuesReader, length, isAdjustedToUTC, timeUnit);
       }
+
+      if (ETypeConverter.isUnsignedInteger(parquetType)) {
+        return isDictionary ? new TypesFromUInt64PageReader(dictionary, length, hivePrecision, hiveScale)
+          : new TypesFromUInt64PageReader(valuesReader, length, hivePrecision, hiveScale);
+      }
+
+      if (logicalType instanceof DecimalLogicalTypeAnnotation) {
+        DecimalLogicalTypeAnnotation decimalLogicalType = (DecimalLogicalTypeAnnotation) logicalType;
+        final short scale = (short) decimalLogicalType.getScale();
+        return isDictionary ? new TypesFromInt64DecimalPageReader(dictionary, length, scale, hivePrecision, hiveScale)
+          : new TypesFromInt64DecimalPageReader(valuesReader, length, scale, hivePrecision, hiveScale);
+      }
+
+      return isDictionary ? new TypesFromInt64PageReader(dictionary, length, hivePrecision, hiveScale)
+        : new TypesFromInt64PageReader(valuesReader, length, hivePrecision, hiveScale);
     case FLOAT:
       return isDictionary ? new TypesFromFloatPageReader(dictionary, length, hivePrecision,
           hiveScale) : new TypesFromFloatPageReader(valuesReader, length, hivePrecision, hiveScale);
     case INT96:
-      return isDictionary ? new TypesFromInt96PageReader(dictionary, length,
-          skipTimestampConversion, writerTimezone) : new
-          TypesFromInt96PageReader(valuesReader, length, skipTimestampConversion, writerTimezone);
+      ZoneId targetZone =
+          skipTimestampConversion ? ZoneOffset.UTC : firstNonNull(writerTimezone, TimeZone.getDefault().toZoneId());
+      return isDictionary ?
+          new TypesFromInt96PageReader(dictionary, length, targetZone, legacyConversionEnabled) :
+          new TypesFromInt96PageReader(valuesReader, length, targetZone, legacyConversionEnabled);
     case BOOLEAN:
       return isDictionary ? new TypesFromBooleanPageReader(dictionary, length) : new
           TypesFromBooleanPageReader(valuesReader, length);
@@ -1553,7 +2027,7 @@ public final class ParquetDataColumnReaderFactory {
                                                                 TypeInfo hiveType,
                                                                 ValuesReader valuesReader,
                                                                 Dictionary dictionary) {
-    OriginalType originalType = parquetType.getOriginalType();
+    LogicalTypeAnnotation logicalType = parquetType.getLogicalTypeAnnotation();
 
     // max length for varchar and char cases
     int length = getVarcharLength(hiveType);
@@ -1569,22 +2043,38 @@ public final class ParquetDataColumnReaderFactory {
     int hiveScale = (typeName.equalsIgnoreCase(serdeConstants.DECIMAL_TYPE_NAME)) ?
         ((DecimalTypeInfo) realHiveType).getScale() : 0;
 
-    if (originalType == null) {
+    if (logicalType == null) {
       return isDict ? new DefaultParquetDataColumnReader(dictionary, length) : new
           DefaultParquetDataColumnReader(valuesReader, length);
     }
-    switch (originalType) {
-    case DECIMAL:
-      final short scale = (short) parquetType.asPrimitiveType().getDecimalMetadata().getScale();
-      return isDict ? new TypesFromDecimalPageReader(dictionary, length, scale, hivePrecision, hiveScale) : new
-          TypesFromDecimalPageReader(valuesReader, length, scale, hivePrecision, hiveScale);
-    case UTF8:
-      return isDict ? new TypesFromStringPageReader(dictionary, length) : new
-          TypesFromStringPageReader(valuesReader, length);
-    default:
-      return isDict ? new DefaultParquetDataColumnReader(dictionary, length) : new
-          DefaultParquetDataColumnReader(valuesReader, length);
+
+    Optional<ParquetDataColumnReader> reader = parquetType.getLogicalTypeAnnotation()
+        .accept(new LogicalTypeAnnotationVisitor<>() {
+          @Override public Optional<ParquetDataColumnReader> visit(
+              DecimalLogicalTypeAnnotation logicalTypeAnnotation) {
+            final int precision = logicalTypeAnnotation.getPrecision();
+            final short scale = (short) logicalTypeAnnotation.getScale();
+            return isDict ? Optional
+                .of(new TypesFromDecimalPageReader(dictionary, length, precision, scale,
+                    hivePrecision, hiveScale)) : Optional
+                .of(new TypesFromDecimalPageReader(valuesReader, length, precision, scale,
+                    hivePrecision, hiveScale));
+          }
+
+          @Override public Optional<ParquetDataColumnReader> visit(
+              StringLogicalTypeAnnotation logicalTypeAnnotation) {
+            return isDict ? Optional
+                .of(new TypesFromStringPageReader(dictionary, length)) : Optional
+                .of(new TypesFromStringPageReader(valuesReader, length));
+          }
+        });
+
+    if (reader.isPresent()) {
+      return reader.get();
     }
+
+    return isDict ? new DefaultParquetDataColumnReader(dictionary, length) : new
+      DefaultParquetDataColumnReader(valuesReader, length);
   }
 
   public static ParquetDataColumnReader getDataColumnReaderByTypeOnDictionary(
@@ -1592,18 +2082,19 @@ public final class ParquetDataColumnReaderFactory {
       TypeInfo hiveType,
       Dictionary realReader,
       boolean skipTimestampConversion,
-      ZoneId writerTimezone)
+      ZoneId writerTimezone,
+      boolean legacyConversionEnabled)
       throws IOException {
     return getDataColumnReaderByTypeHelper(true, parquetType, hiveType, realReader, null,
-        skipTimestampConversion, writerTimezone);
+        skipTimestampConversion, writerTimezone, legacyConversionEnabled);
   }
 
   public static ParquetDataColumnReader getDataColumnReaderByType(PrimitiveType parquetType,
       TypeInfo hiveType, ValuesReader realReader, boolean skipTimestampConversion,
-      ZoneId writerTimezone)
+      ZoneId writerTimezone, boolean legacyConversionEnabled)
       throws IOException {
     return getDataColumnReaderByTypeHelper(false, parquetType, hiveType, null, realReader,
-        skipTimestampConversion, writerTimezone);
+        skipTimestampConversion, writerTimezone, legacyConversionEnabled);
   }
 
 

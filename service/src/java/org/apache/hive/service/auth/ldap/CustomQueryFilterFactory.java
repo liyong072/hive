@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.service.auth.ldap;
 
@@ -30,7 +31,7 @@ import org.slf4j.LoggerFactory;
  * <br>
  * The produced filter object filters out all users that are not found in the search result
  * of the query provided in Hive configuration.
- * @see HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_CUSTOMLDAPQUERY
+ * @see org.apache.hadoop.hive.conf.HiveConf.ConfVars#HIVE_SERVER2_PLAIN_LDAP_CUSTOMLDAPQUERY
  */
 public class CustomQueryFilterFactory implements FilterFactory {
 
@@ -59,7 +60,7 @@ public class CustomQueryFilterFactory implements FilterFactory {
     }
 
     @Override
-    public void apply(DirSearch client, String user) throws AuthenticationException {
+    public void apply(DirSearch client, final String user) throws AuthenticationException {
       List<String> resultList;
       try {
         resultList = client.executeCustomQuery(query);
@@ -72,6 +73,21 @@ public class CustomQueryFilterFactory implements FilterFactory {
           LOG.info("<queried user=" + shortUserName + ",user=" + user + ">");
           if (shortUserName.equalsIgnoreCase(user) || matchedDn.equalsIgnoreCase(user)) {
             LOG.info("Authentication succeeded based on result set from LDAP query");
+            return;
+          }
+        }
+
+        // try a generic user search
+        if (query.contains("%s")) {
+          String userSearchQuery = query.replace("%s", user);
+          LOG.info("Trying with generic user search in ldap:" + userSearchQuery);
+          try {
+            resultList = client.executeCustomQuery(userSearchQuery);
+          } catch (NamingException e) {
+            throw new AuthenticationException("LDAP Authentication failed for user", e);
+          }
+          if (resultList != null && resultList.size() == 1) {
+            LOG.info("Authentication succeeded based on result from custom user search query");
             return;
           }
         }

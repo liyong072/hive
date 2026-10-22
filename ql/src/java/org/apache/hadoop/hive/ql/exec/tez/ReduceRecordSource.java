@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.tez;
 
@@ -34,13 +35,10 @@ import org.apache.hadoop.hive.ql.exec.vector.VectorDeserializeRow;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedBatchUtil;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatchCtx;
-import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorExpressionWriter;
-import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorExpressionWriterFactory;
 import org.apache.hadoop.hive.ql.log.PerfLogger;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.session.SessionState;
-import org.apache.hadoop.hive.serde2.Deserializer;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeUtils;
@@ -77,11 +75,11 @@ public class ReduceRecordSource implements RecordSource {
 
   private boolean abort = false;
 
-  private Deserializer inputKeyDeserializer;
+  private AbstractSerDe inputKeySerDe;
 
   // Input value serde needs to be an array to support different SerDe
   // for different tags
-  private AbstractSerDe inputValueDeserializer;
+  private AbstractSerDe inputValueSerDe;
 
   private TableDesc keyTableDesc;
   private TableDesc valueTableDesc;
@@ -98,6 +96,7 @@ public class ReduceRecordSource implements RecordSource {
 
   private VectorDeserializeRow<LazyBinaryDeserializeRead> valueLazyBinaryDeserializeToRow;
 
+  private VectorizedRowBatchCtx batchContext;
   private VectorizedRowBatch batch;
 
   // number of columns pertaining to keys in a vectorized row batch
@@ -154,10 +153,10 @@ public class ReduceRecordSource implements RecordSource {
     this.tag = tag;
 
     try {
-      inputKeyDeserializer = ReflectionUtils.newInstance(keyTableDesc
-          .getDeserializerClass(), null);
-      SerDeUtils.initializeSerDe(inputKeyDeserializer, null, keyTableDesc.getProperties(), null);
-      keyObjectInspector = inputKeyDeserializer.getObjectInspector();
+      inputKeySerDe = ReflectionUtils.newInstance(keyTableDesc.getSerDeClass(), null);
+      inputKeySerDe.initialize(null, keyTableDesc.getProperties(), null);
+
+      keyObjectInspector = inputKeySerDe.getObjectInspector();
 
       if(vectorized) {
         keyStructInspector = (StructObjectInspector) keyObjectInspector;
@@ -166,11 +165,9 @@ public class ReduceRecordSource implements RecordSource {
 
       // We should initialize the SerDe with the TypeInfo when available.
       this.valueTableDesc = valueTableDesc;
-      inputValueDeserializer = (AbstractSerDe) ReflectionUtils.newInstance(
-          valueTableDesc.getDeserializerClass(), null);
-      SerDeUtils.initializeSerDe(inputValueDeserializer, null,
-          valueTableDesc.getProperties(), null);
-      valueObjectInspector = inputValueDeserializer.getObjectInspector();
+      inputValueSerDe = (AbstractSerDe) ReflectionUtils.newInstance(valueTableDesc.getSerDeClass(), null);
+      inputValueSerDe.initialize(null, valueTableDesc.getProperties(), null);
+      valueObjectInspector = inputValueSerDe.getObjectInspector();
 
       ArrayList<ObjectInspector> ois = new ArrayList<ObjectInspector>();
 
@@ -183,30 +180,39 @@ public class ReduceRecordSource implements RecordSource {
 
         rowObjectInspector = Utilities.constructVectorizedReduceRowOI(keyStructInspector,
             valueStructInspectors);
+        this.batchContext = batchContext;
         batch = batchContext.createVectorizedRowBatch();
 
         // Setup vectorized deserialization for the key and value.
-        BinarySortableSerDe binarySortableSerDe = (BinarySortableSerDe) inputKeyDeserializer;
+        BinarySortableSerDe binarySortableSerDe = (BinarySortableSerDe) inputKeySerDe;
 
         keyBinarySortableDeserializeToRow =
-                  new VectorDeserializeRow<BinarySortableDeserializeRead>(
-                        new BinarySortableDeserializeRead(
-                                  VectorizedBatchUtil.typeInfosFromStructObjectInspector(
-                                      keyStructInspector),
-                                  /* useExternalBuffer */ true,
-                                  binarySortableSerDe.getSortOrders(),
-                                  binarySortableSerDe.getNullMarkers(),
-                                  binarySortableSerDe.getNotNullMarkers()));
+            new VectorDeserializeRow<BinarySortableDeserializeRead>(
+                new BinarySortableDeserializeRead(
+                    VectorizedBatchUtil.typeInfosFromStructObjectInspector(
+                        keyStructInspector),
+                    (batchContext.getRowdataTypePhysicalVariations().length > firstValueColumnOffset)
+                        ? Arrays.copyOfRange(batchContext.getRowdataTypePhysicalVariations(), 0,
+                            firstValueColumnOffset)
+                        : batchContext.getRowdataTypePhysicalVariations(),
+                    /* useExternalBuffer */ true,
+                    binarySortableSerDe.getSortOrders(),
+                    binarySortableSerDe.getNullMarkers(),
+                    binarySortableSerDe.getNotNullMarkers()));
         keyBinarySortableDeserializeToRow.init(0);
 
         final int valuesSize = valueStructInspectors.getAllStructFieldRefs().size();
         if (valuesSize > 0) {
           valueLazyBinaryDeserializeToRow =
-                  new VectorDeserializeRow<LazyBinaryDeserializeRead>(
-                        new LazyBinaryDeserializeRead(
-                            VectorizedBatchUtil.typeInfosFromStructObjectInspector(
-                                       valueStructInspectors),
-                            /* useExternalBuffer */ true));
+              new VectorDeserializeRow<LazyBinaryDeserializeRead>(
+                  new LazyBinaryDeserializeRead(
+                      VectorizedBatchUtil.typeInfosFromStructObjectInspector(
+                          valueStructInspectors),
+                      (batchContext.getRowdataTypePhysicalVariations().length >= totalColumns)
+                          ? Arrays.copyOfRange(batchContext.getRowdataTypePhysicalVariations(),
+                              firstValueColumnOffset, totalColumns)
+                          : null,
+                      /* useExternalBuffer */ true));
           valueLazyBinaryDeserializeToRow.init(firstValueColumnOffset);
 
           // Create data buffers for value bytes column vectors.
@@ -234,7 +240,11 @@ public class ReduceRecordSource implements RecordSource {
         throw new RuntimeException("Reduce operator initialization failed", e);
       }
     }
-    perfLogger.PerfLogEnd(CLASS_NAME, PerfLogger.TEZ_INIT_OPERATORS);
+    perfLogger.perfLogEnd(CLASS_NAME, PerfLogger.TEZ_INIT_OPERATORS);
+  }
+
+  public TableDesc getKeyTableDesc() {
+    return keyTableDesc;
   }
 
   @Override
@@ -268,7 +278,7 @@ public class ReduceRecordSource implements RecordSource {
 
       //Set the key, check if this is a new group or same group
       try {
-        keyObject = inputKeyDeserializer.deserialize(keyWritable);
+        keyObject = inputKeySerDe.deserialize(keyWritable);
       } catch (Exception e) {
         throw new HiveException("Hive Runtime Error: Unable to deserialize reduce input key from "
             + Utilities.formatBinaryString(keyWritable.getBytes(), 0, keyWritable.getLength())
@@ -310,7 +320,7 @@ public class ReduceRecordSource implements RecordSource {
       throws HiveException {
 
     try {
-      return inputValueDeserializer.deserialize(valueWritable);
+      return inputValueSerDe.deserialize(valueWritable);
     } catch (SerDeException e) {
       throw new HiveException(
           "Hive Runtime Error: Unable to deserialize reduce input value (tag="
@@ -414,6 +424,9 @@ public class ReduceRecordSource implements RecordSource {
   private void processVectorGroup(BytesWritable keyWritable,
           Iterable<Object> values, byte tag) throws HiveException, IOException {
 
+    if (reducer.batchNeedsClone()) {
+      batch = batchContext.createVectorizedRowBatch();
+    }
     Preconditions.checkState(batch.size == 0);
 
     // Deserialize key into vector row columns.
@@ -489,7 +502,10 @@ public class ReduceRecordSource implements RecordSource {
         }
         reducer.process(batch, tag);
       }
-      batch.reset();
+      // reset only when we reuse the batch
+      if (!reducer.batchNeedsClone()) {
+        batch.reset();
+      }
     } catch (Exception e) {
       String rowString = null;
       try {
@@ -505,6 +521,14 @@ public class ReduceRecordSource implements RecordSource {
     }
   }
 
+
+  /**
+   * Closes resources and returns whether the records were successfully processed.
+   * @return boolean indicating the success status:
+   * - true: All data has been processed successfully without exceptions.
+   * - false: Exceptions were encountered during data processing.
+   * @throws Exception unexpected errors occur during closing.
+   */
   boolean close() throws Exception {
     try {
       if (handleGroupKey && groupKey != null) {
@@ -518,13 +542,14 @@ public class ReduceRecordSource implements RecordSource {
             + e.getMessage(), e);
       }
     }
-    return abort;
+    return !abort;
   }
 
   public ObjectInspector getObjectInspector() {
     return rowObjectInspector;
   }
 
+  @Override
   public void setFlushLastRecord(boolean flushLastRecord) {
     this.flushLastRecord = flushLastRecord;
   }

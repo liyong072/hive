@@ -6,14 +6,15 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.metrics;
 
@@ -29,7 +30,9 @@ import com.codahale.metrics.ConsoleReporter;
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.JmxReporter;
+import com.codahale.metrics.Metric;
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.MetricSet;
 import com.codahale.metrics.Reporter;
 import com.codahale.metrics.ScheduledReporter;
 import com.codahale.metrics.Slf4jReporter;
@@ -42,6 +45,7 @@ import com.codahale.metrics.jvm.MemoryUsageGaugeSet;
 import com.codahale.metrics.jvm.ThreadStatesGaugeSet;
 import com.github.joshelser.dropwizard.metrics.hadoop.HadoopMetrics2Reporter;
 import com.google.common.annotations.VisibleForTesting;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
@@ -53,15 +57,19 @@ public class Metrics {
 
   private static Metrics self;
   private static final AtomicInteger singletonAtomicInteger = new AtomicInteger();
+  private static final Counter dummyCounter = new Counter();
+  private static final MapMetrics dummyMapMetrics = new MapMetrics();
 
   private final MetricRegistry registry;
   private List<Reporter> reporters;
   private List<ScheduledReporter> scheduledReporters;
   private Map<String, AtomicInteger> gaugeAtomics;
+  private Map<String, Pair<AtomicInteger, AtomicInteger>> gaugeRatio;
   private boolean hadoopMetricsStarted;
 
   public static synchronized Metrics initialize(Configuration conf) {
-    if (self == null) {
+    if (self == null && MetastoreConf.getBoolVar(conf,
+        MetastoreConf.ConfVars.METRICS_ENABLED)) {
       self = new Metrics(conf);
     }
     return self;
@@ -72,7 +80,7 @@ public class Metrics {
     return self.registry;
   }
 
-  public static void shutdown() {
+  public static synchronized void shutdown() {
     if (self != null) {
       for (ScheduledReporter reporter : self.scheduledReporters) {
         reporter.stop();
@@ -91,7 +99,7 @@ public class Metrics {
    * metrics have not been initialized.
    */
   public static Counter getOrCreateCounter(String name) {
-    if (self == null) return null;
+    if (self == null) return dummyCounter;
     Map<String, Counter> counters = self.registry.getCounters();
     Counter counter = counters.get(name);
     if (counter != null) return counter;
@@ -153,6 +161,58 @@ public class Metrics {
     }
   }
 
+  /**
+   * Get a Map that represents a multi-field metric,
+   * or create a new one if it does not already exist.
+   * @param name Name of map metric.  This should come from MetricConstants
+   * @return MapMetric .
+   */
+  public static MapMetrics getOrCreateMapMetrics(String name) {
+    if (self == null) {
+      return dummyMapMetrics;
+    }
+
+    Map<String, Metric> metrics = self.registry.getMetrics();
+    Metric map = metrics.get(name);
+    if (map instanceof MapMetrics) {
+      return (MapMetrics) map;
+    }
+
+    // Looks like it doesn't exist.  Lock so that two threads don't create it at once.
+    synchronized (Metrics.class) {
+      // Recheck to make sure someone didn't create it while we waited.
+      map = self.registry
+          .getMetrics()
+          .get(name);
+      if (map instanceof MapMetrics) {
+        return (MapMetrics) map;
+      }
+
+      try {
+        self.registry.register(name, new MapMetrics());
+      } catch (IllegalArgumentException e) {
+        // HIVE-25959: The registry's register function will call the MetricRegistry#onMetricAdded
+        //   which forward the call to the MetricRegistry#notifyListenerOfAddedMetric method.
+        // This method will throw an IllegalArgumentException because our custom MapMetrics type not supported
+        //   to avoid this we handle this.
+        if (!e.getMessage().contains("Unknown metric type")) {
+          throw new IllegalArgumentException("Failed to register metric", e);
+        }
+      }
+      map = self.registry
+          .getMetrics()
+          .get(name);
+      if (map instanceof MapMetrics) {
+        return (MapMetrics) map;
+      }
+      return dummyMapMetrics;
+    }
+  }
+
+  public static Counter getOpenConnectionsCounter() {
+    return getOrCreateCounter(MetricsConstants.OPEN_CONNECTIONS);
+  }
+
   @VisibleForTesting
   static List<Reporter> getReporters() {
     return self.reporters;
@@ -161,11 +221,13 @@ public class Metrics {
   private Metrics(Configuration conf) {
     registry = new MetricRegistry();
 
-    registry.registerAll(new GarbageCollectorMetricSet());
-    registry.registerAll(new BufferPoolMetricSet(ManagementFactory.getPlatformMBeanServer()));
-    registry.registerAll(new MemoryUsageGaugeSet());
-    registry.registerAll(new ThreadStatesGaugeSet());
-    registry.registerAll(new ClassLoadingGaugeSet());
+    // this is the same logic as implemented in CodahaleMetrics in hive-common package,
+    // but standalone-metastore project doesn't depend on that
+    registerAll("gc", new GarbageCollectorMetricSet());
+    registerAll("buffers", new BufferPoolMetricSet(ManagementFactory.getPlatformMBeanServer()));
+    registerAll("memory", new MemoryUsageGaugeSet());
+    registerAll("threads", new ThreadStatesGaugeSet());
+    registerAll("classLoading", new ClassLoadingGaugeSet());
 
     /*
      * This is little complicated.  First we look for our own config values on this.  If those
@@ -254,5 +316,16 @@ public class Metrics {
 
     // Create map for tracking gauges
     gaugeAtomics = new HashMap<>();
+    gaugeRatio = new HashMap<>();
+  }
+
+  private void registerAll(String prefix, MetricSet metricSet) {
+    for (Map.Entry<String, Metric> entry : metricSet.getMetrics().entrySet()) {
+      if (entry.getValue() instanceof MetricSet) {
+        registerAll(prefix + "." + entry.getKey(), (MetricSet) entry.getValue());
+      } else {
+        registry.register(prefix + "." + entry.getKey(), entry.getValue());
+      }
+    }
   }
 }

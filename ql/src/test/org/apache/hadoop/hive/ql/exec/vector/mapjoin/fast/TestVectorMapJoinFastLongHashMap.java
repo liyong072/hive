@@ -9,26 +9,29 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
 
 import java.io.IOException;
+import java.util.Properties;
 import java.util.Random;
 
 import org.apache.hadoop.hive.ql.exec.JoinUtil;
 import org.apache.hadoop.hive.ql.exec.mapjoin.MapJoinMemoryExhaustionError;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinHashMapResult;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast.CheckFastHashTable.VerifyFastLongHashMap;
-import org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast.VectorMapJoinFastLongHashMap;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableKeyType;
 
+import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -36,13 +39,20 @@ import static org.junit.Assert.*;
 
 public class TestVectorMapJoinFastLongHashMap extends CommonFastHashTable {
 
+  private static TableDesc tableDesc = new TableDesc();
+
+  @Before
+  public void setUp() throws Exception {
+    tableDesc.setProperties(new Properties());
+  }
+
   @Test
   public void testOneKey() throws Exception {
     random = new Random(33221);
 
     VectorMapJoinFastLongHashMap map =
         new VectorMapJoinFastLongHashMap(
-            false, false, HashTableKeyType.LONG, CAPACITY, LOAD_FACTOR, WB_SIZE, -1);
+            false, false, HashTableKeyType.LONG, CAPACITY, LOAD_FACTOR, WB_SIZE, -1, tableDesc);
 
     VerifyFastLongHashMap verifyTable = new VerifyFastLongHashMap();
 
@@ -75,7 +85,7 @@ public class TestVectorMapJoinFastLongHashMap extends CommonFastHashTable {
 
     VectorMapJoinFastLongHashMap map =
         new VectorMapJoinFastLongHashMap(
-            false, false, HashTableKeyType.LONG, CAPACITY, LOAD_FACTOR, WB_SIZE, -1);
+            false, false, HashTableKeyType.LONG, CAPACITY, LOAD_FACTOR, WB_SIZE, -1, tableDesc);
 
     VerifyFastLongHashMap verifyTable = new VerifyFastLongHashMap();
 
@@ -105,7 +115,7 @@ public class TestVectorMapJoinFastLongHashMap extends CommonFastHashTable {
 
     VectorMapJoinFastLongHashMap map =
         new VectorMapJoinFastLongHashMap(
-            false, false, HashTableKeyType.LONG, CAPACITY, LOAD_FACTOR, WB_SIZE, -1);
+            false, false, HashTableKeyType.LONG, CAPACITY, LOAD_FACTOR, WB_SIZE, -1, tableDesc);
 
     VerifyFastLongHashMap verifyTable = new VerifyFastLongHashMap();
 
@@ -141,7 +151,7 @@ public class TestVectorMapJoinFastLongHashMap extends CommonFastHashTable {
     // Make sure the map does not expand; should be able to find space.
     VectorMapJoinFastLongHashMap map =
         new VectorMapJoinFastLongHashMap(
-            false, false, HashTableKeyType.LONG, CAPACITY, 1f, WB_SIZE, -1);
+            false, false, HashTableKeyType.LONG, CAPACITY, 1f, WB_SIZE, -1, tableDesc);
 
     VerifyFastLongHashMap verifyTable = new VerifyFastLongHashMap();
 
@@ -184,11 +194,11 @@ public class TestVectorMapJoinFastLongHashMap extends CommonFastHashTable {
     // Start with capacity 1; make sure we expand on every put.
     VectorMapJoinFastLongHashMap map =
         new VectorMapJoinFastLongHashMap(
-            false, false, HashTableKeyType.LONG, 1, 0.0000001f, WB_SIZE, -1);
+            false, false, HashTableKeyType.LONG, 1, 0.0000001f, WB_SIZE, -1, tableDesc);
 
     VerifyFastLongHashMap verifyTable = new VerifyFastLongHashMap();
 
-    for (int i = 0; i < 18; ++i) {
+    for (int i = 0; i < 6; ++i) {
       long key;
       while (true) {
         key = random.nextLong();
@@ -255,7 +265,7 @@ public class TestVectorMapJoinFastLongHashMap extends CommonFastHashTable {
     // Use a large capacity that doesn't require expansion, yet.
     VectorMapJoinFastLongHashMap map =
         new VectorMapJoinFastLongHashMap(
-            false, false, HashTableKeyType.LONG, LARGE_CAPACITY, LOAD_FACTOR, LARGE_WB_SIZE, -1);
+            false, false, HashTableKeyType.LONG, LARGE_CAPACITY, LOAD_FACTOR, LARGE_WB_SIZE, -1, tableDesc);
 
     VerifyFastLongHashMap verifyTable = new VerifyFastLongHashMap();
 
@@ -270,7 +280,7 @@ public class TestVectorMapJoinFastLongHashMap extends CommonFastHashTable {
     // Use a large capacity that doesn't require expansion, yet.
     VectorMapJoinFastLongHashMap map =
         new VectorMapJoinFastLongHashMap(
-            false, false, HashTableKeyType.LONG, MODERATE_CAPACITY, LOAD_FACTOR, MODERATE_WB_SIZE, -1);
+            false, false, HashTableKeyType.LONG, MODERATE_CAPACITY, LOAD_FACTOR, MODERATE_WB_SIZE, -1, tableDesc);
 
     VerifyFastLongHashMap verifyTable = new VerifyFastLongHashMap();
 

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io;
@@ -73,7 +74,7 @@ public class HiveBinaryOutputFormat<K extends WritableComparable, V extends Writ
           Text tr = (Text) r;
           outStream.write(tr.getBytes(), 0, tr.getLength());
         } else {
-          // DynamicSerDe always writes out BytesWritable
+          // Binary SerDes always write out BytesWritable
           BytesWritable bw = (BytesWritable) r;
           outStream.write(bw.get(), 0, bw.getSize());
         }

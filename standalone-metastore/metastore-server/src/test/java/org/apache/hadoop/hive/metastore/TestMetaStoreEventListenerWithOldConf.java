@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
@@ -85,7 +86,7 @@ public class TestMetaStoreEventListenerWithOldConf {
     assertEquals(event.getOldValue(), metaConfVal);
     assertEquals(event.getNewValue(), "[test pattern modified]");
     // This should also trigger meta listener notification via TServerEventHandler#deleteContext
-    nonClosingClient.getTTransport().close();
+    nonClosingClient.getThriftClient().getTTransport().close();
 
     Thread.sleep(2 * 1000);
 
@@ -114,13 +115,13 @@ public class TestMetaStoreEventListenerWithOldConf {
     closingClient.setMetaConf(metaConfKey, "[test pattern modified]");
     ConfigChangeEvent event = (ConfigChangeEvent) DummyListener.getLastEvent();
     int beforeCloseNotificationEventCounts = DummyListener.notifyList.size();
-    IHMSHandler beforeHandler = event.getHandler();
+    IHMSHandler beforeHandler = event.getIHMSHandler();
     closingClient.close();
 
     Thread.sleep(2 * 1000);
     event = (ConfigChangeEvent) DummyListener.getLastEvent();
     int afterCloseNotificationEventCounts = DummyListener.notifyList.size();
-    IHMSHandler afterHandler = event.getHandler();
+    IHMSHandler afterHandler = event.getIHMSHandler();
     // Meta-conf cleanup should trigger an event to listener
     assertNotSame(beforeCloseNotificationEventCounts, afterCloseNotificationEventCounts);
     // Both the handlers should be same

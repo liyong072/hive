@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.ptf;
@@ -22,6 +23,7 @@ import org.apache.hadoop.hive.ql.exec.vector.ColumnVector.Type;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorExpression;
 import org.apache.hadoop.hive.ql.plan.ptf.WindowFrameDef;
+import org.apache.hadoop.hive.ql.udf.ptf.Range;
 
 /**
  * This class evaluates count(*) for a PTF group.
@@ -41,11 +43,21 @@ public class VectorPTFEvaluatorCountStar extends VectorPTFEvaluatorBase {
   @Override
   public void evaluateGroupBatch(VectorizedRowBatch batch) {
     // No input expression for COUNT(*).
-    // evaluateInputExpr(batch);
 
     // Count all rows.
-
     count += batch.size;
+  }
+
+  @Override
+  public boolean canRunOptimizedCalculation(int rowNum, Range range) {
+    return true;
+  }
+
+  /* This is the vectorized counterpart of HIVE-24710. */
+  @Override
+  public Object runOnRange(int rowNum, Range range, VectorPTFGroupBatches batches) {
+    count = range.getEnd() - range.getStart();
+    return count;
   }
 
   @Override
@@ -65,7 +77,7 @@ public class VectorPTFEvaluatorCountStar extends VectorPTFEvaluatorBase {
   }
 
   @Override
-  public long getLongGroupResult() {
+  public Object getGroupResult() {
     return count;
   }
 

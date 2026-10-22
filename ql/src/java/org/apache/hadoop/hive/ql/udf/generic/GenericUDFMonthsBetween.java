@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
@@ -29,13 +30,13 @@ import static org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveO
 
 import java.math.BigDecimal;
 import java.util.Calendar;
-import java.util.TimeZone;
 
 import org.apache.hadoop.hive.common.type.Date;
 import org.apache.hadoop.hive.common.type.Timestamp;
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.util.DateTimeMath;
 import org.apache.hadoop.hive.serde2.io.DoubleWritable;
 import org.apache.hadoop.hive.serde2.objectinspector.ConstantObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -66,8 +67,8 @@ public class GenericUDFMonthsBetween extends GenericUDF {
   private transient PrimitiveCategory[] tsInputTypes = new PrimitiveCategory[2];
   private transient Converter[] dtConverters = new Converter[2];
   private transient PrimitiveCategory[] dtInputTypes = new PrimitiveCategory[2];
-  private final Calendar cal1 = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-  private final Calendar cal2 = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+  private final Calendar cal1 = DateTimeMath.getProlepticGregorianCalendarUTC();
+  private final Calendar cal2 = DateTimeMath.getProlepticGregorianCalendarUTC();
   private final DoubleWritable output = new DoubleWritable();
   private boolean isRoundOffNeeded = true;
 
@@ -108,7 +109,7 @@ public class GenericUDFMonthsBetween extends GenericUDF {
     // time part of the timestamp should not be skipped
     Timestamp date1 = getTimestampValue(arguments, 0, tsConverters);
     if (date1 == null) {
-      Date date = getDateValue(arguments, 0, dtInputTypes, dtConverters);
+      Date date = getDateValue(arguments, 0, dtConverters);
       if (date == null) {
         return null;
       }
@@ -117,7 +118,7 @@ public class GenericUDFMonthsBetween extends GenericUDF {
 
     Timestamp date2 = getTimestampValue(arguments, 1, tsConverters);
     if (date2 == null) {
-      Date date = getDateValue(arguments, 1, dtInputTypes, dtConverters);
+      Date date = getDateValue(arguments, 1, dtConverters);
       if (date == null) {
         return null;
       }

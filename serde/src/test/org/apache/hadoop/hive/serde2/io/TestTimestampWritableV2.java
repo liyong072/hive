@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.io;
 
@@ -427,7 +428,7 @@ public class TestTimestampWritableV2 {
     assertTrue((((double) MAX_ADDITIONAL_SECONDS_BITS + 1) * (1L << 31)) * 1000 >
       Long.MAX_VALUE);
 
-    // This is how many bytes we need to store those additonal bits as a VInt.
+    // This is how many bytes we need to store those additional bits as a VInt.
     assertEquals(4, WritableUtils.getVIntSize(MAX_ADDITIONAL_SECONDS_BITS));
 
     // Therefore, the maximum total size of a serialized timestamp is 4 + 5 + 4 = 13.

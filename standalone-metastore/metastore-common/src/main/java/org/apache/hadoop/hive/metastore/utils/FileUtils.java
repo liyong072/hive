@@ -6,18 +6,26 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.utils;
 
-import org.apache.curator.shaded.com.google.common.collect.Lists;
+import java.io.IOException;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Collections;
+import java.util.List;
+import java.util.NoSuchElementException;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.FileStatus;
@@ -28,19 +36,14 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.fs.Trash;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
+import org.apache.hadoop.hdfs.protocol.SnapshotException;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf.ConfVars;
+import org.apache.hadoop.ipc.RemoteException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.BitSet;
-import java.util.Collections;
-import java.util.List;
-import java.util.NoSuchElementException;
 
 public class FileUtils {
   private static final PathFilter SNAPSHOT_DIR_PATH_FILTER = new PathFilter() {
@@ -69,39 +72,78 @@ public class FileUtils {
     }
   };
 
+  public static boolean deleteDir(FileSystem fs, Path f, boolean ifPurge, Configuration conf)
+      throws IOException {
+    if (!fs.exists(f)) {
+      LOG.warn("The path to delete does not exist: {}", f);
+      return true;
+    }
+    if (!ifPurge && moveToTrash(fs, f, conf)) {
+      return true;
+    }
+    boolean result = false;
+    try {
+      // for whatever failure reason including that trash has lower encryption zone
+      // retry with force delete
+      result = fs.delete(f, true);
+    } catch (RemoteException | SnapshotException se) {
+      // If this is snapshot exception or the cause is snapshot replication from HDFS, could be the case where the
+      // snapshots were created by replication, so in that case attempt to delete the replication related snapshots,
+      // if the exists and then re attempt delete.
+      if (se instanceof SnapshotException || se.getCause() instanceof SnapshotException || se.getMessage()
+          .contains("Snapshot"))
+        deleteReplRelatedSnapshots(fs, f);
+      // retry delete after attempting to delete replication related snapshots
+      result = fs.delete(f, true);
+    }
+    if (!result) {
+      LOG.error("Failed to delete {}", f);
+    }
+    return result;
+  }
+
   /**
    * Move a particular file or directory to the trash.
    * @param fs FileSystem to use
    * @param f path of file or directory to move to trash.
    * @param conf configuration object
    * @return true if move successful
-   * @throws IOException
    */
-  public static boolean moveToTrash(FileSystem fs, Path f, Configuration conf, boolean purge)
-      throws IOException {
-    LOG.debug("deleting  " + f);
-    boolean result;
+  private static boolean moveToTrash(FileSystem fs, Path f, Configuration conf) {
+    LOG.debug("moving {} to trash", f);
     try {
-      if(purge) {
-        LOG.debug("purge is set to true. Not moving to Trash " + f);
-      } else {
-        result = Trash.moveToAppropriateTrash(fs, f, conf);
-        if (result) {
-          LOG.trace("Moved to trash: " + f);
-          return true;
-        }
+      boolean result = Trash.moveToAppropriateTrash(fs, f, conf);
+      if (result) {
+        LOG.trace("Moved to trash: {}", f);
+        return true;
       }
     } catch (IOException ioe) {
-      // for whatever failure reason including that trash has lower encryption zone
-      // retry with force delete
-      LOG.warn(ioe.getMessage() + "; Force to delete it.");
+      LOG.warn("Failed to move path to trash: {}", f, ioe);
     }
+    return false;
+  }
 
-    result = fs.delete(f, true);
-    if (!result) {
-      LOG.error("Failed to delete " + f);
+  /**
+   * Attempts to delete the replication related snapshots
+   * @param fs the filesystem
+   * @param path path where the snapshots are supposed to exists.
+   */
+  private static void deleteReplRelatedSnapshots(FileSystem fs, Path path) {
+    try {
+      DistributedFileSystem dfs = (DistributedFileSystem) fs;
+      // List the snapshot directory.
+      FileStatus[] listing = fs.listStatus(new Path(path, ".snapshot"));
+      for (FileStatus elem : listing) {
+        // if the snapshot name has replication related suffix, then delete that snapshot.
+        if (elem.getPath().getName().endsWith("replOld") || elem.getPath().getName().endsWith("replNew")) {
+          dfs.deleteSnapshot(path, elem.getPath().getName());
+        }
+      }
+    } catch (Exception ioe) {
+      // Ignore since this method is used as part of purge which actually ignores all exception, if the directory can
+      // not be deleted, so preserve the same behaviour.
+      LOG.warn("Couldn't clean up replication related snapshots", ioe);
     }
-    return result;
   }
 
   /**
@@ -244,7 +286,7 @@ public class FileUtils {
   }
 
   private static boolean needsEscaping(char c) {
-    return c >= 0 && c < charToEscape.size() && charToEscape.get(c);
+    return c < charToEscape.size() && charToEscape.get(c);
   }
 
   public static String escapePathName(String path) {
@@ -310,41 +352,30 @@ public class FileUtils {
   /**
    * Get all file status from a root path and recursively go deep into certain levels.
    *
-   * @param path
+   * @param base
    *          the root path
-   * @param level
-   *          the depth of directory to explore
    * @param fs
    *          the file system
    * @return array of FileStatus
-   * @throws IOException
    */
-  public static List<FileStatus> getFileStatusRecurse(Path path, int level, FileSystem fs)
-      throws IOException {
-
-    // if level is <0, the return all files/directories under the specified path
-    if (level < 0) {
-      List<FileStatus> result = new ArrayList<>();
-      try {
-        FileStatus fileStatus = fs.getFileStatus(path);
-        FileUtils.listStatusRecursively(fs, fileStatus, result);
-      } catch (IOException e) {
-        // globStatus() API returns empty FileStatus[] when the specified path
-        // does not exist. But getFileStatus() throw IOException. To mimic the
-        // similar behavior we will return empty array on exception. For external
-        // tables, the path of the table will not exists during table creation
-        return new ArrayList<>(0);
+  public static List<FileStatus> getFileStatusRecurse(Path base, FileSystem fs) {
+    try {
+      List<FileStatus> results = new ArrayList<>();
+      if (isS3a(fs)) {
+        // S3A file system has an optimized recursive directory listing implementation however it doesn't support filtering.
+        // Therefore we filter the result set afterwards. This might be not so optimal in HDFS case (which does a tree walking) where a filter could have been used.
+        listS3FilesRecursive(base, fs, results);
+      } else {
+        listStatusRecursively(fs, fs.getFileStatus(base), results);
       }
-      return result;
+      return results;
+    } catch (IOException e) {
+      // globStatus() API returns empty FileStatus[] when the specified path
+      // does not exist. But getFileStatus() throw IOException. To mimic the
+      // similar behavior we will return empty array on exception. For external
+      // tables, the path of the table will not exists during table creation
+      return Collections.emptyList();
     }
-
-    // construct a path pattern (e.g., /*/*) to find all dynamically generated paths
-    StringBuilder sb = new StringBuilder(path.toUri().getPath());
-    for (int i = 0; i < level; i++) {
-      sb.append(Path.SEPARATOR).append("*");
-    }
-    Path pathPattern = new Path(path, sb.toString());
-    return Lists.newArrayList(fs.globStatus(pathPattern, FileUtils.HIDDEN_FILES_PATH_FILTER));
   }
 
   /**
@@ -360,7 +391,7 @@ public class FileUtils {
    * @param results
    *          receives enumeration of all files found
    */
-  public static void listStatusRecursively(FileSystem fs, FileStatus fileStatus,
+  private static void listStatusRecursively(FileSystem fs, FileStatus fileStatus,
                                            List<FileStatus> results) throws IOException {
 
     if (fileStatus.isDir()) {
@@ -369,6 +400,39 @@ public class FileUtils {
       }
     } else {
       results.add(fileStatus);
+    }
+  }
+
+  private static void listS3FilesRecursive(Path base, FileSystem fs, List<FileStatus> results) throws IOException {
+    RemoteIterator<LocatedFileStatus> remoteIterator = fs.listFiles(base, true);
+    while (remoteIterator.hasNext()) {
+      LocatedFileStatus each = remoteIterator.next();
+      Path relativePath = makeRelative(base, each.getPath());
+      if (RemoteIteratorWithFilter.HIDDEN_FILES_FULL_PATH_FILTER.accept(relativePath)) {
+        results.add(each);
+      }
+    }
+  }
+
+  /**
+   * Returns a relative path wrt the parent path.
+   * @param parentPath the parent path.
+   * @param childPath the child path.
+   * @return childPath relative to parent path.
+   */
+  public static Path makeRelative(Path parentPath, Path childPath) {
+    String parentString =
+        parentPath.toString().endsWith(Path.SEPARATOR) ? parentPath.toString() : parentPath.toString() + Path.SEPARATOR;
+    String childString =
+        childPath.toString().endsWith(Path.SEPARATOR) ? childPath.toString() : childPath.toString() + Path.SEPARATOR;
+    return new Path(childString.replaceFirst(parentString, ""));
+  }
+
+  public static boolean isS3a(FileSystem fs) {
+    try {
+      return "s3a".equalsIgnoreCase(fs.getScheme());
+    } catch (UnsupportedOperationException ex) {
+      return false;
     }
   }
 
@@ -593,5 +657,29 @@ public class FileUtils {
       // No more matching files in the iterator
       nextFile = null;
     }
+  }
+
+  /**
+   * Checks whether {@code path} is {@code subtree} itself or nested under it, by walking up
+   * {@code path}'s ancestors looking for a match. Depth-based rather than a string-prefix
+   * comparison, so it isn't fooled by sibling paths that merely share a prefix (e.g. {@code /a/bc}
+   * is not within {@code /a/b}).
+   *
+   * @param path the path to check
+   * @param subtree the candidate ancestor, or exact match
+   * @return true if {@code path} equals {@code subtree} or is one of its descendants
+   */
+  public static boolean isPathWithinSubtree(final Path path, final Path subtree) {
+    final int subtreeDepth = subtree.depth();
+    int pathDepth = path.depth();
+    if (pathDepth < subtreeDepth) {
+      return false;
+    }
+    Path subpath = path;
+    while (pathDepth > subtreeDepth) {
+      subpath = subpath.getParent();
+      pathDepth -= 1;
+    }
+    return subtree.equals(subpath);
   }
 }

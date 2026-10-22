@@ -9,14 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.beeline;
 
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -26,7 +28,6 @@ import java.sql.SQLException;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.mockito.Matchers;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
@@ -87,6 +88,7 @@ public class TestBufferedRows {
     when(mockResultSet.next()).thenAnswer(new Answer<Boolean>() {
       private int mockRowDataIndex = 0;
 
+      @Override
       public Boolean answer(InvocationOnMock invocation) {
         if (mockRowDataIndex < mockRowData.length) {
           mockRow.setCurrentRowData(mockRowData[mockRowDataIndex]);
@@ -98,7 +100,17 @@ public class TestBufferedRows {
       }
     });
 
-    when(mockResultSet.getObject(Matchers.anyInt())).thenAnswer(new Answer<String>() {
+    when(mockResultSet.getObject(anyInt())).thenAnswer(new Answer<String>() {
+      @Override
+      public String answer(InvocationOnMock invocation) {
+        Object[] args = invocation.getArguments();
+        int index = ((Integer) args[0]).intValue();
+        return mockRow.getColumn(index);
+      }
+    });
+
+    when(mockResultSet.getString(anyInt())).thenAnswer(new Answer<String>() {
+      @Override
       public String answer(InvocationOnMock invocation) {
         Object[] args = invocation.getArguments();
         int index = ((Integer) args[0]).intValue();

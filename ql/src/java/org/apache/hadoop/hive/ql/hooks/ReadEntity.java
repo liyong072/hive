@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.hooks;
@@ -25,7 +26,10 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.metastore.api.Catalog;
+import org.apache.hadoop.hive.metastore.api.DataConnector;
 import org.apache.hadoop.hive.metastore.api.Database;
+import org.apache.hadoop.hive.metastore.api.Function;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
 
@@ -75,10 +79,24 @@ public class ReadEntity extends Entity implements Serializable {
   }
 
   /**
+   * Constructor for a catalog.
+   */
+  public ReadEntity(Catalog catalog) {
+    super(catalog, true);
+  }
+
+  /**
    * Constructor for a database.
    */
   public ReadEntity(Database database) {
     super(database, true);
+  }
+
+  /**
+   * Constructor for a dataconnector.
+   */
+  public ReadEntity(DataConnector connector) {
+    super(connector, true);
   }
 
   /**

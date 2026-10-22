@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
@@ -25,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.calcite.sql.SqlKind;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -36,15 +38,18 @@ import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.ql.Context;
 import org.apache.hadoop.hive.ql.Driver;
+import org.apache.hadoop.hive.ql.QueryProperties;
 import org.apache.hadoop.hive.ql.QueryState;
 import org.apache.hadoop.hive.ql.exec.ExplainTask;
 import org.apache.hadoop.hive.ql.exec.FetchTask;
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.exec.TaskFactory;
+import org.apache.hadoop.hive.ql.metadata.HiveUtils;
 import org.apache.hadoop.hive.ql.parse.ExplainConfiguration.AnalyzeState;
 import org.apache.hadoop.hive.ql.parse.ExplainConfiguration.VectorizationDetailLevel;
 import org.apache.hadoop.hive.ql.plan.ExplainWork;
-import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorException;
+import org.apache.hadoop.hive.ql.reexec.ReCompileException;
 import org.apache.hadoop.hive.ql.stats.StatsAggregator;
 import org.apache.hadoop.hive.ql.stats.StatsCollectionContext;
 import org.apache.hadoop.hive.ql.stats.fs.FSStatsAggregator;
@@ -54,15 +59,18 @@ import org.apache.hadoop.hive.ql.stats.fs.FSStatsAggregator;
  *
  */
 public class ExplainSemanticAnalyzer extends BaseSemanticAnalyzer {
+
+  public static final String EXPLAIN_ANALYZE_PROGRAM = "EXPLAIN_ANALYZE_PROGRAM";
+
   List<FieldSchema> fieldList;
   ExplainConfiguration config;
 
   public ExplainSemanticAnalyzer(QueryState queryState) throws SemanticException {
     super(queryState);
     config = new ExplainConfiguration();
+    setSqlKind(SqlKind.EXPLAIN);
   }
 
-  @SuppressWarnings("unchecked")
   @Override
   public void analyzeInternal(ASTNode ast) throws SemanticException {
     final int childCount = ast.getChildCount();
@@ -124,6 +132,10 @@ public class ExplainSemanticAnalyzer extends BaseSemanticAnalyzer {
         config.setAst(true);
       } else if (explainOptions == HiveParser.KW_DEBUG) {
         config.setDebug(true);
+      } else if (explainOptions == HiveParser.KW_DDL) {
+        config.setDDL(true);
+        config.setCbo(true);
+        config.setVectorization(true);
       } else {
         // UNDONE: UNKNOWN OPTION?
       }
@@ -138,8 +150,8 @@ public class ExplainSemanticAnalyzer extends BaseSemanticAnalyzer {
     // step 1 (ANALYZE_STATE.RUNNING), run the query and collect the runtime #rows
     // step 2 (ANALYZE_STATE.ANALYZING), explain the query and provide the runtime #rows collected.
     if (config.getAnalyze() == AnalyzeState.RUNNING) {
-      String query = ctx.getTokenRewriteStream().toString(input.getTokenStartIndex(),
-          input.getTokenStopIndex());
+      String query = HiveUtils.getSqlTextWithQuotedIdentifiers(
+              input, ctx.getTokenRewriteStream(), EXPLAIN_ANALYZE_PROGRAM);
       LOG.info("Explain analyze (running phase) for query " + query);
       conf.unset(ValidTxnList.VALID_TXNS_KEY);
       conf.unset(ValidTxnWriteIdList.VALID_TABLES_WRITEIDS_KEY);
@@ -148,15 +160,16 @@ public class ExplainSemanticAnalyzer extends BaseSemanticAnalyzer {
         runCtx = new Context(conf);
         // runCtx and ctx share the configuration, but not isExplainPlan()
         runCtx.setExplainConfig(config);
-        Driver driver = new Driver(conf, runCtx, queryState.getLineageState());
-        CommandProcessorResponse ret = driver.run(query);
-        if(ret.getResponseCode() == 0) {
-          // Note that we need to call getResults for simple fetch optimization.
-          // However, we need to skip all the results.
+        try (Driver driver = new Driver(conf, runCtx, queryState.getLineageState())) {
+          driver.run(query);
           while (driver.getResults(new ArrayList<String>())) {
           }
-        } else {
-          throw new SemanticException(ret.getErrorMessage(), ret.getException());
+        } catch (CommandProcessorException e) {
+          if (e.getCause() instanceof ReCompileException) {
+            throw (ReCompileException) e.getCause();
+          } else {
+            throw new SemanticException(e.getMessage(), e);
+          }
         }
         config.setOpIdToRuntimeNumRows(aggregateStats(config.getExplainRootPath()));
       } catch (IOException e1) {
@@ -174,7 +187,7 @@ public class ExplainSemanticAnalyzer extends BaseSemanticAnalyzer {
     BaseSemanticAnalyzer sem = SemanticAnalyzerFactory.get(queryState, input);
     sem.analyze(input, ctx);
     sem.validate();
-    inputs = sem.getInputs();
+    inputs = sem.getAllInputs();
     outputs = sem.getOutputs();
 
     ctx.setResFile(ctx.getLocalTmpPath());
@@ -189,9 +202,8 @@ public class ExplainSemanticAnalyzer extends BaseSemanticAnalyzer {
       fetchTask.getWork().initializeForFetch(ctx.getOpContext());
     }
 
-    ParseContext pCtx = null;
     if (sem instanceof SemanticAnalyzer) {
-      pCtx = ((SemanticAnalyzer)sem).getParseContext();
+      pCtx = sem.getParseContext();
     }
 
     config.setUserLevelExplain(!config.isExtended()
@@ -199,20 +211,10 @@ public class ExplainSemanticAnalyzer extends BaseSemanticAnalyzer {
         && !config.isDependency()
         && !config.isCbo()
         && !config.isLogical()
+        && !config.isVectorization()
         && !config.isAuthorize()
-        && (
-             (
-               HiveConf.getBoolVar(ctx.getConf(), HiveConf.ConfVars.HIVE_EXPLAIN_USER)
-               &&
-               HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")
-             )
-             ||
-             (
-               HiveConf.getBoolVar(ctx.getConf(), HiveConf.ConfVars.HIVE_SPARK_EXPLAIN_USER)
-               &&
-               HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("spark")
-             )
-           )
+        && HiveConf.getBoolVar(ctx.getConf(), HiveConf.ConfVars.HIVE_EXPLAIN_USER)
+        && HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")
         );
 
     ExplainWork work = new ExplainWork(ctx.getResFile(),
@@ -227,11 +229,11 @@ public class ExplainSemanticAnalyzer extends BaseSemanticAnalyzer {
         ctx.getCalcitePlan());
 
     work.setAppendTaskType(
-        HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVEEXPLAINDEPENDENCYAPPENDTASKTYPES));
+        HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVE_EXPLAIN_DEPENDENCY_APPEND_TASK_TYPES));
 
     ExplainTask explTask = (ExplainTask) TaskFactory.get(work);
 
-    fieldList = explTask.getResultSchema();
+    fieldList = ExplainTask.getResultSchema();
     rootTasks.add(explTask);
   }
 
@@ -282,7 +284,21 @@ public class ExplainSemanticAnalyzer extends BaseSemanticAnalyzer {
     List<Task<?>> rootTasks = getRootTasks();
     assert rootTasks != null && rootTasks.size() == 1;
     Task task = rootTasks.get(0);
-    return task instanceof ExplainTask && ((ExplainTask)task).getWork().isAuthorize();
+    if (task instanceof ExplainTask &&
+        ((ExplainTask)task).getWork().isAuthorize()) {
+      return true;
+    }
+    return super.skipAuthorization();
   }
 
+  @Override
+  public void startAnalysis() {
+    if (conf.getBoolVar(HiveConf.ConfVars.HIVE_OPTIMIZE_HMS_QUERY_CACHE_ENABLED)) {
+      queryState.createHMSCache();
+    }
+  }
+
+  public void setQueryType(ASTNode tree) {
+    queryProperties.setQueryType(QueryProperties.QueryType.DQL);
+  }
 }

@@ -1,23 +1,32 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.io.parquet.write;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.common.type.Date;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.common.type.Timestamp;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe;
 import org.apache.hadoop.hive.ql.io.parquet.timestamp.NanoTimeUtils;
+import org.apache.hadoop.hive.common.type.CalendarUtils;
+import org.apache.hadoop.hive.ql.io.parquet.timestamp.ParquetTimestampUtils;
 import org.apache.hadoop.hive.serde2.io.DateWritableV2;
 import org.apache.hadoop.hive.serde2.io.ParquetHiveRecord;
 import org.apache.hadoop.hive.serde2.objectinspector.ListObjectInspector;
@@ -41,16 +50,21 @@ import org.apache.hadoop.hive.serde2.objectinspector.primitive.ShortObjectInspec
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.StringObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.TimestampObjectInspector;
 import org.apache.hadoop.hive.serde2.typeinfo.DecimalTypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.HiveDecimalUtils;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.RecordConsumer;
 import org.apache.parquet.schema.GroupType;
-import org.apache.parquet.schema.OriginalType;
+import org.apache.parquet.schema.LogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.DecimalLogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.ListLogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.MapLogicalTypeAnnotation;
 import org.apache.parquet.schema.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 
 /**
  *
@@ -62,14 +76,31 @@ public class DataWritableWriter {
   private static final Logger LOG = LoggerFactory.getLogger(DataWritableWriter.class);
   protected final RecordConsumer recordConsumer;
   private final GroupType schema;
+  private final boolean defaultDateProleptic;
+  private final boolean isLegacyZoneConversion;
+  private Configuration conf;
 
   /* This writer will be created when writing the first row in order to get
   information about how to inspect the record data.  */
   private DataWriter messageWriter;
 
-  public DataWritableWriter(final RecordConsumer recordConsumer, final GroupType schema) {
+  public DataWritableWriter(final RecordConsumer recordConsumer, final GroupType schema,
+      final boolean defaultDateProleptic) {
     this.recordConsumer = recordConsumer;
     this.schema = schema;
+    this.defaultDateProleptic = defaultDateProleptic;
+    this.isLegacyZoneConversion =
+        HiveConf.ConfVars.HIVE_PARQUET_TIMESTAMP_WRITE_LEGACY_CONVERSION_ENABLED.defaultBoolVal;
+  }
+
+	public DataWritableWriter(final RecordConsumer recordConsumer, final GroupType schema,
+			final boolean defaultDateProleptic, final Configuration conf) {
+	    this.recordConsumer = recordConsumer;
+    this.schema = schema;
+    this.defaultDateProleptic = defaultDateProleptic;
+    this.conf = conf;
+    this.isLegacyZoneConversion =
+        HiveConf.getBoolVar(this.conf, HiveConf.ConfVars.HIVE_PARQUET_TIMESTAMP_WRITE_LEGACY_CONVERSION_ENABLED);
   }
 
   /**
@@ -133,7 +164,8 @@ public class DataWritableWriter {
         case TIMESTAMP:
           return new TimestampDataWriter((TimestampObjectInspector)inspector);
         case DECIMAL:
-          return new DecimalDataWriter((HiveDecimalObjectInspector)inspector);
+          return new DecimalDataWriter((HiveDecimalObjectInspector) inspector,
+              getSchemaDecimalTypeInfo(type, (HiveDecimalObjectInspector) inspector));
         case DATE:
           return new DateDataWriter((DateObjectInspector)inspector);
         default:
@@ -141,12 +173,12 @@ public class DataWritableWriter {
       }
     } else {
       GroupType groupType = type.asGroupType();
-      OriginalType originalType = type.getOriginalType();
+      LogicalTypeAnnotation logicalType = type.getLogicalTypeAnnotation();
 
-      if (originalType != null && originalType.equals(OriginalType.LIST)) {
+      if (logicalType != null && logicalType instanceof ListLogicalTypeAnnotation) {
         checkInspectorCategory(inspector, ObjectInspector.Category.LIST);
         return new ListDataWriter((ListObjectInspector)inspector, groupType);
-      } else if (originalType != null && originalType.equals(OriginalType.MAP)) {
+      } else if (logicalType != null && logicalType instanceof MapLogicalTypeAnnotation) {
         checkInspectorCategory(inspector, ObjectInspector.Category.MAP);
         return new MapDataWriter((MapObjectInspector)inspector, groupType);
       } else {
@@ -154,6 +186,22 @@ public class DataWritableWriter {
         return new StructDataWriter((StructObjectInspector)inspector, groupType);
       }
     }
+  }
+
+  /**
+   * Return the decimal type information defined by the Parquet schema. This ensures the writer
+   * uses the declared precision/scale.
+   * @param type Type that contains information about the type schema.
+   * @param inspector The object inspector used to get the value type.
+   * @return DecimalTypeInfo The decimal type info object with proper precision and scale.
+   */
+  private DecimalTypeInfo getSchemaDecimalTypeInfo(Type type, HiveDecimalObjectInspector inspector) {
+    LogicalTypeAnnotation logicalType = type.getLogicalTypeAnnotation();
+    if (logicalType instanceof DecimalLogicalTypeAnnotation decimal) {
+      return new DecimalTypeInfo(decimal.getPrecision(), decimal.getScale());
+    }
+    // Fallback to the inspector's type info if the schema does not carry the logical annotation.
+    return (DecimalTypeInfo) inspector.getTypeInfo();
   }
 
   /**
@@ -195,16 +243,23 @@ public class DataWritableWriter {
       for (int i = 0; i < structFields.size(); i++) {
         StructField field = structFields.get(i);
         Object fieldValue = inspector.getStructFieldData(value, field);
+        DataWriter writer = structWriters[i];
 
-        if (fieldValue != null) {
+        if (fieldValue != null && isValidValue(fieldValue, writer)) {
           String fieldName = field.getFieldName();
-          DataWriter writer = structWriters[i];
 
           recordConsumer.startField(fieldName, i);
           writer.write(fieldValue);
           recordConsumer.endField(fieldName, i);
         }
       }
+    }
+
+    private boolean isValidValue(Object fieldValue, DataWriter writer) {
+      if (writer instanceof TimestampDataWriter) {
+        return ((TimestampDataWriter) writer).isValidTimestamp(fieldValue);
+      }
+      return true;
     }
   }
 
@@ -488,30 +543,63 @@ public class DataWritableWriter {
 
   private class TimestampDataWriter implements DataWriter {
     private TimestampObjectInspector inspector;
+    boolean useInt64;
+    LogicalTypeAnnotation.TimeUnit timeUnit;
 
     public TimestampDataWriter(TimestampObjectInspector inspector) {
       this.inspector = inspector;
+      String timeUnitVal;
+      if (conf != null) {
+        useInt64 = HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVE_PARQUET_WRITE_INT64_TIMESTAMP);
+        timeUnitVal = HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_PARQUET_TIMESTAMP_TIME_UNIT);
+      } else { //use defaults
+        useInt64 = HiveConf.ConfVars.HIVE_PARQUET_WRITE_INT64_TIMESTAMP.defaultBoolVal;
+        timeUnitVal = HiveConf.ConfVars.HIVE_PARQUET_TIMESTAMP_TIME_UNIT.defaultStrVal;
+      }
+      timeUnit = LogicalTypeAnnotation.TimeUnit.valueOf(timeUnitVal.toUpperCase());
     }
 
     @Override
     public void write(Object value) {
       Timestamp ts = inspector.getPrimitiveJavaObject(value);
-      recordConsumer.addBinary(NanoTimeUtils.getNanoTime(ts, false).toBinary());
+      if (useInt64) {
+        Long int64value = ParquetTimestampUtils.getInt64(ts, timeUnit);
+        recordConsumer.addLong(int64value);
+      } else {
+        recordConsumer.addBinary(
+            NanoTimeUtils.getNanoTime(ts, TimeZone.getDefault().toZoneId(), isLegacyZoneConversion).toBinary());
+      }
+    }
+
+    boolean isValidTimestamp(Object fieldValue) {
+      // only check if int64 time unit is nanos
+      if (useInt64 && timeUnit == LogicalTypeAnnotation.TimeUnit.NANOS) {
+        Timestamp ts = inspector.getPrimitiveJavaObject(fieldValue);
+        return ParquetTimestampUtils.getInt64(ts, timeUnit) != null;
+      }
+      return true;
     }
   }
 
   private class DecimalDataWriter implements DataWriter {
     private HiveDecimalObjectInspector inspector;
+    private final DecimalTypeInfo schemaDecimalTypeInfo;
 
-    public DecimalDataWriter(HiveDecimalObjectInspector inspector) {
+    public DecimalDataWriter(HiveDecimalObjectInspector inspector, DecimalTypeInfo schemaDecimalTypeInfo) {
       this.inspector = inspector;
+      this.schemaDecimalTypeInfo = schemaDecimalTypeInfo;
     }
 
     @Override
     public void write(Object value) {
       HiveDecimal vDecimal = inspector.getPrimitiveJavaObject(value);
-      DecimalTypeInfo decTypeInfo = (DecimalTypeInfo)inspector.getTypeInfo();
-      recordConsumer.addBinary(decimalToBinary(vDecimal, decTypeInfo));
+      // Enforce the Parquet schema precision/scale before converting to binary to avoid size mismatches.
+      HiveDecimal enforcedDecimal = HiveDecimalUtils.enforcePrecisionScale(vDecimal, schemaDecimalTypeInfo);
+      if (enforcedDecimal == null) {
+        throw new RuntimeException(
+            "Decimal value " + vDecimal + " does not fit in declared type " + schemaDecimalTypeInfo.getQualifiedName());
+      }
+      recordConsumer.addBinary(decimalToBinary(vDecimal, schemaDecimalTypeInfo));
     }
 
     private Binary decimalToBinary(final HiveDecimal hiveDecimal, final DecimalTypeInfo decimalTypeInfo) {
@@ -550,7 +638,9 @@ public class DataWritableWriter {
     @Override
     public void write(Object value) {
       Date vDate = inspector.getPrimitiveJavaObject(value);
-      recordConsumer.addInteger(DateWritableV2.dateToDays(vDate));
+      recordConsumer.addInteger(
+          defaultDateProleptic ? DateWritableV2.dateToDays(vDate) :
+              CalendarUtils.convertDateToHybrid(DateWritableV2.dateToDays(vDate)));
     }
   }
 }

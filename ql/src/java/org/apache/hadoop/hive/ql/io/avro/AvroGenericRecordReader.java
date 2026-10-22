@@ -7,19 +7,23 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.io.avro;
 
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.rmi.server.UID;
+import java.time.DateTimeException;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.Properties;
 
@@ -30,6 +34,7 @@ import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.mapred.FsInput;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.hive.serde2.avro.AvroSerDe;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.fs.Path;
@@ -59,6 +64,9 @@ public class AvroGenericRecordReader implements
   final private org.apache.avro.file.FileReader<GenericRecord> reader;
   final private long start;
   final private long stop;
+  private ZoneId writerTimezone;
+  private Boolean writerProleptic;
+  private final Boolean writerZoneConversionLegacy;
   protected JobConf jobConf;
   final private boolean isEmptyInput;
   /**
@@ -83,18 +91,38 @@ public class AvroGenericRecordReader implements
     }
 
     if (split.getLength() == 0) {
-      this.isEmptyInput = true;
-      this.start = 0;
       this.reader = null;
-    }
-    else {
-      this.isEmptyInput = false;
+      this.isEmptyInput = true;
+    } else {
       this.reader = new DataFileReader<GenericRecord>(new FsInput(split.getPath(), job), gdr);
-      this.reader.sync(split.getStart());
-      this.start = reader.tell();
+      this.isEmptyInput = false;
     }
-    this.stop = split.getStart() + split.getLength();
-    this.recordReaderID = new UID();
+
+    try {
+      if (this.isEmptyInput) {
+        this.start = 0;
+      } else {
+        this.reader.sync(split.getStart());
+        this.start = reader.tell();
+      }
+      this.stop = split.getStart() + split.getLength();
+      this.recordReaderID = new UID();
+
+      this.writerTimezone = extractWriterTimezoneFromMetadata(job, split, gdr);
+      this.writerProleptic = extractWriterProlepticFromMetadata(job, split, gdr);
+      this.writerZoneConversionLegacy = extractWriterZoneConversionLegacy(job, split, gdr);
+    } catch (Exception e) {
+      if (this.reader != null) {
+        try {
+          this.reader.close();
+        } catch (Exception closeException) {
+          if (closeException != e) {
+            e.addSuppressed(closeException);
+          }
+        }
+      }
+      throw e;
+    }
   }
 
   /**
@@ -142,6 +170,77 @@ public class AvroGenericRecordReader implements
     return null;
   }
 
+  private ZoneId extractWriterTimezoneFromMetadata(JobConf job, FileSplit split,
+      GenericDatumReader<GenericRecord> gdr) {
+    if (job == null || gdr == null || split == null || split.getPath() == null) {
+      return null;
+    }
+    try (DataFileReader<GenericRecord> dataFileReader = new DataFileReader<GenericRecord>(
+        new FsInput(split.getPath(), job), gdr)) {
+      if (dataFileReader.getMeta(AvroSerDe.WRITER_TIME_ZONE) != null) {
+        try {
+          return ZoneId.of(new String(dataFileReader.getMeta(AvroSerDe.WRITER_TIME_ZONE),
+              StandardCharsets.UTF_8));
+        } catch (DateTimeException e) {
+          throw new RuntimeException("Can't parse writer time zone stored in file metadata", e);
+        }
+      }
+    } catch (IOException e) {
+      // Can't access metadata, carry on.
+      LOG.debug(e.getMessage(), e);
+    }
+    return null;
+  }
+
+  private Boolean extractWriterProlepticFromMetadata(JobConf job, FileSplit split,
+      GenericDatumReader<GenericRecord> gdr) {
+    if (job == null || gdr == null || split == null || split.getPath() == null) {
+      return null;
+    }
+    try (DataFileReader<GenericRecord> dataFileReader = new DataFileReader<GenericRecord>(
+        new FsInput(split.getPath(), job), gdr)) {
+      if (dataFileReader.getMeta(AvroSerDe.WRITER_PROLEPTIC) != null) {
+        try {
+          return Boolean.valueOf(new String(dataFileReader.getMeta(AvroSerDe.WRITER_PROLEPTIC),
+              StandardCharsets.UTF_8));
+        } catch (DateTimeException e) {
+          throw new RuntimeException("Can't parse writer proleptic property stored in file metadata", e);
+        }
+      }
+    } catch (IOException e) {
+      // Can't access metadata, carry on.
+      LOG.debug(e.getMessage(), e);
+    }
+    return null;
+  }
+
+  private Boolean extractWriterZoneConversionLegacy(JobConf job, FileSplit split,
+      GenericDatumReader<GenericRecord> gdr) {
+    assert job != null;
+    assert split != null;
+    assert gdr != null;
+    if (split.getPath() == null) {
+      return null;
+    }
+    try (DataFileReader<GenericRecord> dataFileReader = new DataFileReader<GenericRecord>(
+        new FsInput(split.getPath(), job), gdr)) {
+      byte[] meta = dataFileReader.getMeta(AvroSerDe.WRITER_ZONE_CONVERSION_LEGACY);
+      if (meta != null) {
+        String v = new String(meta, StandardCharsets.UTF_8);
+        if (v.equalsIgnoreCase("true")) {
+          return Boolean.TRUE;
+        } else if (v.equalsIgnoreCase("false")) {
+          return Boolean.FALSE;
+        } else {
+          LOG.warn("Invalid " + AvroSerDe.WRITER_ZONE_CONVERSION_LEGACY + " metadata: " + v);
+        }
+      }
+    } catch (IOException exception) {
+      LOG.warn("Problem extracting " + AvroSerDe.WRITER_ZONE_CONVERSION_LEGACY + " metadata.", exception);
+    }
+    return null;
+  }
+
   private boolean pathIsInPartition(Path split, Path partitionPath) {
     boolean schemeless = split.toUri().getScheme() == null;
     if (schemeless) {
@@ -174,7 +273,7 @@ public class AvroGenericRecordReader implements
 
   @Override
   public AvroGenericRecordWritable createValue() {
-    return new AvroGenericRecordWritable();
+    return new AvroGenericRecordWritable(writerTimezone, writerProleptic, writerZoneConversionLegacy);
   }
 
   @Override

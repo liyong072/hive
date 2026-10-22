@@ -9,14 +9,20 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore;
 
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.metastore.api.MetaException;
+
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -26,11 +32,17 @@ import java.util.TreeSet;
 public class CheckResult {
 
   // tree sets to preserve ordering in qfile tests
-  private Set<String> tablesNotOnFs = new TreeSet<String>();
-  private Set<String> tablesNotInMs = new TreeSet<String>();
-  private Set<PartitionResult> partitionsNotOnFs = new TreeSet<PartitionResult>();
-  private Set<PartitionResult> partitionsNotInMs = new TreeSet<PartitionResult>();
+  private Set<String> tablesNotOnFs = new TreeSet<>();
+  private Set<String> tablesNotInMs = new TreeSet<>();
+  private Set<PartitionResult> partitionsNotOnFs = new TreeSet<>();
+  private Set<PartitionResult> partitionsNotInMs = new TreeSet<>();
   private Set<PartitionResult> expiredPartitions = new TreeSet<>();
+  private Set<PartitionResult> correctPartitions = new TreeSet<>();
+
+  private Map<String, String> smallFilesStats = new HashMap<>();
+
+  private long maxWriteId;
+  private long maxTxnId;
 
   /**
    * @return a list of tables not found on the filesystem.
@@ -96,9 +108,40 @@ public class CheckResult {
     return expiredPartitions;
   }
 
-  public void setExpiredPartitions(
-    final Set<PartitionResult> expiredPartitions) {
+  public void setExpiredPartitions(final Set<PartitionResult> expiredPartitions) {
     this.expiredPartitions = expiredPartitions;
+  }
+
+  public Set<PartitionResult> getCorrectPartitions() {
+    return this.correctPartitions;
+  }
+
+  public void setCorrectPartitions(final Set<PartitionResult> correctPartitions) {
+    this.correctPartitions = correctPartitions;
+  }
+
+  public Map<String, String> getSmallFilesStats() {
+    return this.smallFilesStats;
+  }
+
+  public void setSmallFilesStats(Map<String, String> smallFilesStats) {
+    this.smallFilesStats = smallFilesStats;
+  }
+
+  public long getMaxWriteId() {
+    return maxWriteId;
+  }
+
+  public void setMaxWriteId(long maxWriteId) {
+    this.maxWriteId = maxWriteId;
+  }
+
+  public long getMaxTxnId() {
+    return maxTxnId;
+  }
+
+  public void setMaxTxnId(long maxTxnId) {
+    this.maxTxnId = maxTxnId;
   }
 
   /**
@@ -108,6 +151,9 @@ public class CheckResult {
   public static class PartitionResult implements Comparable<PartitionResult> {
     private String partitionName;
     private String tableName;
+    private Path path;
+    private long maxWriteId;
+    private long maxTxnId;
 
     /**
      * @return name of partition
@@ -139,9 +185,52 @@ public class CheckResult {
       this.tableName = tableName;
     }
 
+    public void setPath(Path path) {
+      this.path = path;
+    }
+
+    public Path getLocation(Path tablePath, Map<String, String> partSpec) throws MetaException {
+      if (this.path == null) {
+        return new Path(tablePath, Warehouse.makePartPath(partSpec));
+      }
+
+      return this.path;
+    }
+
+    public long getMaxWriteId() {
+      return maxWriteId;
+    }
+
+    public void setMaxWriteId(long maxWriteId) {
+      this.maxWriteId = maxWriteId;
+    }
+
+    public long getMaxTxnId() {
+      return maxTxnId;
+    }
+
+    public void setMaxTxnId(long maxTxnId) {
+      this.maxTxnId = maxTxnId;
+    }
+
     @Override
     public String toString() {
       return tableName + ":" + partitionName;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (other instanceof PartitionResult) {
+        if (0 == compareTo((PartitionResult)other)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    @Override
+    public int hashCode() {
+      return super.hashCode();
     }
 
     public int compareTo(PartitionResult o) {

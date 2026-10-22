@@ -9,15 +9,15 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.llap.cache;
 
-import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 
 import org.apache.hadoop.conf.Configuration;
@@ -25,23 +25,10 @@ import org.apache.hadoop.hive.common.io.Allocator;
 import org.apache.hadoop.hive.common.io.encoded.MemoryBuffer;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.llap.io.api.impl.LlapIoImpl;
-
-import sun.misc.Cleaner;
+import org.apache.hive.common.util.CleanerUtil;
 
 public final class SimpleAllocator implements Allocator, BuddyAllocatorMXBean {
   private final boolean isDirect;
-  private static Field cleanerField;
-  static {
-    try {
-      // TODO: To make it work for JDK9 use CleanerUtil from https://issues.apache.org/jira/browse/HADOOP-12760
-      final Class<?> dbClazz = Class.forName("java.nio.DirectByteBuffer");
-      cleanerField = dbClazz.getDeclaredField("cleaner");
-      cleanerField.setAccessible(true);
-    } catch (Throwable t) {
-      LlapIoImpl.LOG.warn("Cannot initialize DirectByteBuffer cleaner", t);
-      cleanerField = null;
-    }
-  }
 
   public SimpleAllocator(Configuration conf) {
     isDirect = HiveConf.getBoolVar(conf, HiveConf.ConfVars.LLAP_ALLOCATOR_DIRECT);
@@ -79,13 +66,13 @@ public final class SimpleAllocator implements Allocator, BuddyAllocatorMXBean {
     ByteBuffer bb = buf.byteBuffer;
     buf.byteBuffer = null;
     if (!bb.isDirect()) return;
-    Field field = cleanerField;
-    if (field == null) return;
+    if (!CleanerUtil.UNMAP_SUPPORTED) {
+      return;
+    }
     try {
-      ((Cleaner)field.get(bb)).clean();
+      CleanerUtil.getCleaner().freeBuffer(bb);
     } catch (Throwable t) {
-      LlapIoImpl.LOG.warn("Error using DirectByteBuffer cleaner; stopping its use", t);
-      cleanerField = null;
+      LlapIoImpl.LOG.warn("Error using DirectByteBuffer cleaner", t);
     }
   }
 

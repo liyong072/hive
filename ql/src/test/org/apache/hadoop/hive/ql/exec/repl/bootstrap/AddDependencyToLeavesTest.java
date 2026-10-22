@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.repl.bootstrap;
@@ -27,7 +28,7 @@ import org.apache.hadoop.hive.ql.plan.DependencyCollectionWork;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 
 import java.io.Serializable;
 import java.util.Arrays;
@@ -53,21 +54,21 @@ public class AddDependencyToLeavesTest {
     Task<DependencyCollectionWork> collectionWorkTaskThree =
         TaskFactory.get(new DependencyCollectionWork());
 
-    @SuppressWarnings("unchecked") Task<? extends Serializable> rootTask = mock(Task.class);
+    @SuppressWarnings("unchecked") Task<?> rootTask = mock(Task.class);
     when(rootTask.getDependentTasks())
         .thenReturn(
             Arrays.asList(collectionWorkTaskOne, collectionWorkTaskTwo, collectionWorkTaskThree));
-    @SuppressWarnings("unchecked") List<Task<? extends Serializable>> tasksPostCurrentGraph =
+    @SuppressWarnings("unchecked") List<Task<?>> tasksPostCurrentGraph =
         Arrays.asList(mock(Task.class), mock(Task.class));
 
     DAGTraversal.traverse(Collections.singletonList(rootTask),
         new AddDependencyToLeaves(tasksPostCurrentGraph));
 
-    List<Task<? extends Serializable>> dependentTasksForOne =
+    List<Task<?>> dependentTasksForOne =
         collectionWorkTaskOne.getDependentTasks();
-    List<Task<? extends Serializable>> dependentTasksForTwo =
+    List<Task<?>> dependentTasksForTwo =
         collectionWorkTaskTwo.getDependentTasks();
-    List<Task<? extends Serializable>> dependentTasksForThree =
+    List<Task<?>> dependentTasksForThree =
         collectionWorkTaskThree.getDependentTasks();
 
     assertEquals(dependentTasksForOne.size(), 2);

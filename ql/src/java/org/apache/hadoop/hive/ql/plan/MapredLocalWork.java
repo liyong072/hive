@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -50,8 +51,6 @@ public class MapredLocalWork implements Serializable {
   private BucketMapJoinContext bucketMapjoinContext;
   private Path tmpPath;
   private String stageID;
-  // Temp HDFS path for Spark HashTable sink
-  private Path tmpHDFSPath;
 
   private List<Operator<? extends OperatorDesc>> dummyParentOp;
   private Map<MapJoinOperator, List<Operator<? extends OperatorDesc>>> directFetchOp;
@@ -173,14 +172,6 @@ public class MapredLocalWork implements Serializable {
 
   public Path getTmpPath() {
     return tmpPath;
-  }
-
-  public void setTmpHDFSPath(Path tmpPath) {
-    this.tmpHDFSPath = tmpPath;
-  }
-
-  public Path getTmpHDFSPath() {
-    return tmpHDFSPath;
   }
 
   public String getBucketFileName(String bigFileName) {

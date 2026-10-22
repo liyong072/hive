@@ -9,17 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.dump.events;
 
 import org.apache.hadoop.hive.metastore.api.NotificationEvent;
 import org.apache.hadoop.hive.metastore.messaging.UpdatePartitionColumnStatMessage;
-import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.metadata.Table;
 import org.apache.hadoop.hive.ql.parse.repl.DumpType;
 import org.apache.hadoop.hive.ql.parse.repl.dump.Utils;
@@ -47,20 +47,14 @@ class UpdatePartColStatHandler extends AbstractEventHandler<UpdatePartitionColum
               event.getEventType());
       return;
     }
-
     // Statistics without any data does not make sense.
-    if (withinContext.replicationSpec.isMetadataOnly()) {
-      return;
-    }
-
-    // For now we do not dump statistics for a transactional table since replicating the same is
-    // not supported.
-    if (AcidUtils.isTransactionalTable(tableObj)) {
+    if (withinContext.replicationSpec.isMetadataOnly()
+            || Utils.shouldDumpMetaDataOnlyForExternalTables(new Table(tableObj), withinContext.hiveConf)) {
       return;
     }
 
     if (!Utils.shouldReplicate(withinContext.replicationSpec, new Table(tableObj), true,
-                              withinContext.hiveConf)) {
+            withinContext.getTablesForBootstrap(), withinContext.oldReplScope, withinContext.hiveConf)) {
       return;
     }
 

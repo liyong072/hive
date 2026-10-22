@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.sarg;
@@ -157,10 +158,18 @@ public interface SearchArgument {
   public List<PredicateLeaf> getLeaves();
 
   /**
-   * Get the expression tree. This should only needed for file formats that
-   * need to translate the expression to an internal form.
+   * Get the expression tree normalized into conjunctive normal form.
+   * This should only needed for file formats that need to translate
+   * the expression to an internal form.
    */
   public ExpressionTree getExpression();
+
+  /**
+   * Get the expression tree without the normalization to conjunctive normal
+   * form. It will still have the negations pushed to the leaves, but it
+   * won't have the potentially exponential expansion.
+   */
+  public ExpressionTree getCompactExpression();
 
   /**
    * Evaluate the entire predicate based on the values for the leaf predicates.

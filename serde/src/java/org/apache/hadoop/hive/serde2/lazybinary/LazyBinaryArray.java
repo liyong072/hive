@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.lazybinary;
 
@@ -135,9 +136,9 @@ public class LazyBinaryArray extends
     // adjust arrays
     adjustArraySize(arraySize);
     // find out the null-bytes
-    int arryByteStart = start + vInt.length;
-    int nullByteCur = arryByteStart;
-    int nullByteEnd = arryByteStart + (arraySize + 7) / 8;
+    int arrayByteStart = start + vInt.length;
+    int nullByteCur = arrayByteStart;
+    int nullByteEnd = arrayByteStart + (arraySize + 7) / 8;
     // the begin the real elements
     int lastElementByteEnd = nullByteEnd;
     // the list element object inspector

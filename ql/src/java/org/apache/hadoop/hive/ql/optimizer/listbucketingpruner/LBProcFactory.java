@@ -9,18 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.listbucketingpruner;
 
 import org.apache.hadoop.hive.ql.exec.FilterOperator;
 import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.optimizer.PrunerOperatorFactory;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -42,7 +43,7 @@ public final class LBProcFactory extends PrunerOperatorFactory {
 
     @Override
     protected void generatePredicate(NodeProcessorCtx procCtx, FilterOperator fop,
-        TableScanOperator top) throws SemanticException, UDFArgumentException {
+        TableScanOperator top) throws SemanticException {
       LBOpWalkerCtx owc = (LBOpWalkerCtx) procCtx;
       // Otherwise this is not a sampling predicate and we need to
       ExprNodeDesc predicate = fop.getConf().getPredicate();
@@ -59,7 +60,7 @@ public final class LBProcFactory extends PrunerOperatorFactory {
 
   }
 
-  public static NodeProcessor getFilterProc() {
+  public static SemanticNodeProcessor getFilterProc() {
     return new LBPRFilterPruner();
   }
 

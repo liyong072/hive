@@ -9,16 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.messaging.event.filters;
 
 import org.apache.hadoop.hive.metastore.IMetaStoreClient.NotificationFilter;
 import org.apache.hadoop.hive.metastore.api.NotificationEvent;
+import org.apache.hadoop.hive.metastore.messaging.MessageBuilder;
 
 public abstract class BasicFilter implements NotificationFilter {
   @Override
@@ -27,6 +29,12 @@ public abstract class BasicFilter implements NotificationFilter {
       return false; // get rid of trivial case first, so that we can safely assume non-null
     }
     return shouldAccept(event);
+  }
+
+  boolean isTxnRelatedEvent(final NotificationEvent event) {
+    return ((event.getEventType().equals(MessageBuilder.OPEN_TXN_EVENT)) ||
+            (event.getEventType().equals(MessageBuilder.COMMIT_TXN_EVENT)) ||
+            (event.getEventType().equals(MessageBuilder.ABORT_TXN_EVENT)));
   }
 
   abstract boolean shouldAccept(final NotificationEvent event);

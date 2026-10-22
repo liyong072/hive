@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
@@ -30,6 +31,7 @@ import org.apache.hadoop.hive.ql.exec.UDFArgumentTypeException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.session.SessionState;
+import org.apache.hadoop.hive.ql.udf.SettableUDF;
 import org.apache.hadoop.hive.serde2.io.ByteWritable;
 import org.apache.hadoop.hive.serde2.io.DoubleWritable;
 import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable;
@@ -59,7 +61,7 @@ import org.apache.hive.common.HiveCompat.CompatLevel;
  * GenericUDF Base Class for operations.
  */
 @Description(name = "op", value = "a op b - Returns the result of operation")
-public abstract class GenericUDFBaseNumeric extends GenericUDFBaseBinary {
+public abstract class GenericUDFBaseNumeric extends GenericUDFBaseBinary implements SettableUDF {
 
   protected transient PrimitiveObjectInspector leftOI;
   protected transient PrimitiveObjectInspector rightOI;
@@ -78,6 +80,12 @@ public abstract class GenericUDFBaseNumeric extends GenericUDFBaseBinary {
 
   protected boolean confLookupNeeded = true;
   protected boolean ansiSqlArithmetic = false;
+
+  // A typeinfo that has already been defined. On the first pass when we create the class
+  // from the ASTNode objects, the typeInfo is unknown. However, once CBO is run, CBO
+  // defines the type that should be used. We don't want to recalculate the typeInfo when
+  // we convert it back to ASTNodes, so the typeInfo is "predefined" in this case.
+  private TypeInfo predefinedTypeInfo;
 
   public GenericUDFBaseNumeric() {
   }
@@ -104,7 +112,7 @@ public abstract class GenericUDFBaseNumeric extends GenericUDFBaseBinary {
     // (where there should be valid HiveConf from SessionState).  Plan serialization will ensure
     // we have access to these values in the map/reduce tasks.
     if (confLookupNeeded) {
-      CompatLevel compatLevel = HiveCompat.getCompatLevel(SessionState.get().getConf());
+      CompatLevel compatLevel = HiveCompat.getCompatLevel(SessionState.getSessionConf());
       ansiSqlArithmetic = compatLevel.ordinal() > CompatLevel.HIVE_0_12.ordinal();
       confLookupNeeded = false;
     }
@@ -208,6 +216,9 @@ public abstract class GenericUDFBaseNumeric extends GenericUDFBaseBinary {
    * @throws UDFArgumentException
    */
   private PrimitiveTypeInfo deriveResultTypeInfo() throws UDFArgumentException {
+    if (predefinedTypeInfo instanceof PrimitiveTypeInfo && predefinedTypeInfo != null) {
+      return (PrimitiveTypeInfo) predefinedTypeInfo;
+    }
     PrimitiveTypeInfo left = (PrimitiveTypeInfo) TypeInfoUtils.getTypeInfoFromObjectInspector(leftOI);
     PrimitiveTypeInfo right = (PrimitiveTypeInfo) TypeInfoUtils.getTypeInfoFromObjectInspector(rightOI);
     if (!FunctionRegistry.isNumericType(left) || !FunctionRegistry.isNumericType(right)) {
@@ -338,5 +349,15 @@ public abstract class GenericUDFBaseNumeric extends GenericUDFBaseBinary {
 
   public void setAnsiSqlArithmetic(boolean ansiSqlArithmetic) {
     this.ansiSqlArithmetic = ansiSqlArithmetic;
+  }
+
+  @Override
+  public void setTypeInfo(TypeInfo typeInfo) {
+    this.predefinedTypeInfo = typeInfo;
+  }
+
+  @Override
+  public TypeInfo getTypeInfo() {
+    return this.predefinedTypeInfo;
   }
 }

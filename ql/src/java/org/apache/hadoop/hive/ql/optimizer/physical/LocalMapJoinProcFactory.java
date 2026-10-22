@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.physical;
@@ -37,12 +38,12 @@ import org.apache.hadoop.hive.ql.exec.RowSchema;
 import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.optimizer.physical.MapJoinResolver.LocalMapJoinProcCtx;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -64,16 +65,16 @@ import org.apache.hadoop.hive.ql.plan.TableDesc;
 public final class LocalMapJoinProcFactory {
   private static final Logger LOG = LoggerFactory.getLogger(LocalMapJoinProcFactory.class);
 
-  public static NodeProcessor getJoinProc() {
+  public static SemanticNodeProcessor getJoinProc() {
     return new LocalMapJoinProcessor();
   }
 
-  public static NodeProcessor getGroupByProc() {
+  public static SemanticNodeProcessor getGroupByProc() {
     return new MapJoinFollowedByGroupByProcessor();
   }
 
-  public static NodeProcessor getDefaultProc() {
-    return new NodeProcessor() {
+  public static SemanticNodeProcessor getDefaultProc() {
+    return new SemanticNodeProcessor() {
       @Override
       public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
           Object... nodeOutputs) throws SemanticException {
@@ -86,7 +87,7 @@ public final class LocalMapJoinProcFactory {
    * MapJoinFollowByProcessor.
    *
    */
-  public static class MapJoinFollowedByGroupByProcessor implements NodeProcessor {
+  public static class MapJoinFollowedByGroupByProcessor implements SemanticNodeProcessor {
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx, Object... nodeOutputs)
         throws SemanticException {
       LocalMapJoinProcCtx context = (LocalMapJoinProcCtx) ctx;
@@ -96,7 +97,7 @@ public final class LocalMapJoinProcFactory {
       context.setFollowedByGroupBy(true);
       GroupByOperator groupByOp = (GroupByOperator) nd;
       float groupByMemoryUsage = context.getParseCtx().getConf().getFloatVar(
-          HiveConf.ConfVars.HIVEMAPJOINFOLLOWEDBYMAPAGGRHASHMEMORY);
+          HiveConf.ConfVars.HIVE_MAPJOIN_FOLLOWEDBY_MAP_AGGR_HASH_MEMORY);
       groupByOp.getConf().setGroupByMemoryUsage(groupByMemoryUsage);
       return null;
     }
@@ -106,7 +107,7 @@ public final class LocalMapJoinProcFactory {
    * LocalMapJoinProcessor.
    *
    */
-  public static class LocalMapJoinProcessor implements NodeProcessor {
+  public static class LocalMapJoinProcessor implements SemanticNodeProcessor {
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx ctx, Object... nodeOutputs)
         throws SemanticException {
       LocalMapJoinProcCtx context = (LocalMapJoinProcCtx) ctx;
@@ -117,7 +118,7 @@ public final class LocalMapJoinProcFactory {
       try {
         hasGroupBy(mapJoinOp, context);
       } catch (Exception e) {
-        e.printStackTrace();
+        LOG.warn("Failed to determine if has group-by", e);
       }
 
       MapJoinDesc mapJoinDesc = mapJoinOp.getConf();
@@ -130,10 +131,10 @@ public final class LocalMapJoinProcFactory {
       float hashtableMemoryUsage;
       if (context.isFollowedByGroupBy()) {
         hashtableMemoryUsage = conf.getFloatVar(
-            HiveConf.ConfVars.HIVEHASHTABLEFOLLOWBYGBYMAXMEMORYUSAGE);
+            HiveConf.ConfVars.HIVE_HASHTABLE_FOLLOWBY_GBY_MAX_MEMORY_USAGE);
       } else {
         hashtableMemoryUsage = conf.getFloatVar(
-            HiveConf.ConfVars.HIVEHASHTABLEMAXMEMORYUSAGE);
+            HiveConf.ConfVars.HIVE_HASHTABLE_MAX_MEMORY_USAGE);
       }
       mapJoinDesc.setHashTableMemoryUsage(hashtableMemoryUsage);
       LOG.info("Setting max memory usage to " + hashtableMemoryUsage + " for table sink "
@@ -148,7 +149,7 @@ public final class LocalMapJoinProcFactory {
 
       // todo: support tez/vectorization
       boolean useNontaged = conf.getBoolVar(
-          HiveConf.ConfVars.HIVECONVERTJOINUSENONSTAGED) &&
+          HiveConf.ConfVars.HIVE_CONVERT_JOIN_USE_NONSTAGED) &&
           conf.getVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("mr") &&
           !conf.getBoolVar(HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED);
 
@@ -252,14 +253,14 @@ public final class LocalMapJoinProcFactory {
     public void hasGroupBy(Operator<? extends OperatorDesc> mapJoinOp,
         LocalMapJoinProcCtx localMapJoinProcCtx) throws Exception {
       List<Operator<? extends OperatorDesc>> childOps = mapJoinOp.getChildOperators();
-      Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
+      Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
       opRules.put(new RuleRegExp("R1", GroupByOperator.getOperatorName() + "%"),
         LocalMapJoinProcFactory.getGroupByProc());
       // The dispatcher fires the processor corresponding to the closest
       // matching rule and passes the context along
-      Dispatcher disp = new DefaultRuleDispatcher(LocalMapJoinProcFactory.getDefaultProc(),
+      SemanticDispatcher disp = new DefaultRuleDispatcher(LocalMapJoinProcFactory.getDefaultProc(),
           opRules, localMapJoinProcCtx);
-      GraphWalker ogw = new DefaultGraphWalker(disp);
+      SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
       // iterator the reducer operator tree
       ArrayList<Node> topNodes = new ArrayList<Node>();
       topNodes.addAll(childOps);

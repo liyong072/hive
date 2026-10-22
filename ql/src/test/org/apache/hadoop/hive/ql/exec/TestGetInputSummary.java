@@ -9,29 +9,30 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -46,6 +47,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
 import org.apache.hadoop.hive.ql.Context;
 import org.apache.hadoop.hive.ql.io.ContentSummaryInputFormat;
@@ -79,7 +81,7 @@ public class TestGetInputSummary {
   @Before
   public void setup() throws Exception {
     // creates scratch directories needed by the Context object
-    SessionState.start(new HiveConf());
+    SessionState.start(new HiveConfForTest(getClass()));
 
     this.jobConf = new JobConf();
     this.properties = new Properties();
@@ -382,10 +384,8 @@ public class TestGetInputSummary {
       context.addCS(partitionPath.toString(), entry.getValue());
     }
 
-    LinkedHashMap<Path, PartitionDesc> pathToPartitionInfo =
-        new LinkedHashMap<>();
-    LinkedHashMap<Path, ArrayList<String>> pathToAliasTable =
-        new LinkedHashMap<>();
+    Map<Path, PartitionDesc> pathToPartitionInfo = new LinkedHashMap<>();
+    Map<Path, List<String>> pathToAliasTable = new LinkedHashMap<>();
     TableScanOperator scanOp = new TableScanOperator();
 
     PartitionDesc partitionDesc = new PartitionDesc(

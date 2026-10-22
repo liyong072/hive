@@ -9,44 +9,61 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql;
 
-import com.google.common.collect.ImmutableMap;
 import org.apache.hadoop.hive.common.LogUtils;
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.exec.TaskResult;
 import org.apache.hadoop.hive.ql.plan.api.StageType;
+import org.apache.tez.common.counters.CounterGroup;
+import org.apache.tez.common.counters.TezCounter;
+import org.apache.tez.common.counters.TezCounters;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.util.*;
 
 import org.apache.hadoop.mapred.Counters;
 import org.apache.hadoop.mapred.RunningJob;
-import org.codehaus.jackson.annotate.JsonIgnoreProperties;
-import org.codehaus.jackson.annotate.JsonWriteNullProperties;
-import org.codehaus.jackson.annotate.JsonIgnore;
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * Some limited query information to save for WebUI.
  *
  * The class is synchronized, as WebUI may access information about a running query.
  */
+@JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, setterVisibility = Visibility.NONE)
 public class QueryDisplay {
+
+  /**
+   * Preferred objectMapper for this class.
+   *
+   * It must be used to have things work in shaded environment (and its also more performant).
+   */
+  public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   // Member variables
   private String queryStr;
   private String explainPlan;
   private String errorMessage;
   private String queryId;
+  private TezCounters tezCounters;
   private long queryStartTime = System.currentTimeMillis();
 
   private final Map<Phase, Map<String, Long>> hmsTimingMap = new HashMap<Phase, Map<String, Long>>();
@@ -55,14 +72,14 @@ public class QueryDisplay {
 
   private final LinkedHashMap<String, TaskDisplay> tasks = new LinkedHashMap<String, TaskDisplay>();
 
-  public synchronized <T extends Serializable> void updateTaskStatus(Task<T> tTask) {
+  public synchronized void updateTaskStatus(Task<?> tTask) {
     if (!tasks.containsKey(tTask.getId())) {
       tasks.put(tTask.getId(), new TaskDisplay(tTask));
     }
     tasks.get(tTask.getId()).updateStatus(tTask);
   }
 
-  public synchronized <T extends Serializable> void updateTaskStatistics(MapRedStats mapRedStats,
+  public synchronized void updateTaskStatistics(MapRedStats mapRedStats,
       RunningJob rj, String taskId) throws IOException, JSONException {
     if (tasks.containsKey(taskId)) {
       tasks.get(taskId).updateMapRedStatsJson(mapRedStats, rj);
@@ -75,12 +92,14 @@ public class QueryDisplay {
     EXECUTION,
   }
 
+  @JsonIgnore
   public String getFullLogLocation() {
     return LogUtils.getLogFilePath();
   }
 
-  @JsonWriteNullProperties(false)
+  @JsonInclude(Include.NON_NULL)
   @JsonIgnoreProperties(ignoreUnknown = true)
+  @JsonAutoDetect(fieldVisibility = Visibility.ANY, getterVisibility = Visibility.NONE, setterVisibility = Visibility.NONE)
   public static class TaskDisplay {
 
     public static final String NUMBER_OF_MAPPERS = "Number of Mappers";
@@ -232,7 +251,7 @@ public class QueryDisplay {
       return externalHandle;
     }
 
-    public synchronized <T extends Serializable> void updateStatus(Task<T> tTask) {
+    public void updateStatus(Task<?> tTask) {
       this.taskState = tTask.getTaskState();
       if (externalHandle == null && tTask.getExternalHandle() != null) {
         this.externalHandle = tTask.getExternalHandle();
@@ -279,6 +298,7 @@ public class QueryDisplay {
     this.queryStr = queryStr;
   }
 
+  @JsonIgnore
   public synchronized String getQueryString() {
     return returnStringOrUnknown(queryStr);
   }
@@ -291,9 +311,35 @@ public class QueryDisplay {
     this.explainPlan = explainPlan;
   }
 
+  public synchronized void setTezCounters(TezCounters tc) {
+    this.tezCounters = tc;
+  }
+
+  public synchronized TezCounters getTezCounters() {
+    return this.tezCounters;
+  }
+
+  public synchronized Map<String, String> getCountersAsString() {
+    Map<String, String> allCounterGroups = new HashMap<>();
+    if (tezCounters != null) {
+      for (CounterGroup group : tezCounters) {
+        ObjectNode groupNode = OBJECT_MAPPER.createObjectNode();
+        for (TezCounter counter : group) {
+          groupNode.put(counter.getDisplayName(), counter.getValue());
+        }
+        String counterGroupName = group.getName();
+        String[] counterGroupSplits = counterGroupName.split("\\.");
+        counterGroupName = counterGroupName.contains(".") ? counterGroupSplits[counterGroupSplits.length - 1] :
+            counterGroupName + " Counter";
+        allCounterGroups.put(counterGroupName, groupNode.toString());
+      }
+    }
+    return allCounterGroups;
+  }
+
   /**
    * @param phase phase of query
-   * @return map of HMS Client method-calls and duration in miliseconds, during given phase.
+   * @return map of HMS Client method-calls and duration in milliseconds, during given phase.
    */
   public synchronized Map<String, Long> getHmsTimings(Phase phase) {
     return hmsTimingMap.get(phase);
@@ -301,15 +347,15 @@ public class QueryDisplay {
 
   /**
    * @param phase phase of query
-   * @param hmsTimings map of HMS Client method-calls and duration in miliseconds, during given phase.
+   * @param hmsTimings map of HMS Client method-calls and duration in milliseconds, during given phase.
    */
-  public synchronized void setHmsTimings(Phase phase, ImmutableMap<String, Long> hmsTimings) {
+  public synchronized void setHmsTimings(Phase phase, Map<String, Long> hmsTimings) {
     hmsTimingMap.put(phase, hmsTimings);
   }
 
   /**
    * @param phase phase of query
-   * @return map of PerfLogger call-trace name and start time in miliseconds, during given phase.
+   * @return map of PerfLogger call-trace name and start time in milliseconds, during given phase.
    */
   public synchronized Map<String, Long> getPerfLogStarts(Phase phase) {
     return perfLogStartMap.get(phase);
@@ -317,15 +363,15 @@ public class QueryDisplay {
 
   /**
    * @param phase phase of query
-   * @param perfLogStarts map of PerfLogger call-trace name and start time in miliseconds, during given phase.
+   * @param perfLogStarts map of PerfLogger call-trace name and start time in milliseconds, during given phase.
    */
-  public synchronized void setPerfLogStarts(Phase phase, ImmutableMap<String, Long> perfLogStarts) {
+  public synchronized void setPerfLogStarts(Phase phase, Map<String, Long> perfLogStarts) {
     perfLogStartMap.put(phase, perfLogStarts);
   }
 
   /**
    * @param phase phase of query
-   * @return map of PerfLogger call-trace name and end time in miliseconds, during given phase.
+   * @return map of PerfLogger call-trace name and end time in milliseconds, during given phase.
    */
   public synchronized Map<String, Long> getPerfLogEnds(Phase phase) {
     return perfLogEndMap.get(phase);
@@ -333,15 +379,15 @@ public class QueryDisplay {
 
   /**
    * @param phase phase of query
-   * @param perfLogEnds map of PerfLogger call-trace name and end time in miliseconds, during given phase.
+   * @param perfLogEnds map of PerfLogger call-trace name and end time in milliseconds, during given phase.
    */
-   public synchronized void setPerfLogEnds(Phase phase, ImmutableMap<String, Long> perfLogEnds) {
+  public synchronized void setPerfLogEnds(Phase phase, Map<String, Long> perfLogEnds) {
     perfLogEndMap.put(phase, perfLogEnds);
   }
 
   /**
    * @param phase phase of query
-   * @return map of PerfLogger call-trace name and duration in miliseconds, during given phase.
+   * @return map of PerfLogger call-trace name and duration in milliseconds, during given phase.
    */
   public synchronized Map<String, Long> getPerfLogTimes(Phase phase) {
     Map<String, Long> times = new HashMap<>();
@@ -375,11 +421,11 @@ public class QueryDisplay {
     this.queryId = queryId;
   }
 
-  private String returnStringOrUnknown(String s) {
+  private static String returnStringOrUnknown(String s) {
     return s == null ? "UNKNOWN" : s;
   }
 
-  public long getQueryStartTime() {
+  public synchronized long getQueryStartTime() {
     return queryStartTime;
   }
 }

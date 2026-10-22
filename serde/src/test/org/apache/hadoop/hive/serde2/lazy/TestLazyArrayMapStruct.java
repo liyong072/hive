@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.lazy;
 
@@ -25,7 +26,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 
-import junit.framework.TestCase;
+
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.serde2.SerDeException;
@@ -41,12 +42,17 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import org.junit.Test;
 
 /**
  * Tests LazyArray, LazyMap, LazyStruct and LazyUnion
  *
  */
-public class TestLazyArrayMapStruct extends TestCase {
+public class TestLazyArrayMapStruct {
 
   // nesting level limits
   static final int EXTENDED_LEVEL_THRESHOLD = 24;
@@ -55,6 +61,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyArray class.
    */
+  @Test
   public void testLazyArray() throws Throwable {
     try {
       // Array of Byte
@@ -133,6 +140,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyMap class.
    */
+  @Test
   public void testLazyMap() throws Throwable {
     try {
       {
@@ -199,6 +207,7 @@ public class TestLazyArrayMapStruct extends TestCase {
    * where '[' and  ']' don't exist, only for notation purpose,
    * STX with value of 2 as entry separator, ETX with 3 as key/value separator
    * */
+  @Test
   public void testLazyMapWithBadEntries() throws Throwable {
     try {
       {
@@ -304,6 +313,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyMap class.
    */
+  @Test
   public void testLazyMapWithDuplicateKeys() throws Throwable {
     try {
       {
@@ -367,6 +377,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyStruct class.
    */
+  @Test
   public void testLazyStruct() throws Throwable {
     try {
       {
@@ -448,6 +459,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyUnion class.
    */
+  @Test
   public void testLazyUnion() throws Throwable {
     try {
       {
@@ -516,6 +528,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyArray class with multiple levels of nesting
    */
+  @Test
   public void testLazyArrayNested() throws Throwable {
     for(int i = 2; i < EXTENDED_LEVEL_THRESHOLD; i++ ){
       testNestedinArrayAtLevelExtended(i, ObjectInspector.Category.LIST);
@@ -525,6 +538,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyArray class with multiple levels of nesting
    */
+  @Test
   public void testLazyArrayNestedExceedLimit() throws Throwable {
     checkExtendedLimitExceeded(EXTENDED_LEVEL_THRESHOLD, ObjectInspector.Category.LIST);
   }
@@ -543,6 +557,7 @@ public class TestLazyArrayMapStruct extends TestCase {
    * Test the LazyArray class with multiple levels of nesting, when nesting
    * levels are not extended
    */
+  @Test
   public void testLazyArrayNestedExceedLimitNotExtended() throws Throwable {
     checkNotExtendedLimitExceeded(DEFAULT_LEVEL_THRESHOLD,
         ObjectInspector.Category.LIST);
@@ -552,6 +567,7 @@ public class TestLazyArrayMapStruct extends TestCase {
    * Test the LazyMap class with multiple levels of nesting, when nesting
    * levels are not extended
    */
+  @Test
   public void testLazyMapNestedExceedLimitNotExtended() throws Throwable {
     checkNotExtendedLimitExceeded(DEFAULT_LEVEL_THRESHOLD-1,
         ObjectInspector.Category.MAP);
@@ -561,6 +577,7 @@ public class TestLazyArrayMapStruct extends TestCase {
    * Test the LazyMap class with multiple levels of nesting, when nesting
    * levels are not extended
    */
+  @Test
   public void testLazyStructNestedExceedLimitNotExtended() throws Throwable {
     checkNotExtendedLimitExceeded(DEFAULT_LEVEL_THRESHOLD,
         ObjectInspector.Category.STRUCT);
@@ -570,6 +587,7 @@ public class TestLazyArrayMapStruct extends TestCase {
    * Test the LazyMap class with multiple levels of nesting, when nesting
    * levels are not extended
    */
+  @Test
   public void testLazyUnionNestedExceedLimitNotExtended() throws Throwable {
     checkNotExtendedLimitExceeded(DEFAULT_LEVEL_THRESHOLD,
         ObjectInspector.Category.UNION);
@@ -588,6 +606,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyMap class with multiple levels of nesting
    */
+  @Test
   public void testLazyMapNested() throws Throwable {
     //map max nesting level is one less because it uses an additional separator
     for(int i = 2; i < EXTENDED_LEVEL_THRESHOLD - 1; i++ ){
@@ -598,6 +617,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyMap class with multiple levels of nesting
    */
+  @Test
   public void testLazyMapNestedExceedLimit() throws Throwable {
     //map max nesting level is one less because it uses an additional separator
     checkExtendedLimitExceeded(EXTENDED_LEVEL_THRESHOLD - 1, ObjectInspector.Category.MAP);
@@ -606,6 +626,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyUnion class with multiple levels of nesting
    */
+  @Test
   public void testLazyUnionNested() throws Throwable {
     for(int i = 2; i < EXTENDED_LEVEL_THRESHOLD; i++ ){
      testNestedinArrayAtLevelExtended(i, ObjectInspector.Category.UNION);
@@ -615,6 +636,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyUnion class with multiple levels of nesting
    */
+  @Test
   public void testLazyUnionNestedExceedLimit() throws Throwable {
     checkExtendedLimitExceeded(EXTENDED_LEVEL_THRESHOLD, ObjectInspector.Category.UNION);
   }
@@ -622,6 +644,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyStruct class with multiple levels of nesting
    */
+  @Test
   public void testLazyStructNested() throws Throwable {
     for(int i = 2; i < EXTENDED_LEVEL_THRESHOLD; i++ ){
      testNestedinArrayAtLevelExtended(i, ObjectInspector.Category.STRUCT);
@@ -645,6 +668,7 @@ public class TestLazyArrayMapStruct extends TestCase {
   /**
    * Test the LazyStruct class with multiple levels of nesting
    */
+  @Test
   public void testLazyStructNestedExceedLimit() throws Throwable {
     checkExtendedLimitExceeded(EXTENDED_LEVEL_THRESHOLD, ObjectInspector.Category.STRUCT);
   }
@@ -692,7 +716,7 @@ public class TestLazyArrayMapStruct extends TestCase {
     Configuration conf = new Configuration();
     tableProp.setProperty("columns", "narray");
     tableProp.setProperty("columns.types", schema.toString());
-    SerDeUtils.initializeSerDe(serDe, conf, tableProp, null);
+    serDe.initialize(conf, tableProp, null);
     LazySerDeParameters serdeParams = new LazySerDeParameters(conf, tableProp, LazySimpleSerDe.class.getName());
     
     //create the serialized string for type

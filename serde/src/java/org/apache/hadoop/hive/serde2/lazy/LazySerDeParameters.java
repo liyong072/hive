@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.lazy;
@@ -53,14 +54,23 @@ public class LazySerDeParameters implements LazyObjectInspectorParameters {
   	= "hive.serialization.extend.nesting.levels";
   public static final String SERIALIZATION_EXTEND_ADDITIONAL_NESTING_LEVELS
 	= "hive.serialization.extend.additional.nesting.levels";
-
+  public static final String SERIALIZATION_DECODE_BINARY_AS_BASE64
+  	= "hive.serialization.decode.binary.as.base64";
+  
   private Properties tableProperties;
   private String serdeName;
 
-  // The list of bytes used for the separators in the column (a nested struct 
+  // The list of bytes used for the separators in the column (a nested struct
   // such as Array<Array<int>> will use multiple separators).
   // The list of separators + escapeChar are the bytes required to be escaped.
   private byte[] separators;
+
+  // Populated only when the top-level field delimiter is longer than one byte
+  // (i.e. by MultiDelimitSerDe). Never populated for LazySimpleSerDe callers,
+  // so existing single-byte behaviour is preserved. The single-byte `separators[0]`
+  // slot is still set to the first byte of the multi-byte delim so that
+  // needsEscape[] and any legacy consumers of getSeparators() keep working.
+  private byte[] fieldDelimMulti;
 
   private Text nullSequence;
 
@@ -74,6 +84,7 @@ public class LazySerDeParameters implements LazyObjectInspectorParameters {
   private boolean[] needsEscape = new boolean[256];  // A flag for each byte to indicate if escape is needed.
 
   private boolean extendedBooleanLiteral;
+  private boolean decodeBinaryAsBase64;
   List<String> timestampFormats;
   
   public LazySerDeParameters(Configuration job, Properties tbl, String serdeName) throws SerDeException {
@@ -88,6 +99,8 @@ public class LazySerDeParameters implements LazyObjectInspectorParameters {
         .getProperty(serdeConstants.SERIALIZATION_LAST_COLUMN_TAKES_REST);
     lastColumnTakesRest = (lastColumnTakesRestString != null && lastColumnTakesRestString
         .equalsIgnoreCase("true"));
+
+    decodeBinaryAsBase64 = Boolean.parseBoolean(tableProperties.getProperty(SERIALIZATION_DECODE_BINARY_AS_BASE64, "true"));
 
     extractColumnInfo(job);
 
@@ -190,6 +203,31 @@ public class LazySerDeParameters implements LazyObjectInspectorParameters {
     return separators;
   }
 
+  /**
+   * @return the raw (potentially multi-byte) top-level field delimiter, or
+   *         {@code null} when the effective delimiter is a single byte (the
+   *         value in {@code separators[0]} is authoritative in that case).
+   *
+   * Set by callers that know they're wiring up a multi-byte delimiter
+   * (e.g. LLAP's {@code VectorDeserializeOrcWriter} when the SerDe is
+   * {@code MultiDelimitSerDe}). Left {@code null} for plain LazySimpleSerDe so
+   * its single-byte fast path is preserved verbatim.
+   */
+  public byte[] getFieldDelimMulti() {
+    return fieldDelimMulti;
+  }
+
+  /**
+   * Opt-in switch for the multi-byte top-level delimiter. Only meaningful when
+   * {@code delim.length > 1}; shorter values are ignored (the {@code separators[0]}
+   * byte remains the source of truth). Never set this for a
+   * LazySimpleSerDe-backed table — its slow path still truncates to a single
+   * byte, so opting the fast path into multi-byte would silently diverge.
+   */
+  public void setFieldDelimMulti(byte[] delim) {
+    this.fieldDelimMulti = (delim != null && delim.length > 1) ? delim : null;
+  }
+
   public Text getNullSequence() {
     return nullSequence;
   }
@@ -218,6 +256,10 @@ public class LazySerDeParameters implements LazyObjectInspectorParameters {
     return extendedBooleanLiteral;
   }
 
+  public boolean isDecodeBinaryAsBase64() {
+    return decodeBinaryAsBase64;
+  }
+  
   public List<String> getTimestampFormats() {
     return timestampFormats;
   }

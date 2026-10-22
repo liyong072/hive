@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.common.jsonexplain;
@@ -93,9 +94,9 @@ public final class Op {
       // get the map for posToVertex
       Map<String, Vertex> posToVertex = new LinkedHashMap<>();
       if (opObject.has("input vertices:")) {
-        JSONObject verticeObj = opObject.getJSONObject("input vertices:");
-        for (String pos : JSONObject.getNames(verticeObj)) {
-          String vertexName = verticeObj.getString(pos);
+        JSONObject vertexObj = opObject.getJSONObject("input vertices:");
+        for (String pos : JSONObject.getNames(vertexObj)) {
+          String vertexName = vertexObj.getString(pos);
           // update the connection
           Connection c = null;
           for (Connection connection : vertex.parentConnections) {
@@ -120,6 +121,34 @@ public final class Op {
         parentVertexes.add(connection.from);
       }
       parentVertexes.removeAll(posToVertex.values());
+
+      // remove the parent vertices that are used for the other join operators
+      List<Op> remaining = new ArrayList<>(children);
+      Set<Op> visited = new HashSet<>();
+      while (!remaining.isEmpty()) {
+        Op child = remaining.remove(0);
+        visited.add(child);
+
+        if (child.opObject.has("input vertices:")) {
+          JSONObject vertexObj = child.opObject.getJSONObject("input vertices:");
+          for (String pos : JSONObject.getNames(vertexObj)) {
+            String vertexName = vertexObj.getString(pos);
+            for (Connection connection : vertex.parentConnections) {
+              if (connection.from.name.equals(vertexName)) {
+                parentVertexes.remove(connection.from);
+                break;
+              }
+            }
+          }
+        }
+
+        for (Op grandchild: child.children) {
+          if (!visited.contains(grandchild)) {
+            remaining.add(grandchild);
+          }
+        }
+      }
+
       Map<String, String> posToOpId = new LinkedHashMap<>();
       if (keys.length() != 0) {
         for (String key : JSONObject.getNames(keys)) {
@@ -195,7 +224,7 @@ public final class Op {
     // should be merge join
     else {
       Map<String, String> posToOpId = new LinkedHashMap<>();
-      if (vertex.mergeJoinDummyVertexs.size() == 0) {
+      if (vertex.mergeJoinDummyVertices.isEmpty()) {
         for (Entry<String, String> entry : vertex.tagToInput.entrySet()) {
           Connection c = null;
           for (Connection connection : vertex.parentConnections) {
@@ -226,7 +255,7 @@ public final class Op {
         }
       } else {
         posToOpId.put(vertex.tag, this.parent.operatorId);
-        for (Vertex v : vertex.mergeJoinDummyVertexs) {
+        for (Vertex v : vertex.mergeJoinDummyVertices) {
           if (v.outputOps.size() != 1) {
             throw new Exception("Can not find a single root operators in a single vertex " + v.name
                 + " when hive explain user is trying to identify the operator id.");
@@ -244,10 +273,8 @@ public final class Op {
           }
         }
         // inline merge join operator in a self-join
-        if (this.vertex != null) {
-          for (Vertex v : this.vertex.mergeJoinDummyVertexs) {
+        for (Vertex v : this.vertex.mergeJoinDummyVertices) {
             parser.addInline(this, new Connection(null, v));
-          }
         }
       }
       // update the attrs
@@ -280,7 +307,7 @@ public final class Op {
     if (operatorId != null) {
       sb.append(" [" + operatorId + "]");
     }
-    if (!DagJsonParserUtils.OperatorNoStats.contains(name) && attrs.containsKey("Statistics:")) {
+    if (!DagJsonParserUtils.getOperatorNoStats().contains(name) && attrs.containsKey("Statistics:")) {
       sb.append(" (" + attrs.get("Statistics:") + ")");
     }
     attrs.remove("Statistics:");

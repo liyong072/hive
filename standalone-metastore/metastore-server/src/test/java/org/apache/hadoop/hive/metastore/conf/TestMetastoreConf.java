@@ -6,20 +6,23 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.metastore.conf;
 
 import org.apache.hadoop.hive.metastore.annotation.MetastoreUnitTest;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf.ConfVars;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.metastore.txn.service.CompactionHouseKeeperService;
+import org.apache.hadoop.hive.metastore.txn.service.AcidTxnCleanerService;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.core.StringContains;
 import org.hamcrest.core.StringEndsWith;
@@ -44,13 +47,12 @@ import org.apache.hadoop.hive.metastore.DefaultStorageSchemaReader;
 import org.apache.hadoop.hive.metastore.HiveAlterHandler;
 import org.apache.hadoop.hive.metastore.MaterializationsRebuildLockCleanerTask;
 import org.apache.hadoop.hive.metastore.MetastoreTaskThread;
+import org.apache.hadoop.hive.metastore.RetryingHMSHandler;
 import org.apache.hadoop.hive.metastore.RuntimeStatsCleanerTask;
 import org.apache.hadoop.hive.metastore.events.EventCleanerTask;
 import org.apache.hadoop.hive.metastore.security.MetastoreDelegationTokenManager;
-import org.apache.hadoop.hive.metastore.txn.AcidCompactionHistoryService;
-import org.apache.hadoop.hive.metastore.txn.AcidHouseKeeperService;
-import org.apache.hadoop.hive.metastore.txn.AcidOpenTxnsCounterService;
-import org.apache.hadoop.hive.metastore.txn.AcidWriteSetService;
+import org.apache.hadoop.hive.metastore.txn.service.AcidHouseKeeperService;
+import org.apache.hadoop.hive.metastore.txn.service.AcidOpenTxnsCounterService;
 
 @Category(MetastoreUnitTest.class)
 public class TestMetastoreConf {
@@ -132,7 +134,7 @@ public class TestMetastoreConf {
     conf = MetastoreConf.newMetastoreConf();
     Assert.assertEquals("defaultval", MetastoreConf.getVar(conf, ConfVars.STR_TEST_ENTRY));
     Assert.assertEquals(42, MetastoreConf.getLongVar(conf, ConfVars.LONG_TEST_ENTRY));
-    Assert.assertEquals(3.141592654, MetastoreConf.getDoubleVar(conf, ConfVars.DOUBLE_TEST_ENTRY),
+    Assert.assertEquals(Math.PI, MetastoreConf.getDoubleVar(conf, ConfVars.DOUBLE_TEST_ENTRY),
         0.0000001);
     Assert.assertTrue(MetastoreConf.getBoolVar(conf, ConfVars.BOOLEAN_TEST_ENTRY));
     Assert.assertEquals(1, MetastoreConf.getTimeVar(conf, ConfVars.TIME_TEST_ENTRY, TimeUnit.SECONDS));
@@ -149,7 +151,7 @@ public class TestMetastoreConf {
     Assert.assertEquals("defaultval", MetastoreConf.get(conf, ConfVars.STR_TEST_ENTRY.getHiveName()));
     Assert.assertEquals("defaultval", MetastoreConf.getAsString(conf, ConfVars.STR_TEST_ENTRY));
     Assert.assertEquals("42", MetastoreConf.getAsString(conf, ConfVars.LONG_TEST_ENTRY));
-    Assert.assertEquals("3.141592654", MetastoreConf.getAsString(conf, ConfVars.DOUBLE_TEST_ENTRY));
+    Assert.assertEquals("" + Math.PI, MetastoreConf.getAsString(conf, ConfVars.DOUBLE_TEST_ENTRY));
     Assert.assertEquals("true", MetastoreConf.getAsString(conf, ConfVars.BOOLEAN_TEST_ENTRY));
   }
 
@@ -217,7 +219,7 @@ public class TestMetastoreConf {
 
   @Test
   public void readHiveMetastoreSiteWithHiveConfDir() throws IOException {
-    createConfFile("hivemetastore-site.xml", false, "HIVE_CONF_DIR", instaMap(
+    createConfFile("metastore-site.xml", false, "HIVE_CONF_DIR", instaMap(
         "test.double", "1.8"
     ));
     conf = MetastoreConf.newMetastoreConf();
@@ -227,7 +229,7 @@ public class TestMetastoreConf {
 
   @Test
   public void readHiveMetastoreSiteWithHiveHomeDir() throws IOException {
-    createConfFile("hivemetastore-site.xml", true, "HIVE_HOME", instaMap(
+    createConfFile("metastore-site.xml", true, "HIVE_HOME", instaMap(
         "test.bool", "false"
     ));
     conf = MetastoreConf.newMetastoreConf();
@@ -453,25 +455,29 @@ public class TestMetastoreConf {
   public void testClassNames() {
     Assert.assertEquals(MetastoreConf.DEFAULT_STORAGE_SCHEMA_READER_CLASS,
         DefaultStorageSchemaReader.class.getName());
+    Assert.assertEquals(MetastoreConf.SERDE_STORAGE_SCHEMA_READER_CLASS,
+        "org.apache.hadoop.hive.metastore.SerDeStorageSchemaReader");
     Assert.assertEquals(MetastoreConf.HIVE_ALTER_HANDLE_CLASS,
         HiveAlterHandler.class.getName());
     Assert.assertEquals(MetastoreConf.MATERIALZIATIONS_REBUILD_LOCK_CLEANER_TASK_CLASS,
         MaterializationsRebuildLockCleanerTask.class.getName());
     Assert.assertEquals(MetastoreConf.METASTORE_TASK_THREAD_CLASS,
         MetastoreTaskThread.class.getName());
+    Assert.assertEquals(MetastoreConf.METASTORE_RETRYING_HANDLER_CLASS,
+        RetryingHMSHandler.class.getName());
     Assert.assertEquals(MetastoreConf.RUNTIME_STATS_CLEANER_TASK_CLASS,
         RuntimeStatsCleanerTask.class.getName());
     Assert.assertEquals(MetastoreConf.EVENT_CLEANER_TASK_CLASS,
         EventCleanerTask.class.getName());
     Assert.assertEquals(MetastoreConf.METASTORE_DELEGATION_MANAGER_CLASS,
         MetastoreDelegationTokenManager.class.getName());
-    Assert.assertEquals(MetastoreConf.ACID_COMPACTION_HISTORY_SERVICE_CLASS,
-        AcidCompactionHistoryService.class.getName());
-    Assert.assertEquals(MetastoreConf.ACID_HOUSE_KEEPER_SERVICE_CLASS,
+    Assert.assertEquals(MetastoreConf.ACID_HOUSEKEEPER_SERVICE_CLASS,
         AcidHouseKeeperService.class.getName());
+    Assert.assertEquals(MetastoreConf.COMPACTION_HOUSEKEEPER_SERVICE_CLASS,
+        CompactionHouseKeeperService.class.getName());
+    Assert.assertEquals(MetastoreConf.ACID_TXN_CLEANER_SERVICE_CLASS,
+        AcidTxnCleanerService.class.getName());
     Assert.assertEquals(MetastoreConf.ACID_OPEN_TXNS_COUNTER_SERVICE_CLASS,
         AcidOpenTxnsCounterService.class.getName());
-    Assert.assertEquals(MetastoreConf.ACID_WRITE_SET_SERVICE_CLASS,
-        AcidWriteSetService.class.getName());
   }
 }

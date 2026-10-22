@@ -1,15 +1,20 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.io.parquet.convert;
 
@@ -19,11 +24,15 @@ import org.apache.parquet.io.api.Converter;
 import org.apache.parquet.io.api.GroupConverter;
 import org.apache.parquet.io.api.PrimitiveConverter;
 import org.apache.parquet.schema.GroupType;
-import org.apache.parquet.schema.OriginalType;
+import org.apache.parquet.schema.LogicalTypeAnnotation.ListLogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.LogicalTypeAnnotationVisitor;
+import org.apache.parquet.schema.LogicalTypeAnnotation.MapKeyValueTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.MapLogicalTypeAnnotation;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
 
 import java.util.Map;
+import java.util.Optional;
 
 public abstract class HiveGroupConverter extends GroupConverter implements ConverterParent {
 
@@ -46,17 +55,34 @@ public abstract class HiveGroupConverter extends GroupConverter implements Conve
     return ETypeConverter.getNewConverter(type, index, parent, hiveTypeInfo);
   }
 
-  protected static HiveGroupConverter getConverterFromDescription(GroupType type, int index, ConverterParent parent,
-                                                                  TypeInfo hiveTypeInfo) {
+  protected static HiveGroupConverter getConverterFromDescription(final GroupType type,
+      final int index, final ConverterParent parent, final TypeInfo hiveTypeInfo) {
     if (type == null) {
       return null;
     }
 
-    OriginalType annotation = type.getOriginalType();
-    if (annotation == OriginalType.LIST) {
-      return HiveCollectionConverter.forList(type, parent, index, hiveTypeInfo);
-    } else if (annotation == OriginalType.MAP || annotation == OriginalType.MAP_KEY_VALUE) {
-      return HiveCollectionConverter.forMap(type, parent, index, hiveTypeInfo);
+    if (type.getLogicalTypeAnnotation() != null) {
+      Optional<HiveGroupConverter> converter =
+          type.getLogicalTypeAnnotation().accept(new LogicalTypeAnnotationVisitor<HiveGroupConverter>(){
+            @Override
+            public Optional<HiveGroupConverter> visit(ListLogicalTypeAnnotation logicalTypeAnnotation) {
+              return Optional.of(HiveCollectionConverter.forList(type, parent, index, hiveTypeInfo));
+            }
+
+            @Override
+            public Optional<HiveGroupConverter> visit(MapLogicalTypeAnnotation logicalTypeAnnotation) {
+              return Optional.of(HiveCollectionConverter.forMap(type, parent, index, hiveTypeInfo));
+            }
+
+            @Override
+            public Optional<HiveGroupConverter> visit(MapKeyValueTypeAnnotation logicalTypeAnnotation) {
+              return Optional.of(HiveCollectionConverter.forMap(type, parent, index, hiveTypeInfo));
+            }
+          });
+
+      if (converter.isPresent()) {
+        return converter.get();
+      }
     }
 
     return new HiveStructConverter(type, parent, index, hiveTypeInfo);

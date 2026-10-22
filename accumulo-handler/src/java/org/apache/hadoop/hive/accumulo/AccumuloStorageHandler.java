@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.accumulo;
@@ -31,13 +32,13 @@ import org.apache.hadoop.hive.accumulo.predicate.AccumuloPredicateHandler;
 import org.apache.hadoop.hive.accumulo.serde.AccumuloIndexParameters;
 import org.apache.hadoop.hive.accumulo.serde.AccumuloSerDe;
 import org.apache.hadoop.hive.accumulo.serde.AccumuloSerDeParameters;
+import org.apache.hadoop.hive.common.TableName;
 import org.apache.hadoop.hive.metastore.HiveMetaHook;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
 import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
 import org.apache.hadoop.hive.ql.metadata.DefaultStorageHandler;
-import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.HiveStoragePredicateHandler;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
@@ -71,7 +72,6 @@ public class AccumuloStorageHandler extends DefaultStorageHandler implements Hiv
 
   protected AccumuloPredicateHandler predicateHandler = AccumuloPredicateHandler.getInstance();
   protected AccumuloConnectionParameters connectionParams;
-  protected Configuration conf;
   protected HiveAccumuloHelper helper = new HiveAccumuloHelper();
 
   /**
@@ -110,7 +110,7 @@ public class AccumuloStorageHandler extends DefaultStorageHandler implements Hiv
     if (DEFAULT_PREFIX.equals(table.getDbName())) {
       return table.getTableName();
     } else {
-      return table.getDbName() + "." + table.getTableName();
+      return TableName.getDbTable(table.getDbName(), table.getTableName());
     }
   }
 
@@ -145,21 +145,10 @@ public class AccumuloStorageHandler extends DefaultStorageHandler implements Hiv
     return tableName;
   }
 
-  protected String getColumnTypes(TableDesc tableDesc)  {
-    Properties props = tableDesc.getProperties();
-    String columnTypes = props.getProperty(serdeConstants.LIST_COLUMN_TYPES);
-    return columnTypes;
-  }
-
   protected String getIndexTableName(TableDesc tableDesc) {
     Properties props = tableDesc.getProperties();
     String tableName = props.getProperty(AccumuloIndexParameters.INDEXTABLE_NAME);
     return tableName;
-  }
-
-  @Override
-  public Configuration getConf() {
-    return conf;
   }
 
   @Override
@@ -179,7 +168,7 @@ public class AccumuloStorageHandler extends DefaultStorageHandler implements Hiv
   }
 
   @Override
-  public HiveAuthorizationProvider getAuthorizationProvider() throws HiveException {
+  public HiveAuthorizationProvider getAuthorizationProvider() {
     return null;
   }
 
@@ -292,7 +281,6 @@ public class AccumuloStorageHandler extends DefaultStorageHandler implements Hiv
     StringBuilder sb = new StringBuilder();
 
     String cols = indexColumns;
-
 
     String hiveColString = tableDesc.getProperties().getProperty(serdeConstants.LIST_COLUMNS);
     // if there are actual accumulo index columns defined then build

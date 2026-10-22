@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service.cli.session;
@@ -23,7 +24,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 import junit.framework.TestCase;
 
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -36,7 +37,10 @@ import org.apache.hive.service.cli.thrift.ThriftCLIServiceClient;
 import org.junit.Before;
 import org.junit.Test;
 
-public class TestSessionHooks extends TestCase {
+/**
+ * TestSessionHooks.
+ */
+public class TestSessionHooks {
 
   private static String sessionUserName = "user1";
   private EmbeddedThriftBinaryCLIService service;
@@ -56,10 +60,9 @@ public class TestSessionHooks extends TestCase {
     }
   }
 
-  @Override
   @Before
   public void setUp() throws Exception {
-    super.setUp();
+
     SessionHookTest.runCount.set(0);
     System.setProperty(ConfVars.HIVE_SERVER2_SESSION_HOOK.varname,
         TestSessionHooks.SessionHookTest.class.getName());

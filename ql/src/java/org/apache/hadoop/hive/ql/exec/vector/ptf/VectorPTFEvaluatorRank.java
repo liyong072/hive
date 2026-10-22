@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.ptf;
@@ -32,7 +33,7 @@ import org.apache.hadoop.hive.ql.plan.ptf.WindowFrameDef;
  */
 public class VectorPTFEvaluatorRank extends VectorPTFEvaluatorBase {
 
-  private int rank;
+  private long rank;
   private int groupCount;
 
   public VectorPTFEvaluatorRank(WindowFrameDef windowFrameDef, int outputColumnNum) {
@@ -49,8 +50,8 @@ public class VectorPTFEvaluatorRank extends VectorPTFEvaluatorBase {
     /*
      * Do careful maintenance of the outputColVector.noNulls flag.
      */
-
     LongColumnVector longColVector = (LongColumnVector) batch.cols[outputColumnNum];
+    longColVector.noNulls = true;
     longColVector.isRepeating = true;
     longColVector.isNull[0] = false;
     longColVector.vector[0] = rank;
@@ -70,8 +71,18 @@ public class VectorPTFEvaluatorRank extends VectorPTFEvaluatorBase {
   }
 
   @Override
+  public boolean isGroupResultNull() {
+    return false;
+  }
+
+  @Override
   public Type getResultColumnVectorType() {
     return Type.LONG;
+  }
+
+  @Override
+  public Object getGroupResult() {
+    return rank;
   }
 
   @Override

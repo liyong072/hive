@@ -9,34 +9,30 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
 
 import java.io.IOException;
 
+import org.apache.hadoop.hive.ql.exec.vector.mapjoin.VectorMapJoinLongHashUtil;
+import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.util.JavaDataModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.hadoop.hive.ql.exec.JoinUtil;
-import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinHashMap;
-import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinLongHashMap;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinLongHashTable;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableKeyType;
 import org.apache.hadoop.hive.serde2.binarysortable.fast.BinarySortableDeserializeRead;
 import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
-import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hive.common.util.HashCodeUtil;
-import org.apache.tez.runtime.library.api.KeyValueReader;
-
-import com.google.common.annotations.VisibleForTesting;
 
 /*
  * An single long value map optimized for vector map join.
@@ -70,7 +66,8 @@ public abstract class VectorMapJoinFastLongHashTable
     return max;
   }
 
-  public boolean adaptPutRow(BytesWritable currentKey, BytesWritable currentValue) throws HiveException, IOException {
+  public boolean adaptPutRow(long hashCode, BytesWritable currentKey, BytesWritable currentValue)
+      throws HiveException, IOException {
     byte[] keyBytes = currentKey.getBytes();
     int keyLength = currentKey.getLength();
     keyBinarySortableDeserializeRead.set(keyBytes, 0, keyLength);
@@ -79,30 +76,23 @@ public abstract class VectorMapJoinFastLongHashTable
         return false;
       }
     } catch (Exception e) {
-      throw new HiveException(
-          "\nDeserializeRead details: " +
-              keyBinarySortableDeserializeRead.getDetailedReadPositionString() +
-          "\nException: " + e.toString());
+      throw new HiveException("DeserializeRead details: " +
+          keyBinarySortableDeserializeRead.getDetailedReadPositionString(), e);
     }
-
-    long key = VectorMapJoinFastLongHashUtil.deserializeLongKey(
-                            keyBinarySortableDeserializeRead, hashTableKeyType);
-
-    add(key, currentValue);
+    long key = VectorMapJoinLongHashUtil.deserializeLongKey(keyBinarySortableDeserializeRead, hashTableKeyType);
+    add(hashCode, key, currentValue);
     return true;
   }
 
   protected abstract void assignSlot(int slot, long key, boolean isNewKey, BytesWritable currentValue);
 
-  public void add(long key, BytesWritable currentValue) {
+  public void add(long hashCode, long key, BytesWritable currentValue) {
 
-    if (resizeThreshold <= keysAssigned) {
+    if (checkResize()) {
       expandAndRehash();
     }
 
-    long hashCode = HashCodeUtil.calculateLongHashCode(key);
-    int intHashCode = (int) hashCode;
-    int slot = (intHashCode & logicalHashBucketMask);
+    int slot = ((int) hashCode & logicalHashBucketMask);
     long probeSlot = slot;
     int i = 0;
     boolean isNewKey;
@@ -157,7 +147,7 @@ public abstract class VectorMapJoinFastLongHashTable
     if (logicalHashBucketCount > ONE_QUARTER_LIMIT) {
       throwExpandError(ONE_QUARTER_LIMIT, "Long");
     }
-    int newLogicalHashBucketCount = logicalHashBucketCount * 2;
+    int newLogicalHashBucketCount = Math.max(FIRST_SIZE_UP, logicalHashBucketCount * 2);
     int newLogicalHashBucketMask = newLogicalHashBucketCount - 1;
     int newMetricPutConflict = 0;
     int newLargestNumberOfSteps = 0;
@@ -215,6 +205,11 @@ public abstract class VectorMapJoinFastLongHashTable
     metricExpands++;
   }
 
+  protected boolean containsKey(long key) {
+    long hashCode = HashCodeUtil.calculateLongHashCode(key);
+    return findReadSlot(key, hashCode) != -1;
+  }
+
   protected int findReadSlot(long key, long hashCode) {
 
     int intHashCode = (int) hashCode;
@@ -264,16 +259,14 @@ public abstract class VectorMapJoinFastLongHashTable
         boolean isFullOuter,
         boolean minMaxEnabled,
         HashTableKeyType hashTableKeyType,
-        int initialCapacity, float loadFactor, int writeBuffersSize, long estimatedKeyCount) {
+        int initialCapacity, float loadFactor, int writeBuffersSize, long estimatedKeyCount, TableDesc tableDesc) {
     super(
         isFullOuter,
         initialCapacity, loadFactor, writeBuffersSize, estimatedKeyCount);
     this.hashTableKeyType = hashTableKeyType;
     PrimitiveTypeInfo[] primitiveTypeInfos = { hashTableKeyType.getPrimitiveTypeInfo() };
     keyBinarySortableDeserializeRead =
-        new BinarySortableDeserializeRead(
-            primitiveTypeInfos,
-            /* useExternalBuffer */ false);
+        BinarySortableDeserializeRead.with(primitiveTypeInfos, false, tableDesc.getProperties());
     allocateBucketArray();
     useMinMax = minMaxEnabled;
     min = Long.MAX_VALUE;
@@ -288,7 +281,7 @@ public abstract class VectorMapJoinFastLongHashTable
     size += (2 * jdm.primitive2());
     size += (2 * jdm.primitive1());
     size += jdm.object();
-    // adding 16KB constant memory for keyBinarySortableDeserializeRead as the rabit hole is deep to implement
+    // adding 16KB constant memory for keyBinarySortableDeserializeRead as the rabbit hole is deep to implement
     // MemoryEstimate interface, also it is constant overhead
     size += (16 * 1024L);
     return size;

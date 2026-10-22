@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.lazybinary.fast;
@@ -25,7 +26,9 @@ import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
 
+import org.apache.hadoop.hive.common.type.DataTypePhysicalVariation;
 import org.apache.hadoop.hive.serde2.fast.DeserializeRead;
+import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable;
 import org.apache.hadoop.hive.serde2.io.TimestampWritableV2;
 import org.apache.hadoop.hive.serde2.lazybinary.LazyBinaryUtils;
 import org.apache.hadoop.hive.serde2.lazybinary.LazyBinaryUtils.VInt;
@@ -80,6 +83,7 @@ public final class LazyBinaryDeserializeRead extends DeserializeRead {
     Category category;
     PrimitiveCategory primitiveCategory;
     TypeInfo typeInfo;
+    DataTypePhysicalVariation dataTypePhysicalVariation;
 
     int index;
     int count;
@@ -91,7 +95,12 @@ public final class LazyBinaryDeserializeRead extends DeserializeRead {
   }
 
   public LazyBinaryDeserializeRead(TypeInfo[] typeInfos, boolean useExternalBuffer) {
-    super(typeInfos, useExternalBuffer);
+    this(typeInfos, null, useExternalBuffer);
+  }
+
+  public LazyBinaryDeserializeRead(TypeInfo[] typeInfos, DataTypePhysicalVariation[] dataTypePhysicalVariations,
+      boolean useExternalBuffer) {
+    super(typeInfos, dataTypePhysicalVariations, useExternalBuffer);
     tempVInt = new VInt();
     tempVLong = new VLong();
     currentExternalBufferNeeded = false;
@@ -388,12 +397,12 @@ public final class LazyBinaryDeserializeRead extends DeserializeRead {
           final int scale = decimalTypeInfo.getScale();
 
           decimalIsNull = !currentHiveDecimalWritable.mutateEnforcePrecisionScale(precision, scale);
+          if (!decimalIsNull) {
+            return true;
+          }
         }
-        if (decimalIsNull) {
-          return false;
-        }
+        return false;
       }
-      break;
     default:
       throw new Error("Unexpected primitive category " + primitiveCategory.name());
     }

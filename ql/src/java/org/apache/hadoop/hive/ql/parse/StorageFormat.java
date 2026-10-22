@@ -9,33 +9,99 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse;
 
 import static org.apache.hadoop.hive.ql.parse.ParseUtils.ensureClassExists;
+
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.lang.StringUtils;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.io.IOConstants;
 import org.apache.hadoop.hive.ql.io.StorageFormatDescriptor;
 import org.apache.hadoop.hive.ql.io.StorageFormatFactory;
+import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.metadata.HiveStorageHandler;
+import org.apache.hadoop.hive.ql.metadata.HiveUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class StorageFormat {
+
+  private static final Logger LOG = LoggerFactory.getLogger(StorageFormat.class);
   private static final StorageFormatFactory storageFormatFactory = new StorageFormatFactory();
+
   private final Configuration conf;
   private String inputFormat;
   private String outputFormat;
   private String storageHandler;
   private String serde;
   private final Map<String, String> serdeProps;
+
+  public enum StorageHandlerTypes {
+    DEFAULT(),
+    ICEBERG("'org.apache.iceberg.mr.hive.HiveIcebergStorageHandler'",
+        "org.apache.iceberg.mr.hive.HiveIcebergInputFormat", "org.apache.iceberg.mr.hive.HiveIcebergOutputFormat");
+
+    private static final List<StorageHandlerTypes> NON_DEFAULT_TYPES = Arrays
+        .stream(values())
+        .filter(type -> type != StorageHandlerTypes.DEFAULT)
+        .collect(Collectors.toList());
+
+    private final String className;
+    private final String inputFormat;
+    private final String outputFormat;
+
+    private StorageHandlerTypes() {
+      this.className = null;
+      this.inputFormat = null;
+      this.outputFormat = null;
+    }
+    
+    private StorageHandlerTypes(String className, String inputFormat, String outputFormat) {
+      this.className = className;
+      this.inputFormat = inputFormat;
+      this.outputFormat = outputFormat;
+    }
+
+    public String className() {
+      return className;
+    }
+
+    public String inputFormat() {
+      return inputFormat;
+    }
+
+    public String outputFormat() {
+      return outputFormat;
+    }
+  }
+  
+  public static String resolveStorageHandlerClassName(String formatType) throws SemanticException {
+    if (StringUtils.isBlank(formatType)) {
+      throw new SemanticException("Format type cannot be empty");
+    }
+    for (StorageHandlerTypes type : StorageHandlerTypes.NON_DEFAULT_TYPES) {
+      if (type.name().equalsIgnoreCase(formatType.trim())) {
+        Objects.requireNonNull(type.className());
+        return ensureClassExists(BaseSemanticAnalyzer.unescapeSQLString(type.className()));
+      }
+    }
+    return ensureClassExists(BaseSemanticAnalyzer.unescapeSQLString(formatType.trim()));
+  }
 
   public StorageFormat(Configuration conf) {
     this.conf = conf;
@@ -61,14 +127,48 @@ public class StorageFormat {
       }
       break;
     case HiveParser.TOK_STORAGEHANDLER:
-      storageHandler = ensureClassExists(BaseSemanticAnalyzer.unescapeSQLString(child.getChild(0).getText()));
-      if (child.getChildCount() == 2) {
-        BaseSemanticAnalyzer.readProps(
-          (ASTNode) (child.getChild(1).getChild(0)),
-          serdeProps);
+      for (int i = 0; i < child.getChildCount(); i++) {
+        ASTNode grandChild = (ASTNode) child.getChild(i);
+        switch (grandChild.getToken().getType()) {
+          case HiveParser.TOK_FILEFORMAT_GENERIC:
+            HiveStorageHandler handler;
+            try {
+              handler = HiveUtils.getStorageHandler(conf, storageHandler);
+            } catch (HiveException e) {
+              throw new SemanticException("Failed to load storage handler:  " + e.getMessage());
+            }
+
+            String fileFormatPropertyKey = handler.getFileFormatPropertyKey();
+            if (fileFormatPropertyKey != null) {
+              String fileFormat = grandChild.getChild(0).getText();
+              if (serdeProps.containsKey(fileFormatPropertyKey)) {
+                throw new SemanticException("Provide only one of the following: STORED BY " + fileFormat +
+                    " or WITH SERDEPROPERTIES('" + fileFormatPropertyKey + "'='" + fileFormat + "')");
+              }
+
+              serdeProps.put(fileFormatPropertyKey, fileFormat);
+            } else {
+              throw new SemanticException("STORED AS is not supported for storage handler " +
+                  handler.getClass().getName());
+            }
+            break;
+          case HiveParser.TOK_TABLEPROPERTIES:
+            BaseSemanticAnalyzer.readProps((ASTNode) grandChild.getChild(0), serdeProps);
+            break;
+          default:
+            storageHandler = processStorageHandler(grandChild);
+        }
       }
       break;
     case HiveParser.TOK_FILEFORMAT_GENERIC:
+      if (storageHandler != null) {
+        // Under normal circumstances, we should not get here (since STORED BY and STORED AS are incompatible within the
+        // same command). Only scenario we can end up here is if a default storage handler class is set in the config.
+        // In this case, we opt to ignore the STORED AS clause.
+        LOG.info("'STORED AS' clause will be ignored, since a default storage handler class is already set: '{}'",
+            storageHandler);
+        break;
+      }
       ASTNode grandChild = (ASTNode)child.getChild(0);
       String name = (grandChild == null ? "" : grandChild.getText()).trim().toUpperCase();
       processStorageFormat(name);
@@ -80,15 +180,44 @@ public class StorageFormat {
     return true;
   }
 
-  protected void processStorageFormat(String name) throws SemanticException {
-    if (name.isEmpty()) {
-      throw new SemanticException("File format in STORED AS clause cannot be empty");
+  private String processStorageHandler(ASTNode node) throws SemanticException {
+    if (node.getType() == HiveParser.StringLiteral) {
+      // e.g. STORED BY 'org.apache.iceberg.mr.hive.HiveIcebergStorageHandler'
+      try {
+        return ensureClassExists(BaseSemanticAnalyzer.unescapeSQLString(node.getText()));
+      } catch (SemanticException e) {
+        throw createUnsupportedStorageHandlerTypeError(node, e);
+      }
     }
-    StorageFormatDescriptor descriptor = storageFormatFactory.get(name);
-    if (descriptor == null) {
-      throw new SemanticException("Unrecognized file format in STORED AS clause:" +
-          " '" + name + "'");
+    if (node.getType() == HiveParser.Identifier) {
+      // e.g. STORED BY ICEBERG
+      for (StorageHandlerTypes type : StorageHandlerTypes.NON_DEFAULT_TYPES) {
+        if (type.name().equalsIgnoreCase(node.getText())) {
+          Objects.requireNonNull(type.className());
+          inputFormat = type.inputFormat();
+          outputFormat = type.outputFormat();
+          return ensureClassExists(BaseSemanticAnalyzer.unescapeSQLString(type.className()));
+        }
+      }
     }
+    throw createUnsupportedStorageHandlerTypeError(node, null);
+  }
+
+  private static SemanticException createUnsupportedStorageHandlerTypeError(ASTNode node, Throwable cause) {
+    final String supportedTypes = StorageHandlerTypes
+        .NON_DEFAULT_TYPES
+        .stream()
+        .map(Enum::toString)
+        .collect(Collectors.joining(", "));
+    return new SemanticException(String.format(
+        "The storage handler specified in the STORED BY clause is not recognized: %s. Please use one of the supported "
+            + "types, which are %s, or provide the Fully Qualified Class Name (FQCN) of a valid storage handler.",
+        node.getText(), supportedTypes
+    ), cause);
+  }
+
+  public void processStorageFormat(String name) throws SemanticException {
+    StorageFormatDescriptor descriptor = getDescriptor(name, "STORED AS clause");
     inputFormat = ensureClassExists(descriptor.getInputFormat());
     outputFormat = ensureClassExists(descriptor.getOutputFormat());
     if (serde == null) {
@@ -97,14 +226,14 @@ public class StorageFormat {
     if (serde == null) {
       // RCFile supports a configurable SerDe
       if (name.equalsIgnoreCase(IOConstants.RCFILE)) {
-        serde = ensureClassExists(HiveConf.getVar(conf, HiveConf.ConfVars.HIVEDEFAULTRCFILESERDE));
+        serde = ensureClassExists(HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_DEFAULT_RCFILE_SERDE));
       } else {
-        serde = ensureClassExists(HiveConf.getVar(conf, HiveConf.ConfVars.HIVEDEFAULTSERDE));
+        serde = ensureClassExists(HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_DEFAULT_SERDE));
       }
     }
   }
 
-  protected void fillDefaultStorageFormat(boolean isExternal, boolean isMaterializedView)
+  public void fillDefaultStorageFormat(boolean isExternal, boolean isMaterializedView)
       throws  SemanticException {
     if ((inputFormat == null) && (storageHandler == null)) {
       String defaultFormat;
@@ -114,8 +243,8 @@ public class StorageFormat {
             HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_MATERIALIZED_VIEW_FILE_FORMAT);
         serde = HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_MATERIALIZED_VIEW_SERDE);
       } else {
-        defaultFormat = HiveConf.getVar(conf, HiveConf.ConfVars.HIVEDEFAULTFILEFORMAT);
-        defaultManagedFormat = HiveConf.getVar(conf, HiveConf.ConfVars.HIVEDEFAULTMANAGEDFILEFORMAT);
+        defaultFormat = HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_DEFAULT_FILEFORMAT);
+        defaultManagedFormat = HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_DEFAULT_MANAGED_FILEFORMAT);
       }
 
       if (!isExternal && !"none".equals(defaultManagedFormat)) {
@@ -128,7 +257,7 @@ public class StorageFormat {
       } else {
         processStorageFormat(defaultFormat);
         if (defaultFormat.equalsIgnoreCase(IOConstants.RCFILE)) {
-          serde = HiveConf.getVar(conf, HiveConf.ConfVars.HIVEDEFAULTRCFILESERDE);
+          serde = HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_DEFAULT_RCFILE_SERDE);
         }
       }
     }
@@ -156,5 +285,20 @@ public class StorageFormat {
 
   public Map<String, String> getSerdeProps() {
     return serdeProps;
+  }
+
+  public void setStorageHandler(String storageHandlerClass) throws SemanticException {
+    storageHandler = ensureClassExists(storageHandlerClass);
+  }
+
+  public static StorageFormatDescriptor getDescriptor(String format, String clause) throws SemanticException {
+    if (format.isEmpty()) {
+      throw new SemanticException("File format in " + clause + " cannot be empty");
+    }
+    StorageFormatDescriptor descriptor = storageFormatFactory.get(format);
+    if (descriptor == null) {
+      throw new SemanticException("Unrecognized file format in " + clause + ":" + " '" + format + "'");
+    }
+    return descriptor;
   }
 }

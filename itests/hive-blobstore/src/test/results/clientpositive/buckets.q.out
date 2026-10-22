@@ -1,7 +1,9 @@
 PREHOOK: query: DROP TABLE IF EXISTS source
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: DROP TABLE IF EXISTS source
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE TABLE source (a STRING, b STRING, c DOUBLE)
 ROW FORMAT DELIMITED
 FIELDS TERMINATED BY ' '
@@ -32,8 +34,10 @@ POSTHOOK: type: LOAD
 POSTHOOK: Output: default@source
 PREHOOK: query: DROP TABLE IF EXISTS buckets
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: DROP TABLE IF EXISTS buckets
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE TABLE buckets (a STRING, value DOUBLE)
 PARTITIONED BY (b STRING)
 CLUSTERED BY (a) INTO 2 BUCKETS
@@ -61,6 +65,7 @@ PARTITION (b)
 SELECT a, c, b FROM source
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@source
+POSTHOOK: Output: default@buckets
 POSTHOOK: Output: default@buckets@b=abc
 POSTHOOK: Output: default@buckets@b=ajss
 POSTHOOK: Output: default@buckets@b=data
@@ -122,6 +127,7 @@ PARTITION (b)
 SELECT a, c, b FROM source
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@source
+POSTHOOK: Output: default@buckets
 POSTHOOK: Output: default@buckets@b=abc
 POSTHOOK: Output: default@buckets@b=ajss
 POSTHOOK: Output: default@buckets@b=data

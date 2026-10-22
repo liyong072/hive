@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -22,7 +23,7 @@ public class ColStatistics {
 
   private String colName;
   private String colType;
-  private long countDistint;
+  private long countDistinct;
   private long numNulls;
   private double avgColLen;
   private long numTrues;
@@ -30,6 +31,10 @@ public class ColStatistics {
   private Range range;
   private boolean isPrimaryKey;
   private boolean isEstimated;
+  private boolean partialAggregate;
+  private boolean isFilteredColumn;
+  private byte[] bitVectors;
+  private byte[] histogram;
 
   public ColStatistics(String colName, String colType) {
     this.setColumnName(colName);
@@ -59,11 +64,11 @@ public class ColStatistics {
   }
 
   public long getCountDistint() {
-    return countDistint;
+    return countDistinct;
   }
 
-  public void setCountDistint(long countDistint) {
-    this.countDistint = countDistint;
+  public void setCountDistint(long countDistinct) {
+    this.countDistinct = countDistinct;
   }
 
   public long getNumNulls() {
@@ -110,6 +115,22 @@ public class ColStatistics {
     this.range = r;
   }
 
+  public byte[] getBitVectors() {
+    return bitVectors;
+  }
+
+  public void setBitVectors(byte[] bitVectors) {
+    this.bitVectors = bitVectors;
+  }
+
+  public byte[] getHistogram() {
+    return histogram;
+  }
+
+  public void setHistogram(byte[] histogram) {
+    this.histogram = histogram;
+  }
+
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
@@ -118,7 +139,7 @@ public class ColStatistics {
     sb.append(" colType: ");
     sb.append(colType);
     sb.append(" countDistincts: ");
-    sb.append(countDistint);
+    sb.append(countDistinct);
     sb.append(" numNulls: ");
     sb.append(numNulls);
     sb.append(" avgColLen: ");
@@ -143,12 +164,16 @@ public class ColStatistics {
   public ColStatistics clone() {
     ColStatistics clone = new ColStatistics(colName, colType);
     clone.setAvgColLen(avgColLen);
-    clone.setCountDistint(countDistint);
+    clone.setCountDistint(countDistinct);
     clone.setNumNulls(numNulls);
     clone.setNumTrues(numTrues);
     clone.setNumFalses(numFalses);
+    clone.setBitVectors(bitVectors);
+    clone.setHistogram(histogram);
     clone.setPrimaryKey(isPrimaryKey);
     clone.setIsEstimated(isEstimated);
+    clone.setPartialAggregate(partialAggregate);
+    clone.setIsFilteredColumn(isFilteredColumn);
     if (range != null ) {
       clone.setRange(range.clone());
     }
@@ -157,6 +182,15 @@ public class ColStatistics {
 
   public boolean isPrimaryKey() {
     return isPrimaryKey;
+  }
+
+  /** Whether these values were aggregated from only some of the partitions the scan reads. */
+  public boolean isPartialAggregate() {
+    return partialAggregate;
+  }
+
+  public void setPartialAggregate(boolean partialAggregate) {
+    this.partialAggregate = partialAggregate;
   }
 
   public void setPrimaryKey(boolean isPrimaryKey) {
@@ -196,4 +230,18 @@ public class ColStatistics {
       return sb.toString();
     }
   }
+
+  public void setFilterColumn() {
+    isFilteredColumn = true;
+  }
+
+  private void setIsFilteredColumn(boolean isFilteredColumn2) {
+    isFilteredColumn=isFilteredColumn2;
+
+  }
+
+  public boolean isFilteredColumn() {
+    return isFilteredColumn;
+  }
+
 }

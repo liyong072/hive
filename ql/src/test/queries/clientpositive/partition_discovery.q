@@ -42,13 +42,13 @@ dfs ${system:test.dfs.mkdir} ${system:test.warehouse.dir}/repairtable_n9/p1=c/p2
 dfs -touchz ${system:test.warehouse.dir}/repairtable_n9/p1=a/p2=b/datafile;
 dfs -touchz ${system:test.warehouse.dir}/repairtable_n9/p1=c/p2=d/datafile;
 
-set msck.repair.enable.partition.retention=false;
+set metastore.msck.repair.enable.partition.retention=false;
 MSCK REPAIR TABLE default.repairtable_n9;
 show partitions default.repairtable_n9;
 
 !sleep 12;
 
-set msck.repair.enable.partition.retention=true;
+set metastore.msck.repair.enable.partition.retention=true;
 -- msck does not drop partitions, so this still should be no-op
 MSCK REPAIR TABLE default.repairtable_n9;
 show partitions default.repairtable_n9;
@@ -60,12 +60,12 @@ show partitions default.repairtable_n9;
 CREATE EXTERNAL TABLE repairtable_n10 PARTITIONED BY(p1,p2) STORED AS ORC AS SELECT * FROM repairtable_n9;
 describe formatted repairtable_n10;
 
-dfs ${system:test.dfs.mkdir} ${system:test.warehouse.dir}/repairtable_n10/p1=a/p2=b/;
-dfs ${system:test.dfs.mkdir} ${system:test.warehouse.dir}/repairtable_n10/p1=c/p2=d/;
-dfs -touchz ${system:test.warehouse.dir}/repairtable_n10/p1=a/p2=b/datafile;
-dfs -touchz ${system:test.warehouse.dir}/repairtable_n10/p1=c/p2=d/datafile;
+dfs ${system:test.dfs.mkdir} ${system:test.local.warehouse.dir}/repairtable_n10/p1=a/p2=b/;
+dfs ${system:test.dfs.mkdir} ${system:test.local.warehouse.dir}/repairtable_n10/p1=c/p2=d/;
+dfs -touchz ${system:test.local.warehouse.dir}/repairtable_n10/p1=a/p2=b/datafile;
+dfs -touchz ${system:test.local.warehouse.dir}/repairtable_n10/p1=c/p2=d/datafile;
 
-set msck.repair.enable.partition.retention=false;
+set metastore.msck.repair.enable.partition.retention=false;
 !sleep 12;
 MSCK REPAIR TABLE default.repairtable_n10;
 show partitions default.repairtable_n10;

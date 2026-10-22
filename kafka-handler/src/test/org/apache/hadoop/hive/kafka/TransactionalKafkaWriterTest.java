@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.kafka;
@@ -37,6 +38,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.Ignore;
 import org.junit.rules.TemporaryFolder;
 import org.mockito.Mockito;
 
@@ -57,6 +59,7 @@ import java.util.stream.IntStream;
 /**
  * Test Transactional Writer.
  */
+@Ignore("HIVE-28348: TransactionalKafkaWriterTest hangs in precommit")
 public class TransactionalKafkaWriterTest {
 
   private static final String TOPIC = "TOPIC_TEST";
@@ -117,7 +120,7 @@ public class TransactionalKafkaWriterTest {
     temporaryFolder.create();
     Path tableLocation = new Path(temporaryFolder.newFolder().toURI());
     queryWorkingPath = new Path(tableLocation, queryId);
-    configuration.set(HiveConf.ConfVars.HIVEQUERYID.varname, queryId);
+    configuration.set(HiveConf.ConfVars.HIVE_QUERY_ID.varname, queryId);
     String taskId = "attempt_m_0001_0";
     configuration.set("mapred.task.id", taskId);
     configuration.set(KafkaTableProperties.HIVE_KAFKA_BOOTSTRAP_SERVERS.getName(), KafkaBrokerResource.BROKER_IP_PORT);
@@ -145,7 +148,7 @@ public class TransactionalKafkaWriterTest {
 
   @After public void tearAfterTest() {
     KAFKA_BROKER_RESOURCE.deleteTopic(TOPIC);
-    consumer.close();
+    consumer.close(Duration.ZERO);
     consumer = null;
   }
 
@@ -202,6 +205,7 @@ public class TransactionalKafkaWriterTest {
     checkData();
   }
 
+  @Ignore("HIVE-23400 flaky")
   @Test(expected = IOException.class) public void writerFencedOut() throws IOException {
     TransactionalKafkaWriter
         writer =
@@ -229,7 +233,7 @@ public class TransactionalKafkaWriterTest {
     long numRecords = 0;
     boolean emptyPoll = false;
     while (numRecords < RECORD_NUMBER && !emptyPoll) {
-      ConsumerRecords<byte[], byte[]> records = consumer.poll(Duration.ofMillis(1000));
+      ConsumerRecords<byte[], byte[]> records = consumer.poll(Duration.ofMillis(10000));
 
       Assert.assertFalse(records.records(new TopicPartition(TOPIC, 0))
           .stream()

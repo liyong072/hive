@@ -9,24 +9,25 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.merge;
 
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.ql.exec.mr.ExecDriver;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.ql.CompilationOpContext;
 import org.apache.hadoop.hive.ql.Context;
-import org.apache.hadoop.hive.ql.DriverContext;
+import org.apache.hadoop.hive.ql.TaskQueue;
 import org.apache.hadoop.hive.ql.QueryPlan;
 import org.apache.hadoop.hive.ql.QueryState;
 import org.apache.hadoop.hive.ql.exec.Operator;
@@ -48,8 +49,8 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapreduce.MRJobConfig;
 
-import java.io.IOException;
 import java.io.Serializable;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Task for fast merging of ORC and RC files.
@@ -62,9 +63,8 @@ public class MergeFileTask extends Task<MergeFileWork> implements Serializable,
   private boolean success = true;
 
   @Override
-  public void initialize(QueryState queryState, QueryPlan queryPlan,
-      DriverContext driverContext, CompilationOpContext opContext) {
-    super.initialize(queryState, queryPlan, driverContext, opContext);
+  public void initialize(QueryState queryState, QueryPlan queryPlan, TaskQueue taskQueue, Context context) {
+    super.initialize(queryState, queryPlan, taskQueue, context);
     job = new JobConf(conf, MergeFileTask.class);
     jobExecHelper = new HadoopJobExecHelper(job, this.console, this, this);
   }
@@ -78,9 +78,9 @@ public class MergeFileTask extends Task<MergeFileWork> implements Serializable,
    * start a new map-reduce job to do the merge, almost the same as ExecDriver.
    */
   @Override
-  public int execute(DriverContext driverContext) {
+  public int execute() {
 
-    Context ctx = driverContext.getCtx();
+    Context ctx = context;
     boolean ctxCreated = false;
     RunningJob rj = null;
     int returnVal = 0;
@@ -100,6 +100,9 @@ public class MergeFileTask extends Task<MergeFileWork> implements Serializable,
       job.setOutputKeyClass(NullWritable.class);
       job.setOutputValueClass(NullWritable.class);
       job.setNumReduceTasks(0);
+      // HIVE-23354 enforces that MR speculative execution is disabled
+      job.setBoolean(MRJobConfig.REDUCE_SPECULATIVE, false);
+      job.setBoolean(MRJobConfig.MAP_SPECULATIVE, false);
 
       // create the temp directories
       Path outputPath = work.getOutputDir();
@@ -116,7 +119,7 @@ public class MergeFileTask extends Task<MergeFileWork> implements Serializable,
 
       String jobName = null;
       if (noName && this.getQueryPlan() != null) {
-        int maxlen = conf.getIntVar(HiveConf.ConfVars.HIVEJOBNAMELENGTH);
+        int maxlen = HiveConf.getIntVar(conf, HiveConf.ConfVars.HIVE_JOBNAME_LENGTH);
         jobName = Utilities.abbreviate(this.getQueryPlan().getQueryStr(),
             maxlen - 6);
       }
@@ -124,7 +127,8 @@ public class MergeFileTask extends Task<MergeFileWork> implements Serializable,
       if (noName) {
         // This is for a special case to ensure unit tests pass
         job.set(MRJobConfig.JOB_NAME,
-            jobName != null ? jobName : "JOB" + Utilities.randGen.nextInt());
+            jobName != null ? jobName
+                : "JOB" + ThreadLocalRandom.current().nextInt());
       }
 
       // add input path
@@ -134,40 +138,36 @@ public class MergeFileTask extends Task<MergeFileWork> implements Serializable,
       Utilities.setMapWork(job, work, ctx.getMRTmpPath(), true);
 
       // remove pwd from conf file so that job tracker doesn't show this logs
-      String pwd = HiveConf.getVar(job, HiveConf.ConfVars.METASTOREPWD);
+      String pwd = MetastoreConf.getVar(job, MetastoreConf.ConfVars.PWD);
       if (pwd != null) {
-        HiveConf.setVar(job, HiveConf.ConfVars.METASTOREPWD, "HIVE");
+        MetastoreConf.setVar(job, MetastoreConf.ConfVars.PWD, "HIVE");
       }
 
       // submit the job
-      JobClient jc = new JobClient(job);
+      try (JobClient jc = new JobClient(job)) {
+        // There is no need for @MergeFileTask to add extra jars.
 
-      String addedJars = Utilities.getResourceFiles(job,
-          SessionState.ResourceType.JAR);
-      if (!addedJars.isEmpty()) {
-        job.set("tmpjars", addedJars);
+        // Make this client wait if job tracker is not behaving well.
+        Throttle.checkJobTracker(job, LOG);
+
+        // Finally SUBMIT the JOB!
+        rj = jc.submitJob(job);
+        this.jobID = rj.getID().toString();
+        returnVal = jobExecHelper.progress(rj, jc, ctx);
       }
-
-      // make this client wait if job trcker is not behaving well.
-      Throttle.checkJobTracker(job, LOG);
-
-      // Finally SUBMIT the JOB!
-      rj = jc.submitJob(job);
-      this.jobID = rj.getJobID();
-      returnVal = jobExecHelper.progress(rj, jc, ctx);
       success = (returnVal == 0);
 
     } catch (Exception e) {
       setException(e);
       String mesg = " with exception '" + Utilities.getNameMessage(e) + "'";
       if (rj != null) {
-        mesg = "Ended Job = " + rj.getJobID() + mesg;
+        mesg = "Ended Job = " + rj.getID() + mesg;
       } else {
         mesg = "Job Submission failed" + mesg;
       }
 
       // Has to use full name to make sure it does not conflict with
-      // org.apache.commons.lang.StringUtils
+      // org.apache.commons.lang3.StringUtils
       console.printError(mesg, "\n"
           + org.apache.hadoop.util.StringUtils.stringifyException(e));
 
@@ -234,7 +234,7 @@ public class MergeFileTask extends Task<MergeFileWork> implements Serializable,
   }
 
   @Override
-  public void logPlanProgress(SessionState ss) throws IOException {
+  public void logPlanProgress(SessionState ss) {
     // no op
   }
 }

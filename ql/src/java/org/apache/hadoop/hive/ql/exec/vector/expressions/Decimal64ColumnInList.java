@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -43,7 +44,7 @@ public class Decimal64ColumnInList extends LongColumnInList {
     final int scale = decimalTypeInfo.scale();
     HiveDecimalWritable writable = new HiveDecimalWritable();
     StringBuilder sb = new StringBuilder();
-    sb.append(getColumnParamString(0, colNum));
+    sb.append(getColumnParamString(0, inputColumnNum[0]));
     sb.append(", values [");
     for (long value : inListValues) {
       writable.deserialize64(value, scale);
@@ -61,5 +62,10 @@ public class Decimal64ColumnInList extends LongColumnInList {
 
     // return null since this will be handled as a special case in VectorizationContext
     return null;
+  }
+
+  @Override
+  public boolean shouldConvertDecimal64ToDecimal() {
+    return false;
   }
 }

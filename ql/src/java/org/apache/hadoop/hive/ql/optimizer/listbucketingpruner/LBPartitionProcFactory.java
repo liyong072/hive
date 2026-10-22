@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.listbucketingpruner;
 
@@ -22,7 +23,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hive.ql.exec.FilterOperator;
 import org.apache.hadoop.hive.ql.exec.TableScanOperator;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.Table;
@@ -50,7 +51,7 @@ public class LBPartitionProcFactory extends PrunerOperatorFactory {
 
     @Override
     protected void generatePredicate(NodeProcessorCtx procCtx, FilterOperator fop,
-        TableScanOperator top) throws SemanticException, UDFArgumentException {
+                                     TableScanOperator top) throws SemanticException, UDFArgumentException {
       LBOpPartitionWalkerCtx owc = (LBOpPartitionWalkerCtx) procCtx;
       Table tbl = top.getConf().getTableMetadata();
       if (tbl.isPartitioned()) {
@@ -62,7 +63,7 @@ public class LBPartitionProcFactory extends PrunerOperatorFactory {
           prunedPartList = PartitionPruner.prune(top, parseCtx, alias);
         } catch (HiveException e) {
           // Has to use full name to make sure it does not conflict with
-          // org.apache.commons.lang.StringUtils
+          // org.apache.commons.lang3.StringUtils
           throw new SemanticException(e.getMessage(), e);
         }
 
@@ -74,7 +75,7 @@ public class LBPartitionProcFactory extends PrunerOperatorFactory {
 
   }
 
-  public static NodeProcessor getFilterProc() {
+  public static SemanticNodeProcessor getFilterProc() {
     return new LBPRPartitionFilterPruner();
   }
 

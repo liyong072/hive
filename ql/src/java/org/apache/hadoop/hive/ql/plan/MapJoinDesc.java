@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -34,14 +35,13 @@ import java.util.Set;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.exec.MemoryMonitorInfo;
 import org.apache.hadoop.hive.ql.exec.persistence.MapJoinObjectSerDeContext;
-import org.apache.hadoop.hive.ql.optimizer.signature.Signature;
 import org.apache.hadoop.hive.ql.plan.Explain.Level;
 import org.apache.hadoop.hive.ql.plan.Explain.Vectorization;
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableImplementationType;
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.VectorMapJoinVariation;
 import org.apache.hadoop.hive.serde2.AbstractSerDe;
 import org.apache.hadoop.hive.serde2.SerDeException;
-import org.apache.hadoop.hive.serde2.SerDeUtils;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hive.common.util.ReflectionUtil;
 
 /**
@@ -318,10 +318,8 @@ public class MapJoinDesc extends JoinDesc implements Serializable {
   public String getDebugKeyContext() {
     MapJoinObjectSerDeContext keyContext;
     try {
-      AbstractSerDe keySerde =
-          (AbstractSerDe) ReflectionUtil.newInstance(
-              keyTblDesc.getDeserializerClass(), null);
-      SerDeUtils.initializeSerDe(keySerde, null, keyTblDesc.getProperties(), null);
+      AbstractSerDe keySerde = (AbstractSerDe) ReflectionUtil.newInstance(keyTblDesc.getSerDeClass(), null);
+      keySerde.initialize(null, keyTblDesc.getProperties(), null);
       keyContext = new MapJoinObjectSerDeContext(keySerde, false);
     } catch (SerDeException e) {
       return null;
@@ -354,9 +352,8 @@ public class MapJoinDesc extends JoinDesc implements Serializable {
           valueTableDesc = getValueFilteredTblDescs().get(pos);
         }
         AbstractSerDe valueSerDe =
-            (AbstractSerDe) ReflectionUtil.newInstance(
-                valueTableDesc.getDeserializerClass(), null);
-        SerDeUtils.initializeSerDe(valueSerDe, null, valueTableDesc.getProperties(), null);
+            (AbstractSerDe) ReflectionUtil.newInstance(valueTableDesc.getSerDeClass(), null);
+        valueSerDe.initialize(null, valueTableDesc.getProperties(), null);
         MapJoinObjectSerDeContext valueContext =
             new MapJoinObjectSerDeContext(valueSerDe, hasFilter(pos, filterMaps));
         valueContextStringList.add(pos + ":" + valueContext.stringify());
@@ -496,7 +493,7 @@ public class MapJoinDesc extends JoinDesc implements Serializable {
 
   // Use LinkedHashSet to give predictable display order.
   private static final Set<String> vectorizableMapJoinNativeEngines =
-      new LinkedHashSet<String>(Arrays.asList("tez", "spark"));
+      new LinkedHashSet<String>(Arrays.asList("tez"));
 
   public class MapJoinOperatorExplainVectorization extends OperatorExplainVectorization {
 
@@ -534,7 +531,7 @@ public class MapJoinDesc extends JoinDesc implements Serializable {
       conditionList.add(
           new VectorizationCondition(
               vectorMapJoinDesc.getUseOptimizedTable(),
-              HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE.varname));
+              HiveConf.ConfVars.HIVE_MAPJOIN_USE_OPTIMIZED_TABLE.varname));
       conditionList.add(
           new VectorizationCondition(
               enabled,
@@ -784,6 +781,16 @@ public class MapJoinDesc extends JoinDesc implements Serializable {
           isBucketMapJoin() == otherDesc.isBucketMapJoin();
     }
     return false;
+  }
+
+  public static boolean isSupportedComplexType(List<ExprNodeDesc> keys) {
+    for (ExprNodeDesc key : keys) {
+      if (key.getTypeInfo().getCategory() == ObjectInspector.Category.MAP
+        || key.getTypeInfo().getCategory() == ObjectInspector.Category.UNION) {
+        return false;
+      }
+    }
+    return true;
   }
 
 }

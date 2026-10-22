@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin;
@@ -23,7 +24,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map.Entry;
 
-import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.hadoop.hive.common.type.DataTypePhysicalVariation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -32,7 +34,6 @@ import org.apache.hadoop.hive.ql.CompilationOpContext;
 import org.apache.hadoop.hive.ql.HashTableLoaderFactory;
 import org.apache.hadoop.hive.ql.exec.HashTableLoader;
 import org.apache.hadoop.hive.ql.exec.MapJoinOperator;
-import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.persistence.MapJoinTableContainer;
 import org.apache.hadoop.hive.ql.exec.persistence.MapJoinTableContainerSerDe;
 import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
@@ -46,14 +47,12 @@ import org.apache.hadoop.hive.ql.exec.vector.VectorizationContextRegion;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizationOperator;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedBatchUtil;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
-import org.apache.hadoop.hive.ql.exec.vector.expressions.IdentityExpression;
 import org.apache.hadoop.hive.ql.exec.vector.expressions.VectorExpression;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.optimized.VectorMapJoinOptimizedCreateHashTable;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinHashTable;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinTableContainer;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast.VectorMapJoinFastHashTableLoader;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
-import org.apache.hadoop.hive.ql.plan.BaseWork;
 import org.apache.hadoop.hive.ql.plan.MapJoinDesc;
 import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 import org.apache.hadoop.hive.ql.plan.VectorDesc;
@@ -502,9 +501,7 @@ private static final Logger LOG = LoggerFactory.getLogger(CLASS_NAME);
       break;
     case FAST:
       // Use our specialized hash table loader.
-      hashTableLoader = HiveConf.getVar(
-          hconf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("spark") ?
-          HashTableLoaderFactory.getLoader(hconf) : new VectorMapJoinFastHashTableLoader();
+      hashTableLoader = new VectorMapJoinFastHashTableLoader();
       break;
     default:
       throw new RuntimeException("Unknown vector map join hash table implementation type " + hashTableImplementationType.name());
@@ -542,10 +539,8 @@ private static final Logger LOG = LoggerFactory.getLogger(CLASS_NAME);
         outputKeysSize > 0) {
 
       smallTableKeyOuterVectorDeserializeRow =
-          new VectorDeserializeRow<BinarySortableDeserializeRead>(
-              new BinarySortableDeserializeRead(
-                  smallTableKeyTypeInfos,
-                  /* useExternalBuffer */ true));
+          new VectorDeserializeRow<BinarySortableDeserializeRead>(BinarySortableDeserializeRead.with(
+                          smallTableKeyTypeInfos, true, getConf().getKeyTblDesc().getProperties()));
       smallTableKeyOuterVectorDeserializeRow.init(
           allSmallTableKeyColumnNums, allSmallTableKeyColumnIncluded);
     }
@@ -556,10 +551,10 @@ private static final Logger LOG = LoggerFactory.getLogger(CLASS_NAME);
 
     super.initializeOp(hconf);
 
-    VectorExpression.doTransientInit(bigTableFilterExpressions);
-    VectorExpression.doTransientInit(bigTableKeyExpressions);
-    VectorExpression.doTransientInit(bigTableValueExpressions);
-    VectorExpression.doTransientInit(bigTableValueExpressions);
+    VectorExpression.doTransientInit(bigTableFilterExpressions, hconf);
+    VectorExpression.doTransientInit(bigTableKeyExpressions, hconf);
+    VectorExpression.doTransientInit(bigTableValueExpressions, hconf);
+    VectorExpression.doTransientInit(bigTableValueExpressions, hconf);
 
     /*
      * Get configuration parameters.
@@ -695,13 +690,13 @@ private static final Logger LOG = LoggerFactory.getLogger(CLASS_NAME);
     for (int i = 0; i < outputProjection.length; i++) {
       int outputColumn = outputProjection[i];
       String typeName = outputTypeInfos[i].getTypeName();
-      allocateOverflowBatchColumnVector(overflowBatch, outputColumn, typeName);
+      allocateOverflowBatchColumnVector(overflowBatch, outputColumn, typeName, vOutContext.getDataTypePhysicalVariation(outputColumn));
     }
 
     // Now, add any scratch columns needed for children operators.
     int outputColumn = initialColumnCount;
     for (String typeName : vOutContext.getScratchColumnTypeNames()) {
-      allocateOverflowBatchColumnVector(overflowBatch, outputColumn++, typeName);
+      allocateOverflowBatchColumnVector(overflowBatch, outputColumn, typeName, vOutContext.getDataTypePhysicalVariation(outputColumn++));
     }
 
     overflowBatch.projectedColumns = outputProjection;
@@ -716,14 +711,15 @@ private static final Logger LOG = LoggerFactory.getLogger(CLASS_NAME);
    * Allocate overflow batch columns by hand.
    */
   private void allocateOverflowBatchColumnVector(VectorizedRowBatch overflowBatch, int outputColumn,
-              String typeName) throws HiveException {
+                                                 String typeName,
+                                                 DataTypePhysicalVariation dataTypePhysicalVariation) {
 
     if (overflowBatch.cols[outputColumn] == null) {
       typeName = VectorizationContext.mapTypeNameSynonyms(typeName);
 
       TypeInfo typeInfo = TypeInfoUtils.getTypeInfoFromTypeString(typeName);
 
-      overflowBatch.cols[outputColumn] = VectorizedBatchUtil.createColumnVector(typeInfo);
+      overflowBatch.cols[outputColumn] = VectorizedBatchUtil.createColumnVector(typeInfo, dataTypePhysicalVariation);
 
       if (LOG.isDebugEnabled()) {
         LOG.debug(getLoggingPrefix() + " VectorMapJoinCommonOperator initializeOp overflowBatch outputColumn " + outputColumn + " class " + overflowBatch.cols[outputColumn].getClass().getSimpleName());

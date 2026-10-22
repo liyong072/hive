@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service;
@@ -51,7 +52,7 @@ public final class ServiceOperations {
 
   /**
    * Initialize a service.
-   * <p/>
+   * <br>
    * The service state is checked <i>before</i> the operation begins.
    * This process is <i>not</i> thread safe.
    * @param service a service that must be in the state
@@ -69,7 +70,7 @@ public final class ServiceOperations {
 
   /**
    * Start a service.
-   * <p/>
+   * <br>
    * The service state is checked <i>before</i> the operation begins.
    * This process is <i>not</i> thread safe.
    * @param service a service that must be in the state
@@ -86,7 +87,7 @@ public final class ServiceOperations {
 
   /**
    * Initialize then start a service.
-   * <p/>
+   * <br>
    * The service state is checked <i>before</i> the operation begins.
    * This process is <i>not</i> thread safe.
    * @param service a service that must be in the state
@@ -102,9 +103,9 @@ public final class ServiceOperations {
 
   /**
    * Stop a service.
-   * <p/>Do nothing if the service is null or not
+   * <br>Do nothing if the service is null or not
    * in a state in which it can be/needs to be stopped.
-   * <p/>
+   * <br>
    * The service state is checked <i>before</i> the operation begins.
    * This process is <i>not</i> thread safe.
    * @param service a service or null

@@ -1,39 +1,63 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.apache.hadoop.hive.metastore.cache;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.*;
 
 import com.google.common.collect.Lists;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.common.TableName;
-import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.Constants;
 import org.apache.hadoop.hive.metastore.*;
 import org.apache.hadoop.hive.metastore.MetaStoreTestUtils;
 import org.apache.hadoop.hive.metastore.api.*;
-import org.apache.hadoop.hive.metastore.client.builder.DatabaseBuilder;
-import org.apache.hadoop.hive.metastore.client.builder.TableBuilder;
+import org.apache.hadoop.hive.metastore.columnstats.ColStatsBuilder;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf.ConfVars;
 import org.apache.hadoop.hive.metastore.txn.TxnCommonUtils;
-import org.apache.hadoop.hive.metastore.utils.FileUtils;
+import org.apache.hadoop.hive.metastore.utils.TestTxnDbUtil;
 import org.apache.hadoop.hive.ql.io.orc.OrcInputFormat;
 import org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat;
-import org.apache.hadoop.util.StringUtils;
 import org.apache.hive.hcatalog.listener.DbNotificationListener;
+import org.apache.thrift.TException;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.experimental.categories.Category;
-import jline.internal.Log;
 
+import static org.apache.hadoop.hive.metastore.StatisticsTestUtils.assertEqualStatistics;
 import static org.apache.hadoop.hive.metastore.Warehouse.DEFAULT_CATALOG_NAME;
 
 public class TestCachedStoreUpdateUsingEvents {
 
+  // the following constants are set as column statistics, and they are not expected to change,
+  // this is to keep the method signatures shorter, update is tested on a subset of the fields
+  private final static double LOW_VALUE = 50000.21;
+  private final static long NUM_NULLS = 3;
+  private final static long NUM_DVS = 22;
+  private final static long MAX_COL_LEN = 102;
   private RawStore rawStore;
   private SharedCache sharedCache;
   private Configuration conf;
-  private HiveMetaStore.HMSHandler hmsHandler;
+  private HMSHandler hmsHandler;
   private String[] colType = new String[] {"double", "string"};
 
   @Before
@@ -47,24 +71,35 @@ public class TestCachedStoreUpdateUsingEvents {
     MetastoreConf.setBoolVar(conf, ConfVars.METASTORE_CACHE_CAN_USE_EVENT, true);
     MetastoreConf.setBoolVar(conf, ConfVars.HIVE_TXN_STATS_ENABLED, true);
     MetastoreConf.setBoolVar(conf, ConfVars.AGGREGATE_STATS_CACHE_ENABLED, false);
+    MetastoreConf.setBoolVar(conf, ConfVars.REPLCMENABLED, true);
+    MetastoreConf.setBoolVar(conf, ConfVars.STATS_FETCH_BITVECTOR, true);
+    MetastoreConf.setBoolVar(conf, ConfVars.STATS_FETCH_KLL, true);
+    MetastoreConf.setVar(conf, ConfVars.REPLCMDIR, "cmroot");
     MetaStoreTestUtils.setConfForStandloneMode(conf);
 
-    hmsHandler = new HiveMetaStore.HMSHandler("testCachedStore", conf, true);
+    TestTxnDbUtil.prepDb(conf);
+
+    hmsHandler = new HMSHandler("testCachedStore", conf);
+    hmsHandler.init();
 
     rawStore = new ObjectStore();
     rawStore.setConf(hmsHandler.getConf());
+
+    CachedStore cachedStore = new CachedStore();
+    CachedStore.clearSharedCache();
+    cachedStore.setConfForTest(conf);
     sharedCache = CachedStore.getSharedCache();
 
     // Stop the CachedStore cache update service. We'll start it explicitly to control the test
     CachedStore.stopCacheUpdateService(1);
 
     // Create the 'hive' catalog with new warehouse directory
-    HiveMetaStore.HMSHandler.createDefaultCatalog(rawStore, new Warehouse(conf));
+    HMSHandler.createDefaultCatalog(rawStore, new Warehouse(conf));
   }
 
-  private Database createTestDb(String dbName, String dbOwner) {
+  private Database createTestDb(String dbName, String dbOwner) throws IOException {
     String dbDescription = dbName;
-    String dbLocation = "file:/tmp";
+    String dbLocation = Files.createTempDirectory(dbName).toString();
     Map<String, String> dbParams = new HashMap<>();
     Database db = new Database(dbName, dbDescription, dbLocation, dbParams);
     db.setOwnerName(dbOwner);
@@ -74,8 +109,9 @@ public class TestCachedStoreUpdateUsingEvents {
   }
 
   private Table createTestTblParam(String dbName, String tblName, String tblOwner,
-                              List<FieldSchema> cols, List<FieldSchema> ptnCols, Map<String, String> tblParams) {
-    String serdeLocation = "file:/tmp";
+                              List<FieldSchema> cols, List<FieldSchema> ptnCols, Map<String, String> tblParams)
+      throws IOException {
+    String serdeLocation = Files.createTempDirectory(dbName + "_" + tblName).toString();
     Map<String, String> serdeParams = new HashMap<>();
     SerDeInfo serdeInfo = new SerDeInfo("serde", "seriallib", new HashMap<>());
     StorageDescriptor sd = new StorageDescriptor(cols, serdeLocation,
@@ -92,7 +128,8 @@ public class TestCachedStoreUpdateUsingEvents {
   }
 
   private Table createTestTbl(String dbName, String tblName, String tblOwner,
-                              List<FieldSchema> cols, List<FieldSchema> ptnCols) {
+                              List<FieldSchema> cols, List<FieldSchema> ptnCols)
+      throws IOException {
     return createTestTblParam(dbName, tblName, tblOwner, cols, ptnCols, new HashMap<>());
   }
 
@@ -190,7 +227,7 @@ public class TestCachedStoreUpdateUsingEvents {
     hmsHandler.drop_database(dbName, true, true);
     hmsHandler.drop_database(dbName2, true, true);
     sharedCache.getDatabaseCache().clear();
-    sharedCache.getTableCache().clear();
+    sharedCache.clearTableCache();
     sharedCache.getSdCache().clear();
   }
 
@@ -240,6 +277,8 @@ public class TestCachedStoreUpdateUsingEvents {
     Table newTable = new Table(tbl);
     newTable.setOwner(tblOwner);
     newTable.setOwnerType(PrincipalType.ROLE);
+    Deadline.registerIfNot(100_000);
+    Deadline.startTimer("alter_table");
     hmsHandler.alter_table(dbName, tblName, newTable);
     newTable = rawStore.getTable(DEFAULT_CATALOG_NAME, dbName, tblName);
 
@@ -267,8 +306,152 @@ public class TestCachedStoreUpdateUsingEvents {
     Assert.assertNull(tblRead);
 
     sharedCache.getDatabaseCache().clear();
-    sharedCache.getTableCache().clear();
+    sharedCache.clearTableCache();
     sharedCache.getSdCache().clear();
+  }
+
+  @Test
+  public void testConstraintsForUpdateUsingEvents() throws Exception {
+    long lastEventId = -1;
+    RawStore rawStore = hmsHandler.getMS();
+
+    // Prewarm CachedStore
+    CachedStore.setCachePrewarmedState(false);
+    CachedStore.prewarm(rawStore);
+
+    // Add a db via rawStore
+    String dbName = "Test_Table_Ops";
+    String dbOwner = "user1";
+    Database db = createTestDb(dbName, dbOwner);
+    Deadline.registerIfNot(100_000);
+    Deadline.startTimer("create_database");
+    hmsHandler.create_database(db);
+    db = rawStore.getDatabase(DEFAULT_CATALOG_NAME, dbName);
+
+    // Add a table via rawStore
+    String parentTableName = "Ptbl";
+    String tblName = "Tbl";
+    String tblOwner = "user1";
+    FieldSchema col1 = new FieldSchema("Col1", "int", "integer column");
+    FieldSchema col2 = new FieldSchema("Col2", "string", "string column");
+    FieldSchema col3 = new FieldSchema("Col3", "int", "integer column");
+    List<FieldSchema> cols = new ArrayList<>();
+    cols.add(col1);
+    cols.add(col2);
+    cols.add(col3);
+    Table parentTable = createTestTbl(dbName, parentTableName, tblOwner, cols, null);
+    Table tbl = createTestTbl(dbName, tblName, tblOwner, cols, null);
+
+    // Constraints for parent Table
+    List<SQLPrimaryKey> parentPkBase =
+        Arrays.asList(new SQLPrimaryKey(dbName, parentTableName, col1.getName(), 1, "parentpk1", false, false, false));
+
+    // Constraints for table
+    List<SQLPrimaryKey> pkBase =
+        Arrays.asList(new SQLPrimaryKey(dbName, tblName, col1.getName(), 1, "pK1", false, false, false));
+    List<SQLUniqueConstraint> ucBase = Arrays.asList(
+        new SQLUniqueConstraint(DEFAULT_CATALOG_NAME, dbName, tblName, col1.getName(), 2, "uC1", false, false, false));
+    List<SQLNotNullConstraint> nnBase = Arrays.asList(
+        new SQLNotNullConstraint(DEFAULT_CATALOG_NAME, dbName, tblName, col1.getName(), "nN1", false, false, false));
+    List<SQLDefaultConstraint> dcBase = Arrays.asList(
+        new SQLDefaultConstraint(DEFAULT_CATALOG_NAME, tbl.getDbName(), tbl.getTableName(), col2.getName(), "1", "dC1",
+            false, false, false));
+    List<SQLCheckConstraint> ccBase = Arrays.asList(
+        new SQLCheckConstraint(DEFAULT_CATALOG_NAME, tbl.getDbName(), tbl.getTableName(), col2.getName(), "1", "cC1",
+            false, false, false));
+    List<SQLForeignKey> fkBase = Arrays.asList(
+        new SQLForeignKey(parentPkBase.get(0).getTable_db(), parentPkBase.get(0).getTable_name(),
+            parentPkBase.get(0).getColumn_name(), dbName, tblName, col3.getName(), 2, 1, 2, "fK1",
+            parentPkBase.get(0).getPk_name(), false, false, false));
+
+    // Create table and parent table
+    hmsHandler.create_table_with_constraints(parentTable, parentPkBase, null, null, null, null, null);
+    hmsHandler.create_table_with_constraints(tbl, pkBase, fkBase, ucBase, nnBase, dcBase, ccBase);
+
+    tbl = rawStore.getTable(DEFAULT_CATALOG_NAME, dbName, tblName);
+    parentTable = rawStore.getTable(DEFAULT_CATALOG_NAME, dbName, parentTableName);
+
+    // Read database, table via CachedStore
+    Database dbRead = sharedCache.getDatabaseFromCache(DEFAULT_CATALOG_NAME, dbName);
+    Assert.assertEquals(db, dbRead);
+
+    // Read table via CachedStore
+    Table tblRead = sharedCache.getTableFromCache(DEFAULT_CATALOG_NAME, dbName, tblName);
+    Table parentTableRead = sharedCache.getTableFromCache(DEFAULT_CATALOG_NAME, dbName, parentTableName);
+    compareTables(tblRead, tbl);
+    compareTables(parentTableRead, parentTable);
+
+    // Validating constraint values from CachedStore with rawStore for table
+    assertRawStoreAndCachedStoreConstraint(new AllTableConstraintsRequest(DEFAULT_CATALOG_NAME, dbName, tblName));
+
+    // Validating constraint values from CachedStore with rawStore for parent table
+    assertRawStoreAndCachedStoreConstraint(new AllTableConstraintsRequest(DEFAULT_CATALOG_NAME, dbName, parentTableName));
+
+    // Dropping all the constraint
+    DropConstraintRequest dropConstraintRequest =
+        new DropConstraintRequest(dbName, tblName, fkBase.get(0).getFk_name());
+    hmsHandler.drop_constraint(dropConstraintRequest);
+    dropConstraintRequest = new DropConstraintRequest(dbName, tblName, pkBase.get(0).getPk_name());
+    hmsHandler.drop_constraint(dropConstraintRequest);
+    dropConstraintRequest = new DropConstraintRequest(dbName, tblName, nnBase.get(0).getNn_name());
+    hmsHandler.drop_constraint(dropConstraintRequest);
+    dropConstraintRequest = new DropConstraintRequest(dbName, tblName, ucBase.get(0).getUk_name());
+    hmsHandler.drop_constraint(dropConstraintRequest);
+    dropConstraintRequest = new DropConstraintRequest(dbName, tblName, dcBase.get(0).getDc_name());
+    hmsHandler.drop_constraint(dropConstraintRequest);
+    dropConstraintRequest = new DropConstraintRequest(dbName, tblName, ccBase.get(0).getDc_name());
+    hmsHandler.drop_constraint(dropConstraintRequest);
+    dropConstraintRequest = new DropConstraintRequest(dbName, parentTableName, parentPkBase.get(0).getPk_name());
+    hmsHandler.drop_constraint(dropConstraintRequest);
+
+    sharedCache.refreshAllTableConstraintsInCache(DEFAULT_CATALOG_NAME, dbName, tblName, new SQLAllTableConstraints());
+    sharedCache.refreshAllTableConstraintsInCache(DEFAULT_CATALOG_NAME, dbName, parentTableName, new SQLAllTableConstraints());
+
+    // Validate cache store constraint is dropped
+    assertRawStoreAndCachedStoreConstraint(new AllTableConstraintsRequest(DEFAULT_CATALOG_NAME, dbName, tblName));
+
+    // Validate cache store constraint is dropped
+    assertRawStoreAndCachedStoreConstraint(new AllTableConstraintsRequest(DEFAULT_CATALOG_NAME, dbName, parentTableName));
+
+    // Adding keys back
+    hmsHandler.add_primary_key(new AddPrimaryKeyRequest(parentPkBase));
+    hmsHandler.add_primary_key(new AddPrimaryKeyRequest(pkBase));
+    hmsHandler.add_unique_constraint(new AddUniqueConstraintRequest(ucBase));
+    hmsHandler.add_not_null_constraint(new AddNotNullConstraintRequest(nnBase));
+    hmsHandler.add_foreign_key(new AddForeignKeyRequest(fkBase));
+    hmsHandler.add_default_constraint(new AddDefaultConstraintRequest(dcBase));
+    hmsHandler.add_check_constraint(new AddCheckConstraintRequest(ccBase));
+
+    SQLAllTableConstraints constraints = new SQLAllTableConstraints();
+    constraints.setPrimaryKeys(pkBase);
+    constraints.setForeignKeys(fkBase);
+    constraints.setCheckConstraints(ccBase);
+    constraints.setDefaultConstraints(dcBase);
+    constraints.setNotNullConstraints(nnBase);
+    constraints.setUniqueConstraints(ucBase);
+
+    SQLAllTableConstraints constraintsParent = new SQLAllTableConstraints();
+    constraintsParent.setPrimaryKeys(parentPkBase);
+
+    sharedCache.refreshAllTableConstraintsInCache(DEFAULT_CATALOG_NAME, dbName, tblName, constraints);
+    sharedCache.refreshAllTableConstraintsInCache(DEFAULT_CATALOG_NAME, dbName, parentTableName, constraintsParent);
+
+    // Validating constraint values from Cache with rawStore
+    assertRawStoreAndCachedStoreConstraint(new AllTableConstraintsRequest(DEFAULT_CATALOG_NAME, dbName, tblName));
+
+    // Validating constraint values from Cache with rawStore
+    assertRawStoreAndCachedStoreConstraint(new AllTableConstraintsRequest(DEFAULT_CATALOG_NAME, dbName, parentTableName));
+
+    sharedCache.getDatabaseCache().clear();
+    sharedCache.clearTableCache();
+    sharedCache.getSdCache().clear();
+  }
+
+  public void assertRawStoreAndCachedStoreConstraint(AllTableConstraintsRequest request) throws TException {
+    SQLAllTableConstraints rawStoreConstraints = rawStore.getAllTableConstraints(request);
+    AllTableConstraintsResponse
+        constraints = hmsHandler.get_all_table_constraints(request);
+    Assert.assertEquals(rawStoreConstraints, constraints.getAllTableConstraints());
   }
 
   @Test
@@ -281,7 +464,7 @@ public class TestCachedStoreUpdateUsingEvents {
     CachedStore.prewarm(rawStore);
 
     // Add a db via rawStore
-    String dbName = "test_partition_ops";
+    String dbName = "Test_Partition_ops";
     String dbOwner = "user1";
     Database db = createTestDb(dbName, dbOwner);
     hmsHandler.create_database(db);
@@ -362,7 +545,7 @@ public class TestCachedStoreUpdateUsingEvents {
 
     // Read the altered partition via CachedStore
     ptnRead = sharedCache.getPartitionFromCache(DEFAULT_CATALOG_NAME, dbName, tblName, Arrays.asList(ptnColVal1Alt));
-    Assert.assertEquals(ptn1Atl.getParameters(), ptnRead.getParameters());
+    Assert.assertEquals(null, ptnRead);
 
     ptnRead = sharedCache.getPartitionFromCache(DEFAULT_CATALOG_NAME, dbName, tblName, Arrays.asList(ptnColVal2));
     Assert.assertEquals(null, ptnRead);
@@ -379,12 +562,12 @@ public class TestCachedStoreUpdateUsingEvents {
     // Clean up
     rawStore.dropDatabase(DEFAULT_CATALOG_NAME, dbName);
     sharedCache.getDatabaseCache().clear();
-    sharedCache.getTableCache().clear();
+    sharedCache.clearTableCache();
     sharedCache.getSdCache().clear();
   }
 
-  private void updateTableColStats(String dbName, String tblName, String[] colName,
-                                   double highValue, double avgColLen, boolean isTxnTable) throws Throwable {
+  private void updateTableColStats(String dbName, String tblName, String[] colName, double highValue, double avgColLen,
+      boolean isTxnTable) throws Throwable {
     long writeId = -1;
     String validWriteIds = null;
     if (isTxnTable) {
@@ -401,6 +584,7 @@ public class TestCachedStoreUpdateUsingEvents {
     ColumnStatistics colStats = new ColumnStatistics();
     colStats.setStatsDesc(statsDesc);
     colStats.setStatsObj(getStatsObjects(dbName, tblName, colName, highValue, avgColLen));
+    colStats.setEngine(Constants.HIVE_ENGINE);
 
     SetPartitionsStatsRequest setTblColStat = new SetPartitionsStatsRequest(Collections.singletonList(colStats));
     setTblColStat.setWriteId(writeId);
@@ -421,8 +605,8 @@ public class TestCachedStoreUpdateUsingEvents {
     verifyStatString(colStatsCache.getStatsObj().get(0), colName[1], avgColLen);
   }
 
-  private void updatePartColStats(String dbName, String tblName, boolean isTxnTable, String[] colName,
-                                  String partName, double highValue, double avgColLen) throws Throwable {
+  private void updatePartColStats(String dbName, String tblName, boolean isTxnTable, String[] colName, String partName,
+      double highValue, double avgColLen) throws Throwable {
     long writeId = -1;
     String validWriteIds = null;
     List<Long> txnIds = null;
@@ -442,6 +626,7 @@ public class TestCachedStoreUpdateUsingEvents {
     ColumnStatistics colStats = new ColumnStatistics();
     colStats.setStatsDesc(statsDesc);
     colStats.setStatsObj(getStatsObjects(dbName, tblName, colName, highValue, avgColLen));
+    colStats.setEngine(Constants.HIVE_ENGINE);
 
     SetPartitionsStatsRequest setTblColStat = new SetPartitionsStatsRequest(Collections.singletonList(colStats));
     setTblColStat.setWriteId(writeId);
@@ -459,7 +644,7 @@ public class TestCachedStoreUpdateUsingEvents {
 
     Deadline.startTimer("getPartitionColumnStatistics");
     List<ColumnStatistics> statRowStore = rawStore.getPartitionColumnStatistics(DEFAULT_CATALOG_NAME, dbName, tblName,
-            Collections.singletonList(partName), Collections.singletonList(colName[1]), validWriteIds);
+            Collections.singletonList(partName), Collections.singletonList(colName[1]), Constants.HIVE_ENGINE, validWriteIds);
     Deadline.stopTimer();
     verifyStatString(statRowStore.get(0).getStatsObj().get(0), colName[1], avgColLen);
     if (isTxnTable) {
@@ -488,11 +673,7 @@ public class TestCachedStoreUpdateUsingEvents {
   }
 
   private List<ColumnStatisticsObj> getStatsObjects(String dbName, String tblName, String[] colName,
-                                                    double highValue, double avgColLen) throws Throwable {
-    double lowValue = 50000.21;
-    long numNulls = 3;
-    long numDVs = 22;
-    long maxColLen = 102;
+                                                    double highValue, double avgColLen) {
     boolean isTblLevel = true;
     String partName = null;
     List<ColumnStatisticsObj> statsObjs = new ArrayList<>();
@@ -507,14 +688,8 @@ public class TestCachedStoreUpdateUsingEvents {
     statsObj.setColName(colName[0]);
     statsObj.setColType(colType[0]);
 
-    ColumnStatisticsData statsData = new ColumnStatisticsData();
-    DoubleColumnStatsData numericStats = new DoubleColumnStatsData();
-    statsData.setDoubleStats(numericStats);
-
-    statsData.getDoubleStats().setHighValue(highValue);
-    statsData.getDoubleStats().setLowValue(lowValue);
-    statsData.getDoubleStats().setNumDVs(numDVs);
-    statsData.getDoubleStats().setNumNulls(numNulls);
+    ColumnStatisticsData statsData = new ColStatsBuilder<>(double.class).numNulls(NUM_NULLS).numDVs(NUM_DVS)
+        .low(LOW_VALUE).high(highValue).hll(1.1, 2.2, 3.3).kll(1.1, 2.2, 3.3).build();
 
     statsObj.setStatsData(statsData);
     statsObjs.add(statsObj);
@@ -523,13 +698,8 @@ public class TestCachedStoreUpdateUsingEvents {
     statsObj.setColName(colName[1]);
     statsObj.setColType(colType[1]);
 
-    statsData = new ColumnStatisticsData();
-    StringColumnStatsData stringStats = new StringColumnStatsData();
-    statsData.setStringStats(stringStats);
-    statsData.getStringStats().setAvgColLen(avgColLen);
-    statsData.getStringStats().setMaxColLen(maxColLen);
-    statsData.getStringStats().setNumDVs(numDVs);
-    statsData.getStringStats().setNumNulls(numNulls);
+    statsData = new ColStatsBuilder<>(String.class).numNulls(NUM_NULLS).numDVs(NUM_DVS)
+        .avgColLen(avgColLen).maxColLen(MAX_COL_LEN).hll("1.1", "2.2", "3.3").build();
 
     statsObj.setStatsData(statsData);
     statsObjs.add(statsObj);
@@ -537,25 +707,17 @@ public class TestCachedStoreUpdateUsingEvents {
   }
 
   private void verifyStatDouble(ColumnStatisticsObj colStats, String colName, double highValue) {
-    double lowValue = 50000.21;
-    long numNulls = 3;
-    long numDVs = 22;
     Assert.assertEquals(colStats.getColName(), colName);
-    Assert.assertEquals(colStats.getStatsData().getDoubleStats().getLowValue(), lowValue, 0.01);
-    Assert.assertEquals(colStats.getStatsData().getDoubleStats().getHighValue(), highValue, 0.01);
-    Assert.assertEquals(colStats.getStatsData().getDoubleStats().getNumNulls(), numNulls);
-    Assert.assertEquals(colStats.getStatsData().getDoubleStats().getNumDVs(), numDVs);
+    ColumnStatisticsData expectedColStats = new ColStatsBuilder<>(double.class).numNulls(NUM_NULLS).numDVs(NUM_DVS)
+        .low(LOW_VALUE).high(highValue).hll(1.1, 2.2, 3.3).kll(1.1, 2.2, 3.3).build();
+    Assert.assertEquals(expectedColStats, colStats.getStatsData());
   }
 
   private void verifyStatString(ColumnStatisticsObj colStats, String colName, double avgColLen) {
-    long numNulls = 3;
-    long numDVs = 22;
-    long maxColLen = 102;
-    Assert.assertEquals(colStats.getColName(), colName);
-    Assert.assertEquals(colStats.getStatsData().getStringStats().getMaxColLen(), maxColLen);
-    Assert.assertEquals(colStats.getStatsData().getStringStats().getAvgColLen(), avgColLen, 0.01);
-    Assert.assertEquals(colStats.getStatsData().getStringStats().getNumNulls(), numNulls);
-    Assert.assertEquals(colStats.getStatsData().getStringStats().getNumDVs(), numDVs);
+    Assert.assertEquals(colName, colStats.getColName());
+    ColumnStatisticsData expectedColStats = new ColStatsBuilder<>(String.class).numNulls(NUM_NULLS).numDVs(NUM_DVS)
+        .avgColLen(avgColLen).maxColLen(MAX_COL_LEN).hll("1.1", "2.2", "3.3").build();
+    Assert.assertEquals(expectedColStats, colStats.getStatsData());
   }
 
   private void verifyStat(List<ColumnStatisticsObj> colStats, String[] colName, double highValue, double avgColLen) {
@@ -678,7 +840,7 @@ public class TestCachedStoreUpdateUsingEvents {
   }
 
   private void deleteColStats(String dbName, String tblName, String[] colName) throws Throwable {
-    boolean status = hmsHandler.delete_table_column_statistics(dbName, tblName, null);
+    boolean status = hmsHandler.delete_table_column_statistics(dbName, tblName, null, Constants.HIVE_ENGINE);
     Assert.assertEquals(status, true);
     Assert.assertEquals(sharedCache.getTableColStatsFromCache(DEFAULT_CATALOG_NAME, dbName, tblName,
             Lists.newArrayList(colName[0]),  null, true).getStatsObj().isEmpty(), true);
@@ -689,7 +851,7 @@ public class TestCachedStoreUpdateUsingEvents {
 
   private void deletePartColStats(String dbName, String tblName, String[] colName,
                                   String partName) throws Throwable {
-    boolean status = hmsHandler.delete_partition_column_statistics(dbName, tblName, partName, colName[1]);
+    boolean status = hmsHandler.delete_partition_column_statistics(dbName, tblName, partName, colName[1], Constants.HIVE_ENGINE);
     Assert.assertEquals(status, true);
 
     SharedCache.ColumStatsWithWriteId colStats = sharedCache.getPartitionColStatsFromCache(DEFAULT_CATALOG_NAME, dbName,
@@ -777,6 +939,7 @@ public class TestCachedStoreUpdateUsingEvents {
     ColumnStatistics colStats = new ColumnStatistics();
     colStats.setStatsDesc(statsDesc);
     colStats.setStatsObj(getStatsObjects(dbName, tblName, colName, highValue, avgColLen));
+    colStats.setEngine(Constants.HIVE_ENGINE);
 
     SetPartitionsStatsRequest setTblColStat = new SetPartitionsStatsRequest(Collections.singletonList(colStats));
     setTblColStat.setWriteId(writeId);
@@ -794,7 +957,7 @@ public class TestCachedStoreUpdateUsingEvents {
 
     Deadline.startTimer("getPartitionColumnStatistics");
     List<ColumnStatistics> statRawStore = rawStore.getPartitionColumnStatistics(DEFAULT_CATALOG_NAME, dbName, tblName,
-            Collections.singletonList(partName), Collections.singletonList(colName[1]), validWriteIds);
+            Collections.singletonList(partName), Collections.singletonList(colName[1]), Constants.HIVE_ENGINE, validWriteIds);
     Deadline.stopTimer();
 
     verifyStat(statRawStore.get(0).getStatsObj(), colName, highValue, avgColLen);
@@ -843,6 +1006,7 @@ public class TestCachedStoreUpdateUsingEvents {
     ColumnStatistics colStats = new ColumnStatistics();
     colStats.setStatsDesc(statsDesc);
     colStats.setStatsObj(getStatsObjects(dbName, tblName, colName, highValue, avgColLen));
+    colStats.setEngine(Constants.HIVE_ENGINE);
 
     SetPartitionsStatsRequest setTblColStat = new SetPartitionsStatsRequest(Collections.singletonList(colStats));
     setTblColStat.setWriteId(writeId);
@@ -858,7 +1022,7 @@ public class TestCachedStoreUpdateUsingEvents {
 
     Deadline.startTimer("getPartitionColumnStatistics");
     List<ColumnStatistics> statRawStore = rawStore.getPartitionColumnStatistics(DEFAULT_CATALOG_NAME, dbName, tblName,
-            Collections.singletonList(partName), Collections.singletonList(colName[1]), validWriteIds);
+            Collections.singletonList(partName), Collections.singletonList(colName[1]), Constants.HIVE_ENGINE, validWriteIds);
     Deadline.stopTimer();
 
     verifyStat(statRawStore.get(0).getStatsObj(), colName, highValue, avgColLen);
@@ -885,7 +1049,7 @@ public class TestCachedStoreUpdateUsingEvents {
 
     Deadline.startTimer("getPartitionSpecsByFilterAndProjection");
     AggrStats aggrStats = rawStore.get_aggr_stats_for(DEFAULT_CATALOG_NAME, dbName, tblName, partitions,
-            Collections.singletonList(colName[0]), validWriteIds);
+            Collections.singletonList(colName[0]), Constants.HIVE_ENGINE, validWriteIds);
     Deadline.stopTimer();
     Assert.assertEquals(aggrStats.getPartsFound(), 2);
     Assert.assertEquals(aggrStats.getColStats().get(0).getStatsData().getDoubleStats().getHighValue(), highValue, 0.01);
@@ -958,6 +1122,7 @@ public class TestCachedStoreUpdateUsingEvents {
     ColumnStatistics colStats = new ColumnStatistics();
     colStats.setStatsDesc(statsDesc);
     colStats.setStatsObj(getStatsObjects(dbName, tblName, colName, 5, 20));
+    colStats.setEngine(Constants.HIVE_ENGINE);
 
     SetPartitionsStatsRequest setTblColStat = new SetPartitionsStatsRequest(Collections.singletonList(colStats));
     setTblColStat.setWriteId(writeId);
@@ -966,7 +1131,7 @@ public class TestCachedStoreUpdateUsingEvents {
 
     Deadline.startTimer("getPartitionSpecsByFilterAndProjection");
     AggrStats aggrStats = rawStore.get_aggr_stats_for(DEFAULT_CATALOG_NAME, dbName, tblName, partitions,
-            Collections.singletonList(colName[0]), validWriteIds);
+            Collections.singletonList(colName[0]), Constants.HIVE_ENGINE, validWriteIds);
     Deadline.stopTimer();
     Assert.assertEquals(aggrStats, null);
 
@@ -1009,6 +1174,7 @@ public class TestCachedStoreUpdateUsingEvents {
     ColumnStatistics colStats = new ColumnStatistics();
     colStats.setStatsDesc(statsDesc);
     colStats.setStatsObj(getStatsObjects(dbName, tblName, colName, 5, 20));
+    colStats.setEngine(Constants.HIVE_ENGINE);
 
     SetPartitionsStatsRequest setTblColStat = new SetPartitionsStatsRequest(Collections.singletonList(colStats));
     setTblColStat.setWriteId(writeId);
@@ -1020,7 +1186,7 @@ public class TestCachedStoreUpdateUsingEvents {
 
     Deadline.startTimer("getPartitionSpecsByFilterAndProjection");
     AggrStats aggrStats = rawStore.get_aggr_stats_for(DEFAULT_CATALOG_NAME, dbName, tblName, partitions,
-            Collections.singletonList(colName[0]), validWriteIds);
+            Collections.singletonList(colName[0]), Constants.HIVE_ENGINE, validWriteIds);
     Deadline.stopTimer();
     Assert.assertEquals(aggrStats, null);
 

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.hooks;
@@ -23,10 +24,10 @@ import com.google.common.collect.Lists;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.gson.stream.JsonWriter;
-import org.apache.commons.collections.SetUtils;
+import org.apache.commons.collections4.SetUtils;
 import org.apache.commons.io.output.StringBuilderWriter;
-import org.apache.commons.lang.StringUtils;
-import org.apache.hadoop.hive.common.ObjectPair;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
@@ -249,15 +250,15 @@ public class LineageLogger implements ExecuteWithHookContext {
    */
   @VisibleForTesting
   public static List<Edge> getEdges(QueryPlan plan, Index index) {
-    LinkedHashMap<String, ObjectPair<SelectOperator,
-      org.apache.hadoop.hive.ql.metadata.Table>> finalSelOps = index.getFinalSelectOps();
+    Map<String, Pair<SelectOperator, org.apache.hadoop.hive.ql.metadata.Table>> finalSelOps =
+        index.getFinalSelectOps();
     Map<String, Vertex> vertexCache = new LinkedHashMap<String, Vertex>();
     List<Edge> edges = new ArrayList<Edge>();
-    for (ObjectPair<SelectOperator,
+    for (Pair<SelectOperator,
         org.apache.hadoop.hive.ql.metadata.Table> pair: finalSelOps.values()) {
       List<FieldSchema> fieldSchemas = plan.getResultSchema().getFieldSchemas();
-      SelectOperator finalSelOp = pair.getFirst();
-      org.apache.hadoop.hive.ql.metadata.Table t = pair.getSecond();
+      SelectOperator finalSelOp = pair.getLeft();
+      org.apache.hadoop.hive.ql.metadata.Table t = pair.getRight();
       String destTableName = null;
       List<String> colNames = null;
       if (t != null) {

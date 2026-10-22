@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.keyseries;
@@ -93,9 +94,8 @@ public abstract class VectorKeySeriesSerializedImpl<T extends SerializeWrite>
    * Batch compute the hash codes for all the serialized keys.
    *
    * NOTE: MAJOR MAJOR ASSUMPTION:
-   *     We assume that HashCodeUtil.murmurHash produces the same result
-   *     as MurmurHash.hash with seed = 0 (the method used by ReduceSinkOperator for
-   *     UNIFORM distribution).
+   *     We use Murmur3.hash32(seed=0) across the board for the ReduceSink UNIFORM distribution.
+   *     Previous use of HashCodeUtil is deprecated.
    */
   protected void computeSerializedHashCodes() {
     int offset = 0;

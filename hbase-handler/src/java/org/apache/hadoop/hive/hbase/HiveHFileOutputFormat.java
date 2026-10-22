@@ -9,15 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.hbase;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.util.Collections;
@@ -27,7 +29,7 @@ import java.util.Properties;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
-import org.apache.commons.lang.NotImplementedException;
+import org.apache.commons.lang3.NotImplementedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -163,8 +165,14 @@ public class HiveHFileOutputFormat extends
           FileSystem fs = outputdir.getFileSystem(jc);
           fs.mkdirs(columnFamilyPath);
           Path srcDir = taskAttemptOutputdir;
-          for (;;) {
-            FileStatus [] files = fs.listStatus(srcDir, FileUtils.STAGING_DIR_PATH_FILTER);
+          FileStatus[] files = null;
+          for (; ; ) {
+            try {
+              files = fs.listStatus(srcDir, FileUtils.STAGING_DIR_PATH_FILTER);
+            } catch (FileNotFoundException fnf) {
+              LOG.debug("File doesn't exist {} ",srcDir, fnf);
+              break;
+            }
             if ((files == null) || (files.length == 0)) {
               throw new IOException("No family directories found in " + srcDir);
             }
@@ -181,15 +189,16 @@ public class HiveHFileOutputFormat extends
                   + columnFamilyName);
             }
           }
-          for (FileStatus regionFile : fs.listStatus(srcDir, FileUtils.STAGING_DIR_PATH_FILTER)) {
-            fs.rename(
-              regionFile.getPath(),
-              new Path(
-                columnFamilyPath,
-                regionFile.getPath().getName()));
+          if (files != null) {
+            for (FileStatus regionFile : fs.listStatus(srcDir, FileUtils.STAGING_DIR_PATH_FILTER)) {
+              fs.rename(regionFile.getPath(), new Path(columnFamilyPath, regionFile.getPath().getName()));
+            }
           }
         } catch (InterruptedException ex) {
           throw new IOException(ex);
+        } catch (FileNotFoundException fnf) {
+          // Ignore....
+          LOG.debug("File doesn't exist.", fnf);
         }
       }
 

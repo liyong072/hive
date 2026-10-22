@@ -9,15 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
-import junit.framework.TestCase;
+
 
 import org.apache.hadoop.hive.ql.exec.UDFArgumentLengthException;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentTypeException;
@@ -27,9 +28,18 @@ import org.apache.hadoop.hive.ql.udf.generic.GenericUDF.DeferredObject;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.io.Text;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertNotNull;
+import org.junit.Test;
 
-public class TestGenericUDFSoundex extends TestCase {
+/**
+ * TestGenericUDFSoundex.
+ */
+public class TestGenericUDFSoundex {
 
+  @Test
   public void testSoundex() throws HiveException {
     GenericUDFSoundex udf = new GenericUDFSoundex();
     ObjectInspector valueOI0 = PrimitiveObjectInspectorFactory.writableStringObjectInspector;
@@ -53,6 +63,7 @@ public class TestGenericUDFSoundex extends TestCase {
     runAndVerify("\u3500\u3501\u3502\u3503", null, udf);
   }
 
+  @Test
   public void testSoundexWrongType0() throws HiveException {
     @SuppressWarnings("resource")
     GenericUDFSoundex udf = new GenericUDFSoundex();
@@ -68,6 +79,7 @@ public class TestGenericUDFSoundex extends TestCase {
     }
   }
 
+  @Test
   public void testSoundexWrongLength() throws HiveException {
     @SuppressWarnings("resource")
     GenericUDFSoundex udf = new GenericUDFSoundex();

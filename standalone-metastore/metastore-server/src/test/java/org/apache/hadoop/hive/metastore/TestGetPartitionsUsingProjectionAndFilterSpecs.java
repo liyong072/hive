@@ -1,20 +1,20 @@
 /*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- *  Licensed to the Apache Software Foundation (ASF) under one
- *  or more contributor license agreements.  See the NOTICE file
- *  distributed with this work for additional information
- *  regarding copyright ownership.  The ASF licenses this file
- *  to you under the Apache License, Version 2.0 (the
- *  "License"); you may not use this file except in compliance
- *  with the License.  You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
@@ -24,7 +24,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.metastore.annotation.MetastoreCheckinTest;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.GetPartitionsFilterSpec;
-import org.apache.hadoop.hive.metastore.api.GetPartitionsProjectionSpec;
+import org.apache.hadoop.hive.metastore.api.GetProjectionsSpec;
 import org.apache.hadoop.hive.metastore.api.GetPartitionsRequest;
 import org.apache.hadoop.hive.metastore.api.GetPartitionsResponse;
 import org.apache.hadoop.hive.metastore.api.MetaException;
@@ -113,7 +113,6 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
     tbl = client.getTable(dbName, tblName);
     // set directSQL to true explicitly
     client.setMetaConf(ConfVars.TRY_DIRECT_SQL.getVarname(), "true");
-    client.setMetaConf(ConfVars.TRY_DIRECT_SQL_DDL.getVarname(), "true");
   }
 
   @After
@@ -198,7 +197,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
   @Test
   public void testPartitionProjectionEmptySpec() throws Throwable {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
 
     projectSpec.setFieldList(new ArrayList<>(0));
     projectSpec.setExcludeParamKeyPattern("exclude%");
@@ -229,15 +228,19 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
       Assert.assertEquals(origPartition.getLastAccessTime(), retPartition.getLastAccessTime());
       Assert.assertEquals(origPartition.getSd().getLocation(),
           sharedSD.getLocation() + retPartition.getRelativePath());
-      validateMap(origPartition.getParameters(), retPartition.getParameters());
-      validateList(origPartition.getValues(), retPartition.getValues());
+      Assert.assertFalse("excluded parameter key is found in the response",
+          retPartition.getParameters().containsKey(EXCLUDE_KEY_PREFIX + "key1"));
+      Assert.assertFalse("excluded parameter key is found in the response",
+          retPartition.getParameters().containsKey(EXCLUDE_KEY_PREFIX + "key2"));
+      Assert.assertEquals("Additional parameters returned",
+          3, retPartition.getParameters().size());
     }
   }
 
   @Test
   public void testPartitionProjectionAllSingleValuedFields() throws Throwable {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
 
     List<String> projectedFields = Arrays
         .asList("dbName", "tableName", "createTime", "lastAccessTime", "sd.location",
@@ -266,7 +269,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
     // disable direct SQL to make sure
     client.setMetaConf(ConfVars.TRY_DIRECT_SQL.getVarname(), "false");
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     List<String> projectedFields = Collections.singletonList("sd.location");
     projectSpec.setFieldList(projectedFields);
 
@@ -351,7 +354,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
   @Test
   public void testPartitionProjectionAllMultiValuedFields() throws Throwable {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     List<String> projectedFields = Arrays
         .asList("values", "parameters", "sd.cols", "sd.bucketCols", "sd.sortCols", "sd.parameters",
             "sd.skewedInfo", "sd.serdeInfo.parameters");
@@ -418,7 +421,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
   @Test
   public void testPartitionProjectionIncludeParameters() throws Throwable {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec
         .setFieldList(Arrays.asList("dbName", "tableName", "catName", "parameters", "values"));
     projectSpec.setIncludeParamKeyPattern(EXCLUDE_KEY_PREFIX + "%");
@@ -446,7 +449,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
   @Test
   public void testPartitionProjectionIncludeExcludeParameters() throws Throwable {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec
         .setFieldList(Arrays.asList("dbName", "tableName", "catName", "parameters", "values"));
     // test parameter key inclusion using setIncludeParamKeyPattern
@@ -476,7 +479,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
   @Test
   public void testPartitionProjectionExcludeParameters() throws Throwable {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec
         .setFieldList(Arrays.asList("dbName", "tableName", "catName", "parameters", "values"));
     projectSpec.setExcludeParamKeyPattern(EXCLUDE_KEY_PREFIX + "%");
@@ -501,7 +504,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
   @Test
   public void testNestedMultiValuedFieldProjection() throws TException {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec.setFieldList(Arrays.asList("sd.cols.name", "sd.cols.type"));
 
     GetPartitionsResponse response = client.getPartitionsWithSpecs(request);
@@ -520,7 +523,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
   @Test
   public void testParameterExpansion() throws TException {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec.setFieldList(Arrays.asList("sd.cols", "sd.serdeInfo"));
 
     GetPartitionsResponse response = client.getPartitionsWithSpecs(request);
@@ -659,6 +662,35 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
     runGetPartitionsUsingNames();
   }
 
+  private void runGetPartitionsWithNullFilterSpec() throws TException {
+    // a client that never calls setFilterSpec() leaves the field null; the server
+    // must treat that the same as an "accept all partitions" filter instead of throwing NPE
+    GetPartitionsRequest request = getGetPartitionsRequest();
+    request.setFilterSpec(null);
+    request.getProjectionSpec().setFieldList(Arrays.asList("sd.location"));
+
+    GetPartitionsResponse response = client.getPartitionsWithSpecs(request);
+    Assert.assertNotNull(response);
+    Assert.assertEquals(1, response.getPartitionSpecSize());
+    PartitionSpecWithSharedSD partitionSpecWithSharedSD =
+        response.getPartitionSpec().get(0).getSharedSDPartitionSpec();
+    Assert.assertNotNull(partitionSpecWithSharedSD);
+    Assert.assertEquals("All partitions should be returned when filterSpec is null",
+        origPartitions.size(), partitionSpecWithSharedSD.getPartitionsSize());
+  }
+
+  @Test
+  public void testGetPartitionsWithNullFilterSpec() throws Exception {
+    runGetPartitionsWithNullFilterSpec();
+  }
+
+  @Test
+  public void testGetPartitionsWithNullFilterSpecUsingJDO() throws Exception {
+    // disable direct SQL to make sure the JDO code path is exercised
+    client.setMetaConf(ConfVars.TRY_DIRECT_SQL.getVarname(), "false");
+    runGetPartitionsWithNullFilterSpec();
+  }
+
   @Test(expected = MetaException.class)
   public void testInvalidFilterByNames() throws Exception {
     runWithInvalidFilterByNames();
@@ -697,7 +729,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
 
   private void runWithInvalidFilterByNames() throws TException {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec.setFieldList(Arrays.asList("sd.location"));
     request.getFilterSpec().setFilterMode(PartitionFilterMode.BY_NAMES);
     // filter mode is set but not filters are provided
@@ -706,7 +738,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
 
   private void runWithInvalidFieldNames(List<String> values) throws TException {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec.setFieldList(values);
     client.getPartitionsWithSpecs(request);
   }
@@ -736,7 +768,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
 
   private void getPartitionsWithExpr(List<String> filters, int expectedPartition) throws TException {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec.setFieldList(Arrays.asList("sd.location"));
     request.getFilterSpec().setFilterMode(PartitionFilterMode.BY_EXPR);
     request.getFilterSpec().setFilters(filters);
@@ -761,7 +793,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
     // get partitions from "trusted" API
     List<Partition> partitions = client.listPartitions(dbName, tblName, filters, (short) -1);
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec.setFieldList(Arrays.asList("sd.location"));
     request.getFilterSpec().setFilterMode(PartitionFilterMode.BY_VALUES);
     request.getFilterSpec().setFilters(filters);
@@ -794,7 +826,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
 
   private void getPartitionsWithNames(List<String> names, int expectedPartitionCount) throws TException {
     GetPartitionsRequest request = getGetPartitionsRequest();
-    GetPartitionsProjectionSpec projectSpec = request.getProjectionSpec();
+    GetProjectionsSpec projectSpec = request.getProjectionSpec();
     projectSpec.setFieldList(Arrays.asList("sd.location"));
     request.getFilterSpec().setFilterMode(PartitionFilterMode.BY_NAMES);
     request.getFilterSpec().setFilters(names);
@@ -851,7 +883,7 @@ public class TestGetPartitionsUsingProjectionAndFilterSpecs {
 
   private GetPartitionsRequest getGetPartitionsRequest() {
     GetPartitionsRequest request = new GetPartitionsRequest();
-    request.setProjectionSpec(new GetPartitionsProjectionSpec());
+    request.setProjectionSpec(new GetProjectionsSpec());
     request.setFilterSpec(new GetPartitionsFilterSpec());
     request.setTblName(tblName);
     request.setDbName(dbName);

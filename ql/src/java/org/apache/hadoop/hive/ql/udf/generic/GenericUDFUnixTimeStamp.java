@@ -9,18 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.udf.generic;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.apache.hadoop.hive.common.type.Timestamp;
 import org.apache.hadoop.hive.ql.exec.Description;
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -36,16 +34,17 @@ import org.apache.hadoop.io.LongWritable;
     extended = "Converts the specified time to number of seconds "
         + "since 1970-01-01. The _FUNC_(void) overload is deprecated, use current_timestamp.")
 public class GenericUDFUnixTimeStamp extends GenericUDFToUnixTimeStamp {
-  private static final Logger LOG = LoggerFactory.getLogger(GenericUDFUnixTimeStamp.class);
-  private LongWritable currentTimestamp; // retValue is transient so store this separately.
+
+  private LongWritable currentInstant; // retValue is transient so store this separately.
+
   @Override
   protected void initializeInput(ObjectInspector[] arguments) throws UDFArgumentException {
     if (arguments.length > 0) {
       super.initializeInput(arguments);
     } else {
-      if (currentTimestamp == null) {
-        currentTimestamp = new LongWritable(0);
-        setValueFromTs(currentTimestamp, Timestamp.ofEpochMilli(SessionState.get().getQueryCurrentTimestamp().toEpochMilli()));
+      if (currentInstant == null) {
+        currentInstant = new LongWritable(0);
+        currentInstant.set(SessionState.get().getQueryCurrentTimestamp().getEpochSecond());
         String msg = "unix_timestamp(void) is deprecated. Use current_timestamp instead.";
         SessionState.getConsole().printInfo(msg, false);
       }
@@ -59,6 +58,6 @@ public class GenericUDFUnixTimeStamp extends GenericUDFToUnixTimeStamp {
 
   @Override
   public Object evaluate(DeferredObject[] arguments) throws HiveException {
-    return (arguments.length == 0) ? currentTimestamp : super.evaluate(arguments);
+    return (arguments.length == 0) ? currentInstant : super.evaluate(arguments);
   }
 }

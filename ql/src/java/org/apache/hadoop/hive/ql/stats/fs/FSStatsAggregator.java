@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.stats.fs;
@@ -43,8 +44,8 @@ import org.apache.hadoop.hive.ql.stats.StatsCollectionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.kryo5.Kryo;
+import com.esotericsoftware.kryo.kryo5.io.Input;
 
 public class FSStatsAggregator implements StatsAggregator {
   private final Logger LOG = LoggerFactory.getLogger(this.getClass().getName());
@@ -122,20 +123,23 @@ public class FSStatsAggregator implements StatsAggregator {
   public String aggregateStats(String partID, String statType) {
     long counter = 0;
     Utilities.FILE_OP_LOGGER.debug("Part ID: {}, {}", partID, statType);
+    boolean statsPresent = false;
     for (Map<String,Map<String,String>> statsMap : statsList) {
       Map<String,String> partStat = statsMap.get(partID);
       if (null == partStat) { // not all partitions are scanned in all mappers, so this could be null.
         continue;
       }
+      statsPresent = true;
       String statVal = partStat.get(statType);
       if (null == statVal) { // partition was found, but was empty.
         continue;
       }
       counter += Long.parseLong(statVal);
     }
-    Utilities.FILE_OP_LOGGER.info("Read stats for {}, {}, {}: ", partID, statType, counter);
+    Utilities.FILE_OP_LOGGER.info("Read stats for {}, {}, {}, {}, {}: ",
+        partID, statType, statsPresent, counter, statsList.isEmpty());
 
-    return String.valueOf(counter);
+    return ((statsPresent || statsList.isEmpty()) ? String.valueOf(counter) : null);
   }
 
   @Override

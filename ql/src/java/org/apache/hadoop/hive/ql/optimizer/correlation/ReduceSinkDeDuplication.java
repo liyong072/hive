@@ -9,17 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.correlation;
 
-import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HIVECONVERTJOIN;
-import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASK;
+import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HIVE_CONVERT_JOIN;
+import static org.apache.hadoop.hive.conf.HiveConf.ConfVars.HIVE_CONVERT_JOIN_NOCONDITIONALTASK;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -35,12 +36,12 @@ import org.apache.hadoop.hive.ql.exec.ReduceSinkOperator;
 import org.apache.hadoop.hive.ql.exec.SelectOperator;
 import org.apache.hadoop.hive.ql.lib.DefaultGraphWalker;
 import org.apache.hadoop.hive.ql.lib.DefaultRuleDispatcher;
-import org.apache.hadoop.hive.ql.lib.Dispatcher;
-import org.apache.hadoop.hive.ql.lib.GraphWalker;
+import org.apache.hadoop.hive.ql.lib.SemanticDispatcher;
+import org.apache.hadoop.hive.ql.lib.SemanticGraphWalker;
 import org.apache.hadoop.hive.ql.lib.Node;
-import org.apache.hadoop.hive.ql.lib.NodeProcessor;
+import org.apache.hadoop.hive.ql.lib.SemanticNodeProcessor;
 import org.apache.hadoop.hive.ql.lib.NodeProcessorCtx;
-import org.apache.hadoop.hive.ql.lib.Rule;
+import org.apache.hadoop.hive.ql.lib.SemanticRule;
 import org.apache.hadoop.hive.ql.lib.RuleRegExp;
 import org.apache.hadoop.hive.ql.optimizer.Transform;
 import org.apache.hadoop.hive.ql.parse.ParseContext;
@@ -73,14 +74,14 @@ public class ReduceSinkDeDuplication extends Transform {
     ReduceSinkDeduplicateProcCtx cppCtx = new ReduceSinkDeduplicateProcCtx(pGraphContext);
 
     // for auto convert map-joins, it not safe to dedup in here (todo)
-    boolean mergeJoins = !pctx.getConf().getBoolVar(HIVECONVERTJOIN) &&
-        !pctx.getConf().getBoolVar(HIVECONVERTJOINNOCONDITIONALTASK) &&
+    boolean mergeJoins = !pctx.getConf().getBoolVar(HIVE_CONVERT_JOIN) &&
+        !pctx.getConf().getBoolVar(HIVE_CONVERT_JOIN_NOCONDITIONALTASK) &&
         !pctx.getConf().getBoolVar(ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ) &&
-        !pctx.getConf().getBoolVar(ConfVars.HIVEDYNAMICPARTITIONHASHJOIN);
+        !pctx.getConf().getBoolVar(ConfVars.HIVE_DYNAMIC_PARTITION_HASHJOIN);
 
     // If multiple rules can be matched with same cost, last rule will be choosen as a processor
     // see DefaultRuleDispatcher#dispatch()
-    Map<Rule, NodeProcessor> opRules = new LinkedHashMap<Rule, NodeProcessor>();
+    Map<SemanticRule, SemanticNodeProcessor> opRules = new LinkedHashMap<SemanticRule, SemanticNodeProcessor>();
     opRules.put(new RuleRegExp("R1", RS + "%.*%" + RS + "%"),
         ReduceSinkDeduplicateProcFactory.getReducerReducerProc());
     opRules.put(new RuleRegExp("R2", RS + "%" + GBY + "%.*%" + RS + "%"),
@@ -93,9 +94,9 @@ public class ReduceSinkDeDuplication extends Transform {
 
     // The dispatcher fires the processor corresponding to the closest matching
     // rule and passes the context along
-    Dispatcher disp = new DefaultRuleDispatcher(ReduceSinkDeduplicateProcFactory
+    SemanticDispatcher disp = new DefaultRuleDispatcher(ReduceSinkDeduplicateProcFactory
         .getDefaultProc(), opRules, cppCtx);
-    GraphWalker ogw = new DefaultGraphWalker(disp);
+    SemanticGraphWalker ogw = new DefaultGraphWalker(disp);
 
     // Create a list of topop nodes
     ArrayList<Node> topNodes = new ArrayList<Node>();
@@ -113,19 +114,19 @@ public class ReduceSinkDeDuplication extends Transform {
 
   static class ReduceSinkDeduplicateProcFactory {
 
-    public static NodeProcessor getReducerReducerProc() {
+    public static SemanticNodeProcessor getReducerReducerProc() {
       return new ReducerReducerProc();
     }
 
-    public static NodeProcessor getGroupbyReducerProc() {
+    public static SemanticNodeProcessor getGroupbyReducerProc() {
       return new GroupbyReducerProc();
     }
 
-    public static NodeProcessor getJoinReducerProc() {
+    public static SemanticNodeProcessor getJoinReducerProc() {
       return new JoinReducerProc();
     }
 
-    public static NodeProcessor getDefaultProc() {
+    public static SemanticNodeProcessor getDefaultProc() {
       return new DefaultProc();
     }
   }
@@ -133,7 +134,7 @@ public class ReduceSinkDeDuplication extends Transform {
   /*
    * do nothing.
    */
-  static class DefaultProc implements NodeProcessor {
+  static class DefaultProc implements SemanticNodeProcessor {
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
         Object... nodeOutputs) throws SemanticException {
@@ -141,7 +142,7 @@ public class ReduceSinkDeDuplication extends Transform {
     }
   }
 
-  public abstract static class AbsctractReducerReducerProc implements NodeProcessor {
+  public abstract static class AbstractReducerReducerProc implements SemanticNodeProcessor {
 
     @Override
     public Object process(Node nd, Stack<Node> stack, NodeProcessorCtx procCtx,
@@ -175,7 +176,7 @@ public class ReduceSinkDeDuplication extends Transform {
         ReduceSinkDeduplicateProcCtx dedupCtx) throws SemanticException;
   }
 
-  static class GroupbyReducerProc extends AbsctractReducerReducerProc {
+  static class GroupbyReducerProc extends AbstractReducerReducerProc {
 
     // given a group by operator this determines if that group by belongs to semi-join branch
     // note that this works only for second last group by in semi-join branch (X-GB-RS-GB-RS)
@@ -207,7 +208,8 @@ public class ReduceSinkDeDuplication extends Transform {
       ReduceSinkOperator pRS =
           CorrelationUtilities.findPossibleParent(
               pGBY, ReduceSinkOperator.class, dedupCtx.trustScript());
-      if (pRS != null && ReduceSinkDeDuplicationUtils.merge(cRS, pRS, dedupCtx.minReducer())) {
+      if (pRS != null && ReduceSinkDeDuplicationUtils
+          .merge(dedupCtx.getPctx().getConf(), cRS, pRS, dedupCtx.minReducer())) {
         CorrelationUtilities.replaceReduceSinkWithSelectOperator(
             cRS, dedupCtx.getPctx(), dedupCtx);
         pRS.getConf().setDeduplicated(true);
@@ -233,7 +235,8 @@ public class ReduceSinkDeDuplication extends Transform {
       }
       ReduceSinkOperator pRS =
           CorrelationUtilities.getSingleParent(pGBY, ReduceSinkOperator.class);
-      if (pRS != null && ReduceSinkDeDuplicationUtils.merge(cRS, pRS, dedupCtx.minReducer())) {
+      if (pRS != null && ReduceSinkDeDuplicationUtils
+          .merge(dedupCtx.getPctx().getConf(), cRS, pRS, dedupCtx.minReducer())) {
         CorrelationUtilities.removeReduceSinkForGroupBy(
             cRS, cGBY, dedupCtx.getPctx(), dedupCtx);
         pRS.getConf().setDeduplicated(true);
@@ -243,7 +246,7 @@ public class ReduceSinkDeDuplication extends Transform {
     }
   }
 
-  static class JoinReducerProc extends AbsctractReducerReducerProc {
+  static class JoinReducerProc extends AbstractReducerReducerProc {
 
     // pRS-pJOIN-cRS
     @Override
@@ -291,7 +294,7 @@ public class ReduceSinkDeDuplication extends Transform {
     }
   }
 
-  static class ReducerReducerProc extends AbsctractReducerReducerProc {
+  static class ReducerReducerProc extends AbstractReducerReducerProc {
 
     // pRS-cRS
     @Override
@@ -306,7 +309,7 @@ public class ReduceSinkDeDuplication extends Transform {
           return true;
         }
         // Normal deduplication
-        if (ReduceSinkDeDuplicationUtils.merge(cRS, pRS, dedupCtx.minReducer())) {
+        if (ReduceSinkDeDuplicationUtils.merge(dedupCtx.getPctx().getConf(), cRS, pRS, dedupCtx.minReducer())) {
           CorrelationUtilities.replaceReduceSinkWithSelectOperator(
               cRS, dedupCtx.getPctx(), dedupCtx);
           pRS.getConf().setDeduplicated(true);
@@ -325,8 +328,9 @@ public class ReduceSinkDeDuplication extends Transform {
       ReduceSinkOperator pRS =
           CorrelationUtilities.findPossibleParent(
               start, ReduceSinkOperator.class, dedupCtx.trustScript());
-      if (pRS != null && ReduceSinkDeDuplicationUtils.merge(cRS, pRS, dedupCtx.minReducer())) {
-        if (dedupCtx.getPctx().getConf().getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)) {
+      if (pRS != null && ReduceSinkDeDuplicationUtils
+          .merge(dedupCtx.getPctx().getConf(), cRS, pRS, dedupCtx.minReducer())) {
+        if (dedupCtx.getPctx().getConf().getBoolVar(HiveConf.ConfVars.HIVE_GROUPBY_SKEW)) {
           return false;
         }
         CorrelationUtilities.removeReduceSinkForGroupBy(cRS, cGBY, dedupCtx.getPctx(), dedupCtx);

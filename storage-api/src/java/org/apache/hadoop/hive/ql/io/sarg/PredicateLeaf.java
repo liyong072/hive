@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io.sarg;
@@ -99,4 +100,11 @@ public interface PredicateLeaf {
    *
    */
   public List<Object> getLiteralList();
+
+  /**
+   * Get the id of the leaf.
+   * The ids are assigned sequentially from 0.
+   * @return the offset in the list returned from {@link SearchArgument#getLeaves}
+   */
+  int getId();
 }

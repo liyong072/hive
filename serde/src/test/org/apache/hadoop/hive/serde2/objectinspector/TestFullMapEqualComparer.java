@@ -9,22 +9,28 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.objectinspector;
 
 import java.util.Map;
 import java.util.TreeMap;
 
-import junit.framework.TestCase;
+
 
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory.ObjectInspectorOptions;
+import static org.junit.Assert.assertTrue;
+import org.junit.Test;
 
-public class TestFullMapEqualComparer extends TestCase {
+/**
+ * FullMapEqualComparer Test.
+ */
+public class TestFullMapEqualComparer {
 
   public static class IntegerIntegerMapHolder {
     Map<Integer, Integer> mMap;
@@ -34,6 +40,7 @@ public class TestFullMapEqualComparer extends TestCase {
     }
   }
 
+  @Test
   public void testAntiSymmetry() {
     IntegerIntegerMapHolder o1 = new IntegerIntegerMapHolder();
     IntegerIntegerMapHolder o2 = new IntegerIntegerMapHolder();
@@ -66,6 +73,7 @@ public class TestFullMapEqualComparer extends TestCase {
 
   }
 
+  @Test
   public void testTransitivity() {
     IntegerIntegerMapHolder o1 = new IntegerIntegerMapHolder();
     IntegerIntegerMapHolder o2 = new IntegerIntegerMapHolder();

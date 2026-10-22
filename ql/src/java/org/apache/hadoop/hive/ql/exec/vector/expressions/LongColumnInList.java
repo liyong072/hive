@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -33,7 +34,6 @@ public class LongColumnInList extends VectorExpression implements ILongInExpr {
 
   private static final long serialVersionUID = 1L;
 
-  protected int colNum;
   protected long[] inListValues;
 
   // The set object containing the IN list. This is optimized for lookup
@@ -41,8 +41,7 @@ public class LongColumnInList extends VectorExpression implements ILongInExpr {
   private transient CuckooSetLong inSet;
 
   public LongColumnInList(int colNum, int outputColumnNum) {
-    super(outputColumnNum);
-    this.colNum = colNum;
+    super(colNum, outputColumnNum);
     inSet = null;
   }
 
@@ -62,7 +61,7 @@ public class LongColumnInList extends VectorExpression implements ILongInExpr {
       inSet.load(inListValues);
     }
 
-    LongColumnVector inputColVector = (LongColumnVector) batch.cols[colNum];
+    LongColumnVector inputColVector = (LongColumnVector) batch.cols[inputColumnNum[0]];
     LongColumnVector outputColVector = (LongColumnVector) batch.cols[outputColumnNum];
     int[] sel = batch.selected;
     boolean[] inputIsNull = inputColVector.isNull;
@@ -151,7 +150,7 @@ public class LongColumnInList extends VectorExpression implements ILongInExpr {
   }
 
   public String vectorExpressionParameters() {
-    return "col " + colNum + ", values " + Arrays.toString(inListValues);
+    return "col " + inputColumnNum[0] + ", values " + Arrays.toString(inListValues);
   }
 
   @Override

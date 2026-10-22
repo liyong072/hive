@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.events;
@@ -21,6 +22,7 @@ package org.apache.hadoop.hive.metastore.events;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.hive.metastore.IHMSHandler;
+import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.Table;
 
 @InterfaceAudience.Public
@@ -29,9 +31,12 @@ public class PreCreateTableEvent extends PreEventContext {
 
   private final Table table;
 
-  public PreCreateTableEvent(Table table, IHMSHandler handler) {
+  private final Database db;
+
+  public PreCreateTableEvent(Table table, Database db, IHMSHandler handler) {
     super(PreEventType.CREATE_TABLE, handler);
     this.table = table;
+    this.db = db;
   }
 
   /**
@@ -40,4 +45,9 @@ public class PreCreateTableEvent extends PreEventContext {
   public Table getTable() {
     return table;
   }
+
+  /**
+   * @return the database
+   */
+  public Database getDatabase() { return db; }
 }

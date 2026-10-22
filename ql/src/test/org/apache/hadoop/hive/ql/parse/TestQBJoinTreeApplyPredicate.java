@@ -9,20 +9,22 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.ql.QueryState;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.junit.Before;
@@ -39,8 +41,8 @@ public class TestQBJoinTreeApplyPredicate {
   @BeforeClass
   public static void initialize() {
     queryState =
-        new QueryState.Builder().withHiveConf(new HiveConf(SemanticAnalyzer.class)).build();
-    conf = queryState.getConf();
+        new QueryState.Builder().build();
+    conf = new HiveConfForTest(TestQBJoinTreeApplyPredicate.class);
     SessionState.start(conf);
   }
 
@@ -108,22 +110,21 @@ public class TestQBJoinTreeApplyPredicate {
     children[0] = leftAlias;
     children[1] = rightAlias;
     jT.setBaseSrc(children);
-    ArrayList<ArrayList<ASTNode>> expressions = new ArrayList<ArrayList<ASTNode>>();
+    List<List<ASTNode>> expressions = new ArrayList<List<ASTNode>>();
     expressions.add(new ArrayList<ASTNode>());
     expressions.add(new ArrayList<ASTNode>());
     jT.setExpressions(expressions);
 
-    ArrayList<Boolean> nullsafes = new ArrayList<Boolean>();
+    List<Boolean> nullsafes = new ArrayList<Boolean>();
     jT.setNullSafes(nullsafes);
 
-    ArrayList<ArrayList<ASTNode>> filters = new ArrayList<ArrayList<ASTNode>>();
+    List<List<ASTNode>> filters = new ArrayList<List<ASTNode>>();
     filters.add(new ArrayList<ASTNode>());
     filters.add(new ArrayList<ASTNode>());
     jT.setFilters(filters);
     jT.setFilterMap(new int[2][]);
 
-    ArrayList<ArrayList<ASTNode>> filtersForPushing =
-        new ArrayList<ArrayList<ASTNode>>();
+    List<List<ASTNode>> filtersForPushing = new ArrayList<List<ASTNode>>();
     filtersForPushing.add(new ArrayList<ASTNode>());
     filtersForPushing.add(new ArrayList<ASTNode>());
     jT.setFiltersForPushing(filtersForPushing);

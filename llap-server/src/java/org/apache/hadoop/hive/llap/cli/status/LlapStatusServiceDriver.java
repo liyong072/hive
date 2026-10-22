@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.cli.status;
@@ -41,10 +42,12 @@ import org.apache.hadoop.hive.llap.configuration.LlapDaemonConfiguration;
 import org.apache.hadoop.hive.llap.registry.LlapServiceInstance;
 import org.apache.hadoop.hive.llap.registry.impl.LlapRegistryService;
 import org.apache.hadoop.hive.ql.session.SessionState;
+import org.apache.hadoop.util.ExitUtil;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.ContainerExitStatus;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.exceptions.ApplicationNotFoundException;
 import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.service.api.records.Container;
 import org.apache.hadoop.yarn.service.api.records.Service;
@@ -52,13 +55,14 @@ import org.apache.hadoop.yarn.service.api.records.ServiceState;
 import org.apache.hadoop.yarn.service.client.ServiceClient;
 import org.apache.hadoop.yarn.util.Clock;
 import org.apache.hadoop.yarn.util.SystemClock;
-import org.codehaus.jackson.annotate.JsonAutoDetect.Visibility;
-import org.codehaus.jackson.annotate.JsonMethod;
-import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.map.SerializationConfig;
-import org.codehaus.jackson.map.annotate.JsonSerialize;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
  * Checks the status of the Llap.
@@ -120,7 +124,7 @@ public class LlapStatusServiceDriver {
       statusServiceDriver = new LlapStatusServiceDriver();
     } catch (Throwable t) {
       logError(t);
-      System.exit(ExitCode.INTERNAL_ERROR.getCode());
+      ExitUtil.terminate(ExitCode.INTERNAL_ERROR.getCode());
     }
     return statusServiceDriver;
   }
@@ -205,7 +209,7 @@ public class LlapStatusServiceDriver {
       // Get the App report from YARN
       ApplicationReport appReport;
       try {
-        appReport = getAppReport(appName, serviceClient, cl.getFindAppTimeoutMs());
+        appReport = getAppReport(appName, cl.getFindAppTimeoutMs());
       } catch (LlapStatusCliException e) {
         logError(e);
         return e.getExitCode();
@@ -252,7 +256,7 @@ public class LlapStatusServiceDriver {
     }
   }
 
-  private ApplicationReport getAppReport(String appName, ServiceClient serviceClient, long timeoutMs)
+  private ApplicationReport getAppReport(String appName, long timeoutMs)
       throws LlapStatusCliException {
     Clock clock = SystemClock.getInstance();
     long startTime = clock.getTime();
@@ -281,7 +285,13 @@ public class LlapStatusServiceDriver {
             break;
           }
         }
-      } catch (Exception e) { // No point separating IOException vs YarnException vs others
+      } catch (Exception e) {
+        if (e instanceof ApplicationNotFoundException) {
+          //This might happen when serviceClient caches an appId from the past which is now not
+          // valid (i.e. Yarn RM restart). This will force re-creation of service client in the
+          // next check (if watch mode is on..) which effectively invalidates such cache.
+          serviceClient = null;
+        }
         throw new LlapStatusCliException(ExitCode.YARN_ERROR, "Failed to get Yarn AppReport", e);
       }
     }
@@ -290,10 +300,10 @@ public class LlapStatusServiceDriver {
 
   public void outputJson(PrintWriter writer) throws LlapStatusCliException {
     ObjectMapper mapper = new ObjectMapper();
-    mapper.configure(SerializationConfig.Feature.FAIL_ON_EMPTY_BEANS, false);
-    mapper.setSerializationInclusion(JsonSerialize.Inclusion.NON_NULL);
-    mapper.setSerializationInclusion(JsonSerialize.Inclusion.NON_EMPTY);
-    mapper.setVisibility(JsonMethod.ALL, Visibility.NON_PRIVATE);
+    mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+    mapper.setSerializationInclusion(Include.NON_NULL);
+    mapper.setSerializationInclusion(Include.NON_EMPTY);
+    mapper.setVisibility(PropertyAccessor.ALL, Visibility.NON_PRIVATE);
     try {
       writer.println(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(appStatusBuilder));
     } catch (IOException e) {
@@ -372,7 +382,7 @@ public class LlapStatusServiceDriver {
           LlapInstance llapInstance = new LlapInstance(cont.getHostname(), cont.getId());
           appStatusBuilder.addNewRunningLlapInstance(llapInstance);
         }
-        if (state == ServiceState.STABLE) {
+        if (state == ServiceState.STARTED || state == ServiceState.STABLE || state == ServiceState.FLEX) {
           exitCode = ExitCode.SUCCESS;
         }
       } else {
@@ -645,7 +655,7 @@ public class LlapStatusServiceDriver {
     } catch (Exception e) {
       // ignore
     }
-    System.exit(ret.getCode());
+    ExitUtil.terminate(ret.getCode());
   }
 
   private static long maybeLogSummary(Clock clock, long lastSummaryLogTime, LlapStatusServiceDriver statusServiceDriver,

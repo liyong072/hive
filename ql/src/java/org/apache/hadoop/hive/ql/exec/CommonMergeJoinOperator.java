@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -27,6 +28,11 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import org.apache.hadoop.hive.ql.exec.tez.ReduceRecordSource;
+import org.apache.hadoop.hive.ql.exec.tez.monitoring.SkewedJoinMonitor;
+import org.apache.hadoop.hive.ql.exec.tez.monitoring.SkewedMergeJoinMonitor;
+import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
+import org.apache.hadoop.hive.ql.util.NullOrdering;
+import org.apache.hadoop.hive.serde.serdeConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -38,15 +44,13 @@ import org.apache.hadoop.hive.ql.exec.tez.RecordSource;
 import org.apache.hadoop.hive.ql.exec.tez.TezContext;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.CommonMergeJoinDesc;
-import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.JoinCondDesc;
+import org.apache.hadoop.hive.ql.plan.JoinDesc;
 import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 import org.apache.hadoop.hive.ql.plan.api.OperatorType;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorUtils.ObjectInspectorCopyOption;
-import org.apache.hadoop.hive.serde2.objectinspector.StructField;
 import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
-import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.io.WritableComparator;
 
 /*
@@ -73,6 +77,7 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
   transient List<Object>[] nextKeyWritables;
   transient RowContainer<List<Object>>[] nextGroupStorage;
   transient RowContainer<List<Object>>[] candidateStorage;
+  transient RowContainer<List<Object>>[] unmatchedStorage;
 
   transient String[] tagToAlias;
   private transient boolean[] fetchDone;
@@ -91,6 +96,13 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
 
   // A field because we cannot multi-inherit.
   transient InterruptibleProcessing interruptChecker;
+
+  transient NullOrdering nullOrdering;
+  transient private boolean shortcutUnmatchedRows;
+
+  transient SkewedJoinMonitor skewedMergeJoinMonitor;
+  transient String[] joinSkewKeyColumns;
+  transient String[] joinSkewTableAliases;
 
   /** Kryo ctor. */
   protected CommonMergeJoinOperator() {
@@ -118,6 +130,7 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
 
     nextGroupStorage = new RowContainer[maxAlias];
     candidateStorage = new RowContainer[maxAlias];
+    unmatchedStorage = new RowContainer[maxAlias];
     keyWritables = new ArrayList[maxAlias];
     nextKeyWritables = new ArrayList[maxAlias];
     fetchDone = new boolean[maxAlias];
@@ -130,11 +143,20 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
 
     int bucketSize;
 
-    int oldVar = HiveConf.getIntVar(hconf, HiveConf.ConfVars.HIVEMAPJOINBUCKETCACHESIZE);
+    int oldVar = HiveConf.getIntVar(hconf, HiveConf.ConfVars.HIVE_MAPJOIN_BUCKET_CACHE_SIZE);
+    shortcutUnmatchedRows = HiveConf.getBoolVar(hconf, HiveConf.ConfVars.HIVE_JOIN_SHORTCUT_UNMATCHED_ROWS);
+
+    skewedMergeJoinMonitor = SkewedMergeJoinMonitor.createSkewedJoinMonitor(
+        HiveConf.getLongVar(hconf, HiveConf.ConfVars.HIVE_MERGE_JOIN_SKEW_THRESHOLD),
+        HiveConf.getBoolVar(hconf, HiveConf.ConfVars.HIVE_MERGE_JOIN_SKEW_ABORT),
+        HiveConf.getLongVar(hconf, HiveConf.ConfVars.HIVE_MERGE_JOIN_SKEW_CHECK_INTERVAL), maxAlias);
+
+    initSkewJoinNames(maxAlias);
+
     if (oldVar != 100) {
       bucketSize = oldVar;
     } else {
-      bucketSize = HiveConf.getIntVar(hconf, HiveConf.ConfVars.HIVESMBJOINCACHEROWS);
+      bucketSize = HiveConf.getIntVar(hconf, HiveConf.ConfVars.HIVE_SMBJOIN_CACHE_ROWS);
     }
 
     for (byte pos = 0; pos < order.length; pos++) {
@@ -146,6 +168,9 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
           JoinUtil.getRowContainer(hconf, rowContainerStandardObjectInspectors[pos], pos,
               bucketSize, spillTableDesc, conf, !hasFilter(pos), reporter);
       candidateStorage[pos] = candidateRC;
+      RowContainer<List<Object>> unmatchedRC = JoinUtil.getRowContainer(hconf,
+          rowContainerStandardObjectInspectors[pos], pos, bucketSize, spillTableDesc, conf, !hasFilter(pos), reporter);
+      unmatchedStorage[pos] = unmatchedRC;
     }
 
     for (byte pos = 0; pos < order.length; pos++) {
@@ -164,12 +189,30 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
     sources = ((TezContext) MapredContext.get()).getRecordSources();
     interruptChecker = new InterruptibleProcessing();
 
-    if (sources[0] instanceof ReduceRecordSource &&
-        parentOperators != null && !parentOperators.isEmpty()) {
-      // Tell ReduceRecordSource to flush last record as this is a reduce
-      // side SMB
+    nullOrdering = NullOrdering.NULLS_FIRST;
+    if (sources[0] instanceof ReduceRecordSource) {
+      ReduceRecordSource reduceRecordSource = (ReduceRecordSource) sources[0];
+      if (reduceRecordSource.getKeyTableDesc() != null &&
+              reduceRecordSource.getKeyTableDesc().getProperties() != null) {
+        String nullSortOrder = reduceRecordSource.getKeyTableDesc().getProperties()
+                .getProperty(serdeConstants.SERIALIZATION_NULL_SORT_ORDER);
+        if (nullOrdering != null && !nullSortOrder.isEmpty()) {
+          nullOrdering = NullOrdering.fromSign(nullSortOrder.charAt(0));
+        }
+      }
+      nullOrdering = NullOrdering.defaultNullOrder(hconf);
+    }
+
+    if (parentOperators != null && !parentOperators.isEmpty()) {
+      // Tell RecordSource to flush last record even if its a map side SMB. SMB expect its
+      // parent group by operators to emit the record as and when aggregation is done.
+      // In case of group by with FINAL/MERGE_PARTIAL mode, the records are expected to come
+      // in a sorted order to group by operator and the group by operator is suppose to
+      // emit the aggregated value to next node once a record with different value
+      // is received. In case we dont flush here, the last aggregate value will not be
+      // emitted as it will keep waiting for the next different record.
       for (RecordSource source : sources) {
-        ((ReduceRecordSource) source).setFlushLastRecord(true);
+        source.setFlushLastRecord(true);
       }
     }
   }
@@ -191,6 +234,23 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
     }
 
     return retval;
+  }
+
+  private void initSkewJoinNames(int maxAlias) {
+    joinSkewKeyColumns = new String[maxAlias];
+    joinSkewTableAliases = new String[maxAlias];
+
+    String[] descKeyNames = conf.getSkewJoinKeyNames();
+    String[] descTableAliases = conf.getSkewJoinTableAliases();
+
+    for (int pos = 0; pos < maxAlias; pos++) {
+      joinSkewKeyColumns[pos] =
+          (descKeyNames != null && pos < descKeyNames.length && descKeyNames[pos] != null) ? descKeyNames[pos]
+              : "unknown";
+      joinSkewTableAliases[pos] =
+          (descTableAliases != null && pos < descTableAliases.length && descTableAliases[pos] != null)
+              ? descTableAliases[pos] : "unknown";
+    }
   }
 
   @Override
@@ -219,6 +279,18 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
 
     byte alias = (byte) tag;
     List<Object> value = getFilteredValue(alias, row);
+
+    if (isOuterJoinUnmatchedRow(tag, value)) {
+      int type = condn[0].getType();
+      if (tag == 0 && (type == JoinDesc.LEFT_OUTER_JOIN || type == JoinDesc.FULL_OUTER_JOIN)) {
+        unmatchedStorage[tag].addRow(value);
+      }
+      if (tag == 1 && (type == JoinDesc.RIGHT_OUTER_JOIN || type == JoinDesc.FULL_OUTER_JOIN)) {
+        unmatchedStorage[tag].addRow(value);
+      }
+      emitUnmatchedRows(tag, false);
+      return;
+    }
     // compute keys and values as StandardObjects
     List<Object> key = mergeJoinComputeKeys(row, alias);
     // Fetch the first group for all small table aliases.
@@ -226,6 +298,7 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
 
     //have we reached a new key group?
     boolean nextKeyGroup = processKey(alias, key);
+    addToAliasFilterTags(alias, value, nextKeyGroup);
     if (nextKeyGroup) {
       //assert this.nextGroupStorage[alias].size() == 0;
       this.nextGroupStorage[alias].addRow(value);
@@ -281,6 +354,52 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
     assert !nextKeyGroup;
     candidateStorage[tag].addRow(value);
 
+    skewedMergeJoinMonitor.checkMergeJoinSkew(alias, candidateStorage[tag].rowCount(),
+        joinSkewKeyColumns[alias], joinSkewTableAliases[alias]);
+  }
+
+  private void emitUnmatchedRows(int tag, boolean force) throws HiveException {
+    if (unmatchedStorage[tag].rowCount() == 0 || (!force && unmatchedStorage[tag].rowCount() < joinEmitInterval)) {
+      return;
+    }
+    for (byte i = 0; i < order.length; i++) {
+      if (i == tag) {
+        storage[i] = unmatchedStorage[i];
+      } else {
+        putDummyOrEmpty(i);
+      }
+    }
+    checkAndGenObject();
+    unmatchedStorage[tag].clearRows();
+  }
+
+  /**
+   * Decides if the actual row must be an unmatched row.
+   *
+   * Unmatched rows are those which are not part of the inner-join.
+   * The current implementation has issues processing filtered rows in FOJ conditions.
+   * Putting them in a separate group also reduces processing done for them.
+   */
+  private boolean isOuterJoinUnmatchedRow(int tag, List<Object> value) {
+    if (!shortcutUnmatchedRows || condn.length != 1) {
+      return false;
+    }
+    switch (condn[0].getType()) {
+    case JoinDesc.INNER_JOIN:
+    case JoinDesc.LEFT_OUTER_JOIN:
+    case JoinDesc.RIGHT_OUTER_JOIN:
+    case JoinDesc.FULL_OUTER_JOIN:
+      break;
+    default:
+      return false;
+    }
+    if (hasFilter(tag)) {
+      short filterTag = getFilterTag(value);
+      if (JoinUtil.isFiltered(filterTag, 1 - tag)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private List<Byte> joinOneGroup() throws HiveException {
@@ -288,6 +407,9 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
   }
 
   private List<Byte> joinOneGroup(boolean clear) throws HiveException {
+    for (int pos = 0; pos < order.length; pos++) {
+      emitUnmatchedRows(pos, true);
+    }
     int[] smallestPos = findSmallestKey();
     List<Byte> listOfNeedFetchNext = null;
     if (smallestPos != null) {
@@ -340,7 +462,8 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
 
   private void putDummyOrEmpty(Byte i) {
     // put a empty list or null
-    if (noOuterJoin) {
+    boolean isRightOfAntiJoin = (i != 0 && condn[i-1].getType() == JoinDesc.ANTI_JOIN);
+    if (noOuterJoin || isRightOfAntiJoin) {
       storage[i] = emptyList;
     } else {
       storage[i] = dummyObjVectors[i];
@@ -408,7 +531,7 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
       this.nextKeyWritables[t] = null;
     }
   }
-  
+
   @Override
   public void close(boolean abort) throws HiveException {
     joinFinalLeftData(); // Do this WITHOUT checking for parents
@@ -508,7 +631,9 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
   }
 
   private void doFirstFetchIfNeeded() throws HiveException {
-    if (firstFetchHappened) return;
+    if (firstFetchHappened) {
+      return;
+    }
     firstFetchHappened = true;
     for (byte pos = 0; pos < order.length; pos++) {
       if (pos != posBigTable) {
@@ -519,7 +644,9 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
 
   private boolean allFetchDone() {
     for (byte pos = 0; pos < order.length; pos++) {
-      if (pos != posBigTable && !fetchDone[pos]) return false;
+      if (pos != posBigTable && !fetchDone[pos]) {
+        return false;
+      }
     }
     return true;
   }
@@ -573,9 +700,9 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
       return compareKeysMany(comparators, k1, k2);
     } else {
       return compareKey(comparators, 0,
-          (WritableComparable) k1.get(0),
-          (WritableComparable) k2.get(0),
-          nullsafes != null ? nullsafes[0]: false);
+              k1.get(0),
+              k2.get(0),
+              nullsafes != null ? nullsafes[0]: false);
     }
   }
 
@@ -587,9 +714,7 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
     int ret = 0;
     final int size = k1.size();
     for (int i = 0; i < size; i++) {
-      WritableComparable key_1 = (WritableComparable) k1.get(i);
-      WritableComparable key_2 = (WritableComparable) k2.get(i);
-      ret = compareKey(comparators, i, key_1, key_2,
+      ret = compareKey(comparators, i, k1.get(i), k2.get(i),
           nullsafes != null ? nullsafes[i] : false);
       if (ret != 0) {
         return ret;
@@ -600,24 +725,11 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
 
   @SuppressWarnings("rawtypes")
   private int compareKey(final WritableComparator comparators[], final int pos,
-      final WritableComparable key_1,
-      final WritableComparable key_2,
+      final Object key_1,
+      final Object key_2,
       final boolean nullsafe) {
-
-    if (key_1 == null && key_2 == null) {
-      if (nullsafe) {
-        return 0;
-      } else {
-        return -1;
-      }
-    } else if (key_1 == null) {
-      return -1;
-    } else if (key_2 == null) {
-      return 1;
-    }
-
     if (comparators[pos] == null) {
-      comparators[pos] = WritableComparator.get(key_1.getClass());
+      comparators[pos] = WritableComparatorFactory.get(key_1, nullsafe, nullOrdering);
     }
     return comparators[pos].compare(key_1, key_2);
   }
@@ -631,7 +743,7 @@ public class CommonMergeJoinOperator extends AbstractMapJoinOperator<CommonMerge
       ObjectInspectorUtils.partialCopyToStandardObject(key, row,
           Utilities.ReduceField.KEY.position, 1, (StructObjectInspector) inputObjInspectors[alias],
           ObjectInspectorCopyOption.WRITABLE);
-      return (List<Object>) key.get(0); // this is always 0, even if KEY.position is not 
+      return (List<Object>) key.get(0); // this is always 0, even if KEY.position is not
     }
   }
 

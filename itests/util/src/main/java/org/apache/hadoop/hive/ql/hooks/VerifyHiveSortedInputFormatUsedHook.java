@@ -9,18 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.hooks;
 
 import java.io.Serializable;
-import java.util.ArrayList;
+import java.util.List;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.hooks.HookContext.HookType;
@@ -33,9 +34,8 @@ public class VerifyHiveSortedInputFormatUsedHook implements ExecuteWithHookConte
 
       // Go through the root tasks, and verify the input format of the map reduce task(s) is
       // HiveSortedInputFormat
-      ArrayList<Task<? extends Serializable>> rootTasks =
-          hookContext.getQueryPlan().getRootTasks();
-      for (Task<? extends Serializable> rootTask : rootTasks) {
+      List<Task<?>> rootTasks = hookContext.getQueryPlan().getRootTasks();
+      for (Task<?> rootTask : rootTasks) {
         if (rootTask.getWork() instanceof MapredWork) {
           Assert.assertTrue("The root map reduce task's input was not marked as sorted.",
               ((MapredWork)rootTask.getWork()).getMapWork().isInputFormatSorted());

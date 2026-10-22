@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.security.authorization;
@@ -21,6 +22,9 @@ package org.apache.hadoop.hive.ql.security.authorization;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+
+import org.apache.hadoop.hive.ql.plan.Explain;
+import org.apache.hadoop.hive.ql.plan.Explain.Level;
 
 /**
  * Privilege defines a privilege in Hive. Each privilege has a name and scope associated with it.
@@ -44,6 +48,7 @@ public class Privilege {
 
   }
 
+  @Explain(skipHeader = true, explainLevels = { Level.USER, Level.DEFAULT, Level.EXTENDED })
   public PrivilegeType getPriv() {
     return priv;
   }
@@ -113,7 +118,13 @@ public class Privilege {
   public static Privilege DELETE = new Privilege(PrivilegeType.DELETE,
       PrivilegeScope.ALLSCOPE_EXCEPT_COLUMN);
 
+  public static Privilege SHOW_CATALOG = new Privilege(PrivilegeType.SELECT,
+      EnumSet.of(PrivilegeScope.USER_LEVEL_SCOPE));
+
   public static Privilege SHOW_DATABASE = new Privilege(PrivilegeType.SHOW_DATABASE,
+      EnumSet.of(PrivilegeScope.USER_LEVEL_SCOPE));
+
+  public static Privilege SHOW_DATACONNECTOR = new Privilege(PrivilegeType.SHOW_DATABASE,
       EnumSet.of(PrivilegeScope.USER_LEVEL_SCOPE));
 
 }

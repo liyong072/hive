@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.hooks;
@@ -23,7 +24,10 @@ import java.net.URI;
 import java.util.Map;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.metastore.api.Catalog;
 import org.apache.hadoop.hive.metastore.api.Database;
+import org.apache.hadoop.hive.metastore.api.DataConnector;
+import org.apache.hadoop.hive.metastore.api.Function;
 import org.apache.hadoop.hive.ql.metadata.DummyPartition;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
@@ -41,13 +45,23 @@ public class Entity implements Serializable {
    * The type of the entity.
    */
   public static enum Type {
-    DATABASE, TABLE, PARTITION, DUMMYPARTITION, DFS_DIR, LOCAL_DIR, FUNCTION, SERVICE_NAME
+    DATABASE, TABLE, PARTITION, DUMMYPARTITION, DFS_DIR, LOCAL_DIR, FUNCTION, SERVICE_NAME, DATACONNECTOR, CATALOG
   }
+
+  /**
+   * The catalog if this is a catalog.
+   */
+  private Catalog catalog;
 
   /**
    * The database if this is a database.
    */
   private Database database;
+
+  /**
+   * The dataconnector if this is a dataconnector.
+   */
+  private DataConnector connector;
 
   /**
    * The type.
@@ -63,6 +77,11 @@ public class Entity implements Serializable {
    * The partition.This is null if this object is not a partition.
    */
   private Partition p;
+
+  /**
+   * The metastore api function. This is null if this object is not a partition
+   */
+  private Function f;
 
   /**
    * The directory if this is a directory
@@ -104,12 +123,28 @@ public class Entity implements Serializable {
     return name;
   }
 
+  public Catalog getCatalog() {
+    return catalog;
+  }
+
+  public void setCatalog(Catalog catalog) {
+    this.catalog = catalog;
+  }
+
   public Database getDatabase() {
     return database;
   }
 
   public void setDatabase(Database database) {
     this.database = database;
+  }
+
+  public DataConnector getDataConnector() {
+    return connector;
+  }
+
+  public void setDataConnector(DataConnector connector) {
+    this.connector = connector;
   }
 
   public Type getTyp() {
@@ -181,6 +216,13 @@ public class Entity implements Serializable {
     name = null;
   }
 
+  public Entity(Catalog catalog, boolean complete) {
+    this.catalog = catalog;
+    this.typ = Type.CATALOG;
+    this.name = computeName();
+    this.complete = complete;
+  }
+
   /**
    * Constructor for a database.
    *
@@ -192,6 +234,21 @@ public class Entity implements Serializable {
   public Entity(Database database, boolean complete) {
     this.database = database;
     this.typ = Type.DATABASE;
+    this.name = computeName();
+    this.complete = complete;
+  }
+
+  /**
+   * Constructor for a dataconnector.
+   *
+   * @param dataconnector
+   *          Database that is read or written to.
+   * @param complete
+   *          Means the dataconnector is target
+   */
+  public Entity(DataConnector dataconnector, boolean complete) {
+    this.connector = dataconnector;
+    this.typ = Type.DATACONNECTOR;
     this.name = computeName();
     this.complete = complete;
   }
@@ -273,7 +330,7 @@ public class Entity implements Serializable {
   public Entity(Database database, String strObj, String className, Type type) {
     if (type != Type.FUNCTION) {
       throw new IllegalArgumentException("This constructor is supported only for type:"
-          + Type.FUNCTION);
+              + Type.FUNCTION);
     }
     this.database = database;
     this.stringObject = strObj;
@@ -281,6 +338,21 @@ public class Entity implements Serializable {
     this.typ = type;
     this.complete = true;
     name = computeName();
+  }
+
+  /**
+   * Constructor for a function.
+   *
+   * @param f
+   *          Function that is read or written to.
+   */
+  public Entity(Function f, boolean complete) {
+    d = null;
+    p = null;
+    this.f = f;
+    typ = Type.FUNCTION;
+    name = computeName();
+    this.complete = complete;
   }
 
   /**
@@ -345,6 +417,13 @@ public class Entity implements Serializable {
     return t;
   }
 
+  /**
+   * Get the function associated with the entity.
+   */
+  public Function getFunction() {
+    return f;
+  }
+
   public boolean isDummy() {
     if (typ == Type.DATABASE) {
       return database.getName().equals(SemanticAnalyzer.DUMMY_DATABASE);
@@ -372,18 +451,22 @@ public class Entity implements Serializable {
     case DATABASE:
       return "database:" + database.getName();
     case TABLE:
-      return t.getDbName() + "@" + t.getTableName();
+      return t.getDbName() + "@" + t.getTableName() + (t.getSnapshotRef() != null ? "@" + t.getSnapshotRef() : "");
     case PARTITION:
       return t.getDbName() + "@" + t.getTableName() + "@" + p.getName();
     case DUMMYPARTITION:
       return p.getName();
     case FUNCTION:
-      if (database != null) {
-        return database.getName() + "." + stringObject;
+      if (f != null) {
+        return f.getDbName() + "." + f.getFunctionName();
       }
-      return stringObject;
+      return database != null ? database.getName() + "." + stringObject : stringObject;
     case SERVICE_NAME:
       return stringObject;
+    case DATACONNECTOR:
+      return "connector:" + connector.getName();
+    case CATALOG:
+      return "catalog:" + catalog.getName();
     default:
       return d.toString();
     }

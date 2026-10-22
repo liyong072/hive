@@ -28,7 +28,7 @@ function personality_globals
   #shellcheck disable=SC2034
   PATCH_BRANCH_DEFAULT=master
   #shellcheck disable=SC2034
-  PATCH_NAMING_RULE="http://cwiki.apache.org/confluence/display/Hive/HowToContribute"
+  PATCH_NAMING_RULE="https://hive.apache.org/community/resources/howtocontribute"
   #shellcheck disable=SC2034
   JIRA_ISSUE_RE='^HIVE-[0-9]+$'
   #shellcheck disable=SC2034
@@ -41,6 +41,8 @@ function personality_globals
   WHITESPACE_EOL_IGNORE_LIST=('.*.q.out' '.*/gen/thrift/gen-javabean/.*')
   #shellcheck disable=SC2034
   WHITESPACE_TABS_IGNORE_LIST=('.*.q.out' '.*/gen/thrift/gen-javabean/.*')
+  #shellcheck disable=SC2034
+  AUTHOR_IGNORE_LIST=('.*.q.out')
 }
 
 ## @description  Queue up modules for this personality

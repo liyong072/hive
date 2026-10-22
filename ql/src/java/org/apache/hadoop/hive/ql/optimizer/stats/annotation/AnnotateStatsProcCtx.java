@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.stats.annotation;
@@ -31,34 +32,35 @@ public class AnnotateStatsProcCtx implements NodeProcessorCtx {
 
   private ParseContext pctx;
   private HiveConf conf;
-  private Statistics andExprStats = null;
+  private boolean uniformWithinRange;
+  private Statistics andExprStats;
   private Set<String> affectedColumns;
 
 
   public AnnotateStatsProcCtx(ParseContext pctx) {
-    this.setParseContext(pctx);
+    this.pctx = pctx;
     if(pctx != null) {
-      this.setConf(pctx.getConf());
+      this.conf = pctx.getConf();
+      this.uniformWithinRange = HiveConf.getBoolVar(this.conf,
+          HiveConf.ConfVars.HIVE_STATS_RANGE_SELECTIVITY_UNIFORM_DISTRIBUTION);
     } else {
-      this.setConf(null);
+      this.conf = null;
+      this.uniformWithinRange = false;
     }
-    affectedColumns = new HashSet<>();
+    this.andExprStats = null;
+    this.affectedColumns = new HashSet<>();
   }
 
   public HiveConf getConf() {
     return conf;
   }
 
-  public void setConf(HiveConf conf) {
-    this.conf = conf;
+  public boolean isUniformWithinRange() {
+    return uniformWithinRange;
   }
 
   public ParseContext getParseContext() {
     return pctx;
-  }
-
-  public void setParseContext(ParseContext pctx) {
-    this.pctx = pctx;
   }
 
   public Statistics getAndExprStats() {
@@ -75,6 +77,10 @@ public class AnnotateStatsProcCtx implements NodeProcessorCtx {
 
   public void addAffectedColumn(ExprNodeColumnDesc column) {
     affectedColumns.add(column.getColumn());
+  }
+
+  public void addAffectedColumns(Set<String> columns) {
+    affectedColumns.addAll(columns);
   }
 
   public Set<String> getAffectedColumns() {

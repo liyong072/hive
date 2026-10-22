@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 
@@ -23,13 +24,18 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.PrivilegedExceptionAction;
+import java.util.ArrayList;
+import java.util.Arrays;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authentication.client.AuthenticatedURL;
 import org.apache.hadoop.security.authentication.client.AuthenticationException;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.http.HttpStatus;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -44,15 +50,69 @@ public class YarnQueueHelper {
 
   private final String[] rmNodes;
   private int lastKnownGoodUrl;
+  private boolean sslForYarn;
+  private boolean isHA;
 
   public YarnQueueHelper(HiveConf conf) {
-    rmNodes = conf.getTrimmedStrings("yarn.resourcemanager.webapp.address");
-    Preconditions.checkArgument((rmNodes != null && rmNodes.length > 0),
-        "yarn.resourcemanager.webapp.address must be set to enable queue access checks");
+    ArrayList<String> nodeList = new ArrayList<>();
+    sslForYarn = YarnConfiguration.useHttps(conf);
+    isHA = conf.getBoolean(YarnConfiguration.RM_HA_ENABLED, false);
+    LOG.info("Yarn is using SSL: {}, HA enabled: {}", sslForYarn, isHA);
+
+    if (isHA) {
+      String[] rmids = conf.getStrings(YarnConfiguration.RM_HA_IDS);
+      if (sslForYarn == true) {
+        for (String rmid : rmids) {
+          nodeList.addAll(Arrays.asList(conf
+                  .getTrimmedStrings(YarnConfiguration.RM_WEBAPP_HTTPS_ADDRESS + "." + rmid)));
+        }
+        Preconditions.checkArgument(nodeList.size() > 0,
+            "yarn.resourcemanager.ha.rm-ids must be set to enable queue access checks in Yarn HA mode");
+      }else{
+        for (String rmid : rmids) {
+          nodeList.addAll(Arrays.asList(conf.getTrimmedStrings(YarnConfiguration.RM_WEBAPP_ADDRESS + "."+rmid)));
+          Preconditions.checkArgument(nodeList.size() > 0,
+              "yarn.resourcemanager.ha.rm-ids must be set to enable queue access checks in Yarn HA mode");
+        }
+      }
+      rmNodes = nodeList.toArray(new String[nodeList.size()]);
+    }else {
+      if (sslForYarn == true) {
+        rmNodes = conf.getTrimmedStrings(YarnConfiguration.RM_WEBAPP_HTTPS_ADDRESS);
+        Preconditions.checkArgument((rmNodes != null && rmNodes.length > 0),
+            "yarn.resourcemanager.webapp.https.address must be set to enable queue access checks using TLS");
+      } else {
+        rmNodes = conf.getTrimmedStrings(YarnConfiguration.RM_WEBAPP_ADDRESS);
+        Preconditions.checkArgument((rmNodes != null && rmNodes.length > 0),
+            "yarn.resourcemanager.webapp.address must be set to enable queue access checks");
+      }
+    }
     lastKnownGoodUrl = 0;
   }
 
+  /**
+   * Checks yarn queue access of a given user for a given queue, and throws
+   * HiveException in case the user doesn't have access to the queue.
+   * @param  queueName the yarn queue name
+   * @param  userName the username
+   * @throws IOException when doAs throws an exception, we simply throw it
+   * InterruptedException when doAs throws an exception, we simply throw it
+   */
   public void checkQueueAccess(
+      String queueName, String userName) throws IOException {
+    UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
+    try {
+      ugi.doAs((PrivilegedExceptionAction<Void>) () -> {
+        checkQueueAccessInternal(queueName, userName);
+        return null;
+      });
+    } catch (InterruptedException exception) {
+      LOG.error("Cannot check queue access against UGI: " + ugi, exception);
+      throw new IOException(exception);
+    }
+  }
+
+  private void checkQueueAccessInternal(
       String queueName, String userName) throws IOException, HiveException {
     String urlSuffix = String.format(PERMISSION_PATH, queueName, userName);
     // TODO: if we ever use this endpoint for anything else, refactor cycling into a separate class.
@@ -62,8 +122,14 @@ public class YarnQueueHelper {
       String node = rmNodes[urlIx];
       String error = null;
       boolean isCallOk = false;
+      String urlToCheck;
+      if (sslForYarn){
+        urlToCheck = "https://" + node + urlSuffix;
+      }else{
+        urlToCheck = "http://" + node + urlSuffix;
+      }
       try {
-        error = checkQueueAccessFromSingleRm("http://" + node + urlSuffix);
+        error = checkQueueAccessFromSingleRm(urlToCheck);
         isCallOk = true;
       } catch (Exception ex) {
         LOG.warn("Cannot check queue access against RM " + node, ex);

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io;
@@ -21,19 +22,16 @@ package org.apache.hadoop.hive.ql.io;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Iterator;
 import java.util.Map;
-
 import com.google.common.collect.ImmutableMap;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.EndianUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.Seekable;
 import org.apache.hadoop.hive.ql.exec.Utilities;
-import org.apache.hadoop.hive.ql.plan.PartitionDesc;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.compress.CompressionCodec;
@@ -41,6 +39,8 @@ import org.apache.hadoop.io.compress.CompressionCodecFactory;
 import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RecordReader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static java.lang.String.format;
 
@@ -58,7 +58,7 @@ import static java.lang.String.format;
  */
 public class TeradataBinaryRecordReader implements RecordReader<NullWritable, BytesWritable> {
 
-  private static final Log LOG = LogFactory.getLog(TeradataBinaryRecordReader.class);
+  private static final Logger LOG = LoggerFactory.getLogger(TeradataBinaryRecordReader.class);
 
   private CompressionCodecFactory compressionCodecs = null;
   private InputStream in;
@@ -85,10 +85,12 @@ public class TeradataBinaryRecordReader implements RecordReader<NullWritable, By
     String rowLength = job.get(TD_ROW_LENGTH);
     if (rowLength == null) {
       LOG.debug("No table property in JobConf. Try to recover the table directly");
-      Map<String, PartitionDesc> partitionDescMap = Utilities.getMapRedWork(job).getMapWork().getAliasToPartnInfo();
-      for (String alias : Utilities.getMapRedWork(job).getMapWork().getAliasToPartnInfo().keySet()) {
-        LOG.debug(format("the current alias: %s", alias));
-        rowLength = partitionDescMap.get(alias).getTableDesc().getProperties().getProperty(TD_ROW_LENGTH);
+      Iterator<org.apache.hadoop.hive.ql.plan.PartitionDesc> partitionIterator =
+          Utilities.getMapRedWork(job).getMapWork().getPartitionDescs();
+      while (partitionIterator.hasNext()) {
+        org.apache.hadoop.hive.ql.plan.PartitionDesc partitionDesc = partitionIterator.next();
+        LOG.debug("Checking partition metadata for row length");
+        rowLength = partitionDesc.getTableDesc().getProperties().getProperty(TD_ROW_LENGTH);
         if (rowLength != null) {
           break;
         }

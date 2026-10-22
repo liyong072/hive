@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.plan;
 
@@ -43,7 +44,7 @@ public final class TestExecutionEngineWorkConcurrency {
 
   @Parameterized.Parameters
   public static Collection<Object[]> data() {
-    return Arrays.asList(new Object[][]{{new TezDagIdProvider()}, {new SparkDagIdProvider()}});
+    return Arrays.asList(new Object[][]{{new TezDagIdProvider()}});
   }
 
   private final ExecutionEngineDagIdGenerator executionEngineDagIdGenerator;
@@ -106,14 +107,6 @@ public final class TestExecutionEngineWorkConcurrency {
     @Override
     public String getDagId() {
       return new TezWork("query-id").getDagId();
-    }
-  }
-
-  private static final class SparkDagIdProvider implements ExecutionEngineDagIdGenerator {
-
-    @Override
-    public String getDagId() {
-      return new SparkWork("query-id").getName();
     }
   }
 }

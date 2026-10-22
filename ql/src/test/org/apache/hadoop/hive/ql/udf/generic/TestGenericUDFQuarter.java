@@ -9,15 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
-import junit.framework.TestCase;
+
 
 import org.apache.hadoop.hive.common.type.Date;
 import org.apache.hadoop.hive.common.type.Timestamp;
@@ -30,9 +31,17 @@ import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertEquals;
+import org.junit.Test;
 
-public class TestGenericUDFQuarter extends TestCase {
+/**
+ * TestGenericUDFQuarter.
+ */
+public class TestGenericUDFQuarter {
 
+  @Test
   public void testQuarterStr() throws HiveException {
     GenericUDFQuarter udf = new GenericUDFQuarter();
     ObjectInspector valueOI0 = PrimitiveObjectInspectorFactory.writableStringObjectInspector;
@@ -81,6 +90,7 @@ public class TestGenericUDFQuarter extends TestCase {
     runAndVerifyStr("1966-12-31 23:59:59.999", 4, udf);
   }
 
+  @Test
   public void testWrongDateStr() throws HiveException {
     GenericUDFQuarter udf = new GenericUDFQuarter();
     ObjectInspector valueOI0 = PrimitiveObjectInspectorFactory.writableStringObjectInspector;
@@ -88,12 +98,13 @@ public class TestGenericUDFQuarter extends TestCase {
 
     udf.initialize(arguments);
 
-    runAndVerifyStr("2016-03-35", 2, udf);
-    runAndVerifyStr("2014-01-32", 1, udf);
+    runAndVerifyStr("2016-03-35", null, udf);
+    runAndVerifyStr("2014-01-32", null, udf);
     runAndVerifyStr("01/14/2014", null, udf);
     runAndVerifyStr(null, null, udf);
   }
 
+  @Test
   public void testQuarterDt() throws HiveException {
     GenericUDFQuarter udf = new GenericUDFQuarter();
     ObjectInspector valueOI0 = PrimitiveObjectInspectorFactory.writableDateObjectInspector;
@@ -120,6 +131,7 @@ public class TestGenericUDFQuarter extends TestCase {
     runAndVerifyDt("1966-12-31", 4, udf);
   }
 
+  @Test
   public void testQuarterTs() throws HiveException {
     GenericUDFQuarter udf = new GenericUDFQuarter();
     ObjectInspector valueOI0 = PrimitiveObjectInspectorFactory.writableTimestampObjectInspector;

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.udf.generic;
 
@@ -63,7 +64,6 @@ import org.apache.hive.common.util.DateParser;
         + "  '2009-07-31'")
 @VectorizedExpressions({VectorUDFDateAddColScalar.class, VectorUDFDateAddScalarCol.class, VectorUDFDateAddColCol.class})
 public class GenericUDFDateAdd extends GenericUDF {
-  private transient final DateParser dateParser = new DateParser();
   private transient final Date dateVal = new Date();
   private transient Converter dateConverter;
   private transient Converter daysConverter;
@@ -166,7 +166,7 @@ public class GenericUDFDateAdd extends GenericUDF {
     switch (inputType1) {
     case STRING:
       String dateString = dateConverter.convert(arguments[0].get()).toString();
-      if (dateParser.parseDate(dateString, dateVal)) {
+      if (DateParser.parseDate(dateString, dateVal)) {
         output.set(dateVal);
       } else {
         return null;

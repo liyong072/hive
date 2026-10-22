@@ -1,7 +1,9 @@
 PREHOOK: query: DROP TABLE users
 PREHOOK: type: DROPTABLE
+PREHOOK: Output: database:default
 POSTHOOK: query: DROP TABLE users
 POSTHOOK: type: DROPTABLE
+POSTHOOK: Output: database:default
 PREHOOK: query: CREATE EXTERNAL TABLE users(key string, state string, country string, country_id int)
 STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
 WITH SERDEPROPERTIES (
@@ -47,7 +49,7 @@ Table Parameters:
 	numRows             	0                   
 	rawDataSize         	0                   
 	storage_handler     	org.apache.hadoop.hive.hbase.HBaseStorageHandler
-	totalSize           	0                   
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 
@@ -76,12 +78,10 @@ STAGE DEPENDENCIES:
 
 STAGE PLANS:
   Stage: Stage-0
-      Alter Table Operator:
-        Alter Table
-          type: drop props
-          old name: default.users
-          properties:
-            COLUMN_STATS_ACCURATE 
+    Unset Properties
+      table name: default.users
+      properties:
+        COLUMN_STATS_ACCURATE 
 
   Stage: Stage-1
     Pre-Insert task
@@ -141,7 +141,7 @@ Table Parameters:
 	numRows             	0                   
 	rawDataSize         	0                   
 	storage_handler     	org.apache.hadoop.hive.hbase.HBaseStorageHandler
-	totalSize           	0                   
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 
@@ -208,7 +208,7 @@ Table Parameters:
 	numRows             	0                   
 	rawDataSize         	0                   
 	storage_handler     	org.apache.hadoop.hive.hbase.HBaseStorageHandler
-	totalSize           	0                   
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 
@@ -267,7 +267,7 @@ Table Parameters:
 	numRows             	2                   
 	rawDataSize         	0                   
 	storage_handler     	org.apache.hadoop.hive.hbase.HBaseStorageHandler
-	totalSize           	0                   
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 
@@ -309,6 +309,7 @@ STAGE PLANS:
                 outputColumnNames: _col0
                 Statistics: Num rows: 1 Data size: 8 Basic stats: PARTIAL Column stats: COMPLETE
                 Reduce Output Operator
+                  null sort order: 
                   sort order: 
                   Statistics: Num rows: 1 Data size: 8 Basic stats: PARTIAL Column stats: COMPLETE
                   value expressions: _col0 (type: bigint)
@@ -377,7 +378,7 @@ Table Parameters:
 	numRows             	2                   
 	rawDataSize         	0                   
 	storage_handler     	org.apache.hadoop.hive.hbase.HBaseStorageHandler
-	totalSize           	0                   
+	totalSize           	#Masked#
 #### A masked pattern was here ####
 	 	 
 # Storage Information	 	 
@@ -419,6 +420,7 @@ STAGE PLANS:
                 outputColumnNames: _col0
                 Statistics: Num rows: 1 Data size: 8 Basic stats: PARTIAL Column stats: COMPLETE
                 Reduce Output Operator
+                  null sort order: 
                   sort order: 
                   Statistics: Num rows: 1 Data size: 8 Basic stats: PARTIAL Column stats: COMPLETE
                   value expressions: _col0 (type: bigint)

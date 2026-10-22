@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.tools;
@@ -47,7 +48,7 @@ import static org.apache.hadoop.hive.metastore.tools.Util.filterMatches;
  * mean +/- margin * delta is removed from the result set. This helps remove random
  * outliers.
  *
- * <h1>Example</h1>
+ * <h2>Example</h2>
  *
  * <pre>
  *   StringBuilder sb = new StringBuilder();
@@ -75,7 +76,7 @@ public final class BenchmarkSuite {
   // List of benchmarks. All benchmarks are executed in the order
   // they are inserted
   private final List<String> benchmarks = new ArrayList<>();
-  // Once benchmarks are executed, results are stored in TreeMap to prserve the order.
+  // Once benchmarks are executed, results are stored in TreeMap to preserve the order.
   private final Map<String, DescriptiveStatistics> result = new TreeMap<>();
   // Whether sanitizing of results is requested
   private boolean doSanitize = false;
@@ -115,7 +116,7 @@ public final class BenchmarkSuite {
   }
 
   /**
-   * Run all benchmarks in the 'names' list.
+     * Run all benchmarks in the 'names' list.
    * @param names list of benchmarks to run
    * @return this to allow chaining
    */

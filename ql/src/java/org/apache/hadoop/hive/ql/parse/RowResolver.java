@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
@@ -39,7 +40,7 @@ import org.apache.hadoop.hive.ql.exec.RowSchema;
 public class RowResolver implements Serializable{
   private static final long serialVersionUID = 1L;
   private RowSchema rowSchema;
-  private LinkedHashMap<String, LinkedHashMap<String, ColumnInfo>> rslvMap;
+  private Map<String, Map<String, ColumnInfo>> rslvMap;
 
   private HashMap<String, String[]> invRslvMap;
   /*
@@ -49,8 +50,8 @@ public class RowResolver implements Serializable{
    * invRslvMap.
    */
   private final Map<String, String[]> altInvRslvMap;
-  private  Map<String, ASTNode> expressionMap;
-  private LinkedHashMap<String, LinkedHashMap<String, String>> ambiguousColumns;
+  private Map<String, ASTNode> expressionMap;
+  private Map<String, Map<String, String>> ambiguousColumns;
   private boolean checkForAmbiguity;
 
   // TODO: Refactor this and do in a more object oriented manner
@@ -62,12 +63,12 @@ public class RowResolver implements Serializable{
 
   public RowResolver() {
     rowSchema = new RowSchema();
-    rslvMap = new LinkedHashMap<String, LinkedHashMap<String, ColumnInfo>>();
+    rslvMap = new LinkedHashMap<String, Map<String, ColumnInfo>>();
     invRslvMap = new HashMap<String, String[]>();
     altInvRslvMap = new HashMap<String, String[]>();
     expressionMap = new HashMap<String, ASTNode>();
     isExprResolver = false;
-    ambiguousColumns = new LinkedHashMap<String, LinkedHashMap<String, String>>();
+    ambiguousColumns = new LinkedHashMap<String, Map<String, String>>();
     checkForAmbiguity = false;
   }
 
@@ -81,7 +82,10 @@ public class RowResolver implements Serializable{
   public void putExpression(ASTNode node, ColumnInfo colInfo) {
     String treeAsString = node.toStringTree();
     expressionMap.put(treeAsString, node);
-    put("", treeAsString, colInfo);
+    if (!putInternal("", treeAsString, colInfo)) {
+      return;
+    }
+    colInfo.setAlias(treeAsString);
   }
 
   /**
@@ -100,24 +104,47 @@ public class RowResolver implements Serializable{
     return expressionMap.get(node.toStringTree());
   }
 
-  public void put(String tab_alias, String col_alias, ColumnInfo colInfo) {
-    if (!addMappingOnly(tab_alias, col_alias, colInfo)) {
+  public void put(String tabAlias, String colAlias, ColumnInfo colInfo) {
+    if (!putInternal(tabAlias, colAlias, colInfo)) {
+      return;
+    }
+    if (colAlias != null) {
+      colInfo.setAlias(colAlias.toLowerCase());
+    }
+  }
+
+  private boolean putInternal(String tabAlias, String colAlias, ColumnInfo colInfo) {
+    if (!addMappingOnly(tabAlias, colAlias, colInfo)) {
       //Make sure that the table alias and column alias are stored
       //in the column info
-      if (tab_alias != null) {
-        colInfo.setTabAlias(tab_alias.toLowerCase());
-      }
-      if (col_alias != null) {
-        colInfo.setAlias(col_alias.toLowerCase());
+      if (tabAlias != null) {
+        colInfo.setTabAlias(tabAlias.toLowerCase());
       }
       rowSchema.getSignature().add(colInfo);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Puts a resolver entry corresponding to the expression and its
+   * column alias which is used for alias recognition in the latter constructs
+   * @param exprToColumnAlias
+   *          The map containing the expression to alias mapping
+   * @throws SemanticException
+   */
+  public void putAll(Map<ASTNode, String> exprToColumnAlias) throws SemanticException {
+    for (ASTNode astNode : exprToColumnAlias.keySet()) {
+      if (getExpression(astNode) != null) {
+        put("", exprToColumnAlias.get(astNode), getExpression(astNode));
+      }
     }
   }
 
   private void keepAmbiguousInfo(String col_alias, String tab_alias) {
     // we keep track of duplicate <tab alias, col alias> so that get can check
     // for ambiguity
-    LinkedHashMap<String, String> colAliases = ambiguousColumns.get(tab_alias);
+    Map<String, String> colAliases = ambiguousColumns.get(tab_alias);
     if (colAliases == null) {
       colAliases = new LinkedHashMap<String, String>();
       ambiguousColumns.put(tab_alias, colAliases);
@@ -136,7 +163,7 @@ public class RowResolver implements Serializable{
      */
     boolean colPresent = invRslvMap.containsKey(colInfo.getInternalName());
 
-    LinkedHashMap<String, ColumnInfo> f_map = rslvMap.get(tab_alias);
+    Map<String, ColumnInfo> f_map = rslvMap.get(tab_alias);
     if (f_map == null) {
       f_map = new LinkedHashMap<String, ColumnInfo>();
       rslvMap.put(tab_alias, f_map);
@@ -195,7 +222,7 @@ public class RowResolver implements Serializable{
 
     if (tab_alias != null) {
       tab_alias = tab_alias.toLowerCase();
-      HashMap<String, ColumnInfo> f_map = rslvMap.get(tab_alias);
+      Map<String, ColumnInfo> f_map = rslvMap.get(tab_alias);
       if (f_map == null) {
         return null;
       }
@@ -203,9 +230,9 @@ public class RowResolver implements Serializable{
     } else {
       boolean found = false;
       String foundTbl = null;
-      for (Map.Entry<String, LinkedHashMap<String, ColumnInfo>> rslvEntry: rslvMap.entrySet()) {
+      for (Map.Entry<String, Map<String, ColumnInfo>> rslvEntry: rslvMap.entrySet()) {
         String rslvKey = rslvEntry.getKey();
-        LinkedHashMap<String, ColumnInfo> cmap = rslvEntry.getValue();
+        Map<String, ColumnInfo> cmap = rslvEntry.getValue();
         for (Map.Entry<String, ColumnInfo> cmapEnt : cmap.entrySet()) {
           if (col_alias.equalsIgnoreCase(cmapEnt.getKey())) {
             /*
@@ -226,7 +253,7 @@ public class RowResolver implements Serializable{
     return ret;
   }
 
-  public ArrayList<ColumnInfo> getColumnInfos() {
+  public List<ColumnInfo> getColumnInfos() {
     return rowSchema.getSignature();
   }
 
@@ -273,7 +300,7 @@ public class RowResolver implements Serializable{
     return new ArrayList<String>(columnNames);
   }
 
-  public LinkedHashMap<String, ColumnInfo> getFieldMap(String tabAlias) {
+  public Map<String, ColumnInfo> getFieldMap(String tabAlias) {
     if (tabAlias == null) {
       return rslvMap.get(null);
     } else {
@@ -298,6 +325,24 @@ public class RowResolver implements Serializable{
     return rslvMap.keySet();
   }
 
+  /**
+   * Get alias of the last table containing  column columnName
+   *
+   * @param columnName column
+   * @return table alias or null
+   */
+  public String getTableAliasContainingColumn(String columnName) {
+    String result = null;
+
+    for (Map.Entry<String, Map<String, ColumnInfo>> entry: this.rslvMap.entrySet()) {
+      if (entry.getValue().containsKey(columnName)) {
+        result = entry.getKey();
+      }
+    }
+
+    return result;
+  }
+
   public String[] reverseLookup(String internalName) {
     return invRslvMap.get(internalName);
   }
@@ -318,11 +363,10 @@ public class RowResolver implements Serializable{
   public String toString() {
     StringBuilder sb = new StringBuilder();
 
-    for (Map.Entry<String, LinkedHashMap<String, ColumnInfo>> e : rslvMap
-        .entrySet()) {
+    for (Map.Entry<String, Map<String, ColumnInfo>> e : rslvMap.entrySet()) {
       String tab = e.getKey();
       sb.append(tab + "{");
-      HashMap<String, ColumnInfo> f_map = e.getValue();
+      Map<String, ColumnInfo> f_map = e.getValue();
       if (f_map != null) {
         for (Map.Entry<String, ColumnInfo> entry : f_map.entrySet()) {
           sb.append("(" + entry.getKey() + "," + entry.getValue().toString()
@@ -338,7 +382,7 @@ public class RowResolver implements Serializable{
     return rowSchema;
   }
 
-  public LinkedHashMap<String, LinkedHashMap<String, ColumnInfo>> getRslvMap() {
+  public Map<String, Map<String, ColumnInfo>> getRslvMap() {
     return rslvMap;
   }
 
@@ -482,11 +526,16 @@ public class RowResolver implements Serializable{
   public RowResolver duplicate() {
     RowResolver resolver = new RowResolver();
     resolver.rowSchema = new RowSchema(rowSchema);
-    resolver.rslvMap.putAll(rslvMap);
+    for (Map.Entry<String, Map<String, ColumnInfo>> entry : rslvMap.entrySet()) {
+      resolver.rslvMap.put(entry.getKey(), new LinkedHashMap<>(entry.getValue()));
+    }
     resolver.invRslvMap.putAll(invRslvMap);
     resolver.altInvRslvMap.putAll(altInvRslvMap);
     resolver.expressionMap.putAll(expressionMap);
     resolver.isExprResolver = isExprResolver;
+    for (Map.Entry<String, Map<String, String>> entry : ambiguousColumns.entrySet()) {
+      resolver.ambiguousColumns.put(entry.getKey(), new LinkedHashMap<>(entry.getValue()));
+    }
     resolver.ambiguousColumns.putAll(ambiguousColumns);
     resolver.checkForAmbiguity = checkForAmbiguity;
     return resolver;
@@ -514,14 +563,13 @@ public class RowResolver implements Serializable{
     }
 
     if(tableAlias != null) {
-      LinkedHashMap<String, String> colAliases = ambiguousColumns.get(tableAlias.toLowerCase());
+      Map<String, String> colAliases = ambiguousColumns.get(tableAlias.toLowerCase());
       if(colAliases != null && colAliases.containsKey(colAlias.toLowerCase())) {
         return true;
       }
     } else {
-      for (Map.Entry<String, LinkedHashMap<String, String>> ambigousColsEntry: ambiguousColumns.entrySet()) {
-        String rslvKey = ambigousColsEntry.getKey();
-        LinkedHashMap<String, String> cmap = ambigousColsEntry.getValue();
+      for (Map.Entry<String, Map<String, String>> ambiguousColsEntry: ambiguousColumns.entrySet()) {
+        Map<String, String> cmap = ambiguousColsEntry.getValue();
         for (Map.Entry<String, String> cmapEnt : cmap.entrySet()) {
           if (colAlias.equalsIgnoreCase(cmapEnt.getKey())) {
             return true;

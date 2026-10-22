@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.service.auth.ldap;
 
@@ -21,7 +22,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hive.service.ServiceUtils;
 import org.slf4j.Logger;
@@ -145,10 +146,10 @@ public final class LdapUtils {
    * @param conf Hive configuration
    * @param var variable to be read
    * @return a list of DN patterns
-   * @see HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_BASEDN
-   * @see HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_GUIDKEY
-   * @see HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_GROUPDNPATTERN
-   * @see HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_USERDNPATTERN
+   * @see HiveConf.ConfVars#HIVE_SERVER2_PLAIN_LDAP_BASEDN
+   * @see HiveConf.ConfVars#HIVE_SERVER2_PLAIN_LDAP_GUIDKEY
+   * @see HiveConf.ConfVars#HIVE_SERVER2_PLAIN_LDAP_GROUPDNPATTERN
+   * @see HiveConf.ConfVars#HIVE_SERVER2_PLAIN_LDAP_USERDNPATTERN
    */
   public static List<String> parseDnPatterns(HiveConf conf, HiveConf.ConfVars var) {
     String patternsString = conf.getVar(var);
@@ -183,8 +184,8 @@ public final class LdapUtils {
    * Converts a collection of Distinguished Name patterns to a collection of base DNs.
    * @param patterns Distinguished Name patterns
    * @return a list of base DNs
-   * @see HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_GROUPDNPATTERN
-   * @see HiveConf.ConfVars.HIVE_SERVER2_PLAIN_LDAP_USERDNPATTERN
+   * @see HiveConf.ConfVars#HIVE_SERVER2_PLAIN_LDAP_GROUPDNPATTERN
+   * @see HiveConf.ConfVars#HIVE_SERVER2_PLAIN_LDAP_USERDNPATTERN
    */
   public static List<String> patternsToBaseDns(Collection<String> patterns) {
     List<String> result = new ArrayList<>();

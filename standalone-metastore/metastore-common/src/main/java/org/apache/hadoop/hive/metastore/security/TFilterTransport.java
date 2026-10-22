@@ -9,15 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.security;
 
+import org.apache.thrift.TConfiguration;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 
@@ -96,4 +98,19 @@ import org.apache.thrift.transport.TTransportException;
    public void consumeBuffer(int len) {
      wrapped.consumeBuffer(len);
    }
- }
+
+   @Override
+   public TConfiguration getConfiguration() {
+     return wrapped.getConfiguration();
+   }
+
+   @Override
+   public void updateKnownMessageSize(long l) throws TTransportException {
+     wrapped.updateKnownMessageSize(l);
+   }
+
+   @Override
+   public void checkReadBytesAvailable(long l) throws TTransportException {
+     wrapped.checkReadBytesAvailable(l);
+   }
+}

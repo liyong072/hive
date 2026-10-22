@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -33,21 +34,12 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 public class StringGroupConcatColCol extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private final int colNum1;
-  private final int colNum2;
-
   public StringGroupConcatColCol(int colNum1, int colNum2, int outputColumnNum) {
-    super(outputColumnNum);
-    this.colNum1 = colNum1;
-    this.colNum2 = colNum2;
+    super(colNum1, colNum2, outputColumnNum);
   }
 
   public StringGroupConcatColCol() {
     super();
-
-    // Dummy final assignments.
-    colNum1 = -1;
-    colNum2 = -1;
   }
 
   @Override
@@ -57,8 +49,8 @@ public class StringGroupConcatColCol extends VectorExpression {
       super.evaluateChildren(batch);
     }
 
-    BytesColumnVector inV1 = (BytesColumnVector) batch.cols[colNum1];
-    BytesColumnVector inV2 = (BytesColumnVector) batch.cols[colNum2];
+    BytesColumnVector inV1 = (BytesColumnVector) batch.cols[inputColumnNum[0]];
+    BytesColumnVector inV2 = (BytesColumnVector) batch.cols[inputColumnNum[1]];
     BytesColumnVector outV = (BytesColumnVector) batch.cols[outputColumnNum];
     boolean[] outputIsNull = outV.isNull;
     int[] sel = batch.selected;
@@ -328,7 +320,21 @@ public class StringGroupConcatColCol extends VectorExpression {
 
       /*
        * Do careful maintenance of the outputColVector.noNulls flag.
+       *
+       * when both inputs have noNulls=true the output vector(outV) must set true.
+       * The output BytesColumnVector is reused across batches, so if a prior batch
+       * left noNulls=false we have to reset it here — otherwise downstream
+       * consumers that utilizing noNulls will treat these rows as NULL
+       * even though every setConcat below succeeded. This matches what the
+       * sibling scalar variants (StringGroupColConcatStringScalar and
+       * StringScalarConcatStringGroupCol) already do on their no-nulls paths.
        */
+      if (!outV.noNulls) {
+        // Assume it is almost always a performance win to fill all of isNull so we can
+        // safely reset noNulls.
+        Arrays.fill(outV.isNull, false);
+        outV.noNulls = true;
+      }
 
       // perform data operation
       if (inV1.isRepeating && inV2.isRepeating) {
@@ -411,7 +417,7 @@ public class StringGroupConcatColCol extends VectorExpression {
    * @param sel selected value position array
    * @param n number of qualifying rows
    * @param inV input vector
-   * @param outV ouput vector
+   * @param outV output vector
    */
   private static void propagateNulls(boolean selectedInUse, int n, int[] sel, ColumnVector inV,
       ColumnVector outV) {
@@ -427,7 +433,7 @@ public class StringGroupConcatColCol extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return getColumnParamString(0, colNum1) + ", " + getColumnParamString(1, colNum2);
+    return getColumnParamString(0, inputColumnNum[0]) + ", " + getColumnParamString(1, inputColumnNum[1]);
   }
 
   @Override

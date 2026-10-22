@@ -9,16 +9,15 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.optimized;
-
-import java.io.IOException;
 
 import org.apache.hadoop.hive.ql.exec.JoinUtil.JoinResult;
 import org.apache.hadoop.hive.ql.exec.persistence.MapJoinTableContainer;
@@ -28,11 +27,15 @@ import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinHash
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinLongHashMap;
 import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinNonMatchedIterator;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.plan.VectorMapJoinDesc.HashTableKeyType;
 import org.apache.hadoop.hive.serde2.WriteBuffers.ByteSegmentRef;
 import org.apache.hadoop.hive.serde2.binarysortable.fast.BinarySortableDeserializeRead;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
+import org.apache.hadoop.hive.ql.exec.vector.mapjoin.VectorMapJoinLongHashUtil;
+
+import java.io.IOException;
 
 /*
  * An single long value hash map based on the BytesBytesMultiHashMap.
@@ -88,12 +91,15 @@ public class VectorMapJoinOptimizedLongHashMap
       case LONG:
         integerTypeInfo = TypeInfoFactory.longTypeInfo;
         break;
+      case DATE:
+        integerTypeInfo = TypeInfoFactory.dateTypeInfo;
+        break;
       default:
         throw new RuntimeException("Unexpected key type " + hashMap.hashTableKeyType);
       }
       keyBinarySortableDeserializeRead =
-          new BinarySortableDeserializeRead(
-              new TypeInfo[] {integerTypeInfo}, false);
+          BinarySortableDeserializeRead.with(
+              new TypeInfo[] {integerTypeInfo}, false, hashMap.longCommon.getTableDesc().getProperties());
     }
 
     private boolean readNonMatchedLongKey(ByteSegmentRef keyRef) throws HiveException {
@@ -106,25 +112,9 @@ public class VectorMapJoinOptimizedLongHashMap
         if (!keyBinarySortableDeserializeRead.readNextField()) {
           return false;
         }
-        switch (hashMap.hashTableKeyType) {
-        case BOOLEAN:
-          longValue = keyBinarySortableDeserializeRead.currentBoolean ? 1 : 0;
-          break;
-        case BYTE:
-          longValue = keyBinarySortableDeserializeRead.currentByte;
-          break;
-        case SHORT:
-          longValue = keyBinarySortableDeserializeRead.currentShort;
-          break;
-        case INT:
-          longValue = keyBinarySortableDeserializeRead.currentInt;
-          break;
-        case LONG:
-          longValue = keyBinarySortableDeserializeRead.currentLong;
-          break;
-        default:
-          throw new RuntimeException("Unexpected key type " + hashMap.hashTableKeyType);
-        }
+        longValue =
+            VectorMapJoinLongHashUtil.deserializeLongKey(
+                keyBinarySortableDeserializeRead, hashMap.hashTableKeyType);
       } catch (IOException e) {
         throw new HiveException(e);
       }
@@ -184,9 +174,9 @@ public class VectorMapJoinOptimizedLongHashMap
 
   public VectorMapJoinOptimizedLongHashMap(
         boolean minMaxEnabled, boolean isOuterJoin, HashTableKeyType hashTableKeyType,
-        MapJoinTableContainer originalTableContainer, ReusableGetAdaptor hashMapRowGetter) {
+        MapJoinTableContainer originalTableContainer, ReusableGetAdaptor hashMapRowGetter, TableDesc tableDesc) {
     super(originalTableContainer, hashMapRowGetter);
     this.hashTableKeyType = hashTableKeyType;
-    longCommon =  new VectorMapJoinOptimizedLongCommon(minMaxEnabled, isOuterJoin, hashTableKeyType);
+    longCommon =  new VectorMapJoinOptimizedLongCommon(minMaxEnabled, isOuterJoin, hashTableKeyType, tableDesc);
   }
 }

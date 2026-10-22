@@ -9,15 +9,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2;
 
-import junit.framework.TestCase;
+
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreUtils;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.MetaException;
@@ -30,8 +32,13 @@ import java.util.List;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.junit.Assert.assertEquals;
+import org.junit.Test;
 
-public class TestSerdeWithFieldComments extends TestCase {
+/**
+ * TestSerdeWithFieldComments.
+ */
+public class TestSerdeWithFieldComments {
 
   private StructField mockedStructField(String name, String oiTypeName,
                                         String comment) {
@@ -47,6 +54,7 @@ public class TestSerdeWithFieldComments extends TestCase {
     return m;
   }
 
+  @Test
   public void testFieldComments() throws MetaException, SerDeException {
     StructObjectInspector mockSOI = mock(StructObjectInspector.class);
     when(mockSOI.getCategory()).thenReturn(ObjectInspector.Category.STRUCT);
@@ -61,7 +69,7 @@ public class TestSerdeWithFieldComments extends TestCase {
     Deserializer mockDe = mock(Deserializer.class);
     when(mockDe.getObjectInspector()).thenReturn(mockSOI);
     List<FieldSchema> result =
-        HiveMetaStoreUtils.getFieldsFromDeserializer("testTable", mockDe);
+        HiveMetaStoreUtils.getFieldsFromDeserializer("testTable", mockDe, new HiveConf());
 
     assertEquals(2, result.size());
     assertEquals("first", result.get(0).getName());

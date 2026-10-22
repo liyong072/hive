@@ -9,24 +9,21 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql;
 
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
-import org.apache.hadoop.hive.ql.io.AcidUtils;
-import org.apache.hadoop.hive.ql.lockmgr.TestDbTxnManager2;
-import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorException;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -67,15 +64,15 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
 
 
   @Test
-  public void addPartition() throws Exception {
-
-    addPartition(false);
+  public void testAddPartition() throws Exception {
+    hiveConf.setBoolVar(HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED, false);
+    addPartition();
   }
 
   @Test
-  public void addPartitionVectorized() throws Exception {
+  public void testAddPartitionVectorized() throws Exception {
     hiveConf.setBoolVar(HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED, true);
-    addPartition(true);
+    addPartition();
   }
 
   /**
@@ -84,7 +81,7 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
    * adding partition when it already exists
    * adding partition when it already exists with "if not exists"
    */
-  private void addPartition(boolean isVectorized) throws Exception {
+  private void addPartition() throws Exception {
     runStatementOnDriver("drop table if exists T");
     runStatementOnDriver("drop table if exists Tstage");
     runStatementOnDriver("create table T (a int, b int) partitioned by (p int) stored as orc" +
@@ -101,8 +98,7 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
         " PARTITION (p=1) location '" + getWarehouseDir() + "/2/data'" +
         " PARTITION (p=2)");
 
-    String testQuery = isVectorized ? "select ROW__ID, p, a, b from T order by p, ROW__ID" :
-        "select ROW__ID, p, a, b, INPUT__FILE__NAME from T order by p, ROW__ID";
+    String testQuery = "select ROW__ID, p, a, b, INPUT__FILE__NAME from T order by p, ROW__ID";
     String[][] expected = new String[][]{
         {"{\"writeid\":1,\"bucketid\":536870912,\"rowid\":0}\t0\t0\t2",
             "warehouse/t/p=0/delta_0000001_0000001_0000/000000_0"},
@@ -112,14 +108,14 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
             "warehouse/t/p=1/delta_0000001_0000001_0000/000000_0"},
         {"{\"writeid\":1,\"bucketid\":536870912,\"rowid\":1}\t1\t0\t4",
             "warehouse/t/p=1/delta_0000001_0000001_0000/000000_0"}};
-    checkResult(expected, testQuery, isVectorized, "add 2 parts w/data and 1 empty", LOG);
+    checkResultAndVectorization(expected, testQuery, "add 2 parts w/data and 1 empty", LOG);
 
     runStatementOnDriver("export table Tstage to '" + getWarehouseDir() + "/3'");
     //should be an error since p=3 exists
-    CommandProcessorResponse cpr = runStatementOnDriverNegative(
-        "ALTER TABLE T ADD PARTITION (p=0) location '" + getWarehouseDir() + "/3/data'");
-    Assert.assertTrue("add existing partition", cpr.getErrorMessage() != null
-        && cpr.getErrorMessage().contains("Partition already exists"));
+    CommandProcessorException e =
+        runStatementOnDriverNegative("ALTER TABLE T ADD PARTITION (p=0) location '" + getWarehouseDir() + "/3/data'");
+    Assert.assertTrue("add existing partition",
+        e.getMessage() != null && e.getMessage().contains("Partition(s) already exist"));
 
     //should be no-op since p=3 exists
     String stmt = "ALTER TABLE T ADD IF NOT EXISTS " +
@@ -140,18 +136,19 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
             "warehouse/t/p=3/delta_0000003_0000003_0000/000000_0"},
         {"{\"writeid\":3,\"bucketid\":536870912,\"rowid\":1}\t3\t0\t4",
             "warehouse/t/p=3/delta_0000003_0000003_0000/000000_0"}};
-    checkResult(expected2, testQuery, isVectorized, "add 2 existing parts and 1 empty", LOG);
+    checkResultAndVectorization(expected2, testQuery, "add 2 existing parts and 1 empty", LOG);
   }
 
   @Test
-  public void addPartitionMM() throws Exception {
-    addPartitionMM(false);
+  public void testAddPartitionMM() throws Exception {
+    hiveConf.setBoolVar(HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED, false);
+    addPartitionMM();
   }
 
   @Test
-  public void addPartitionMMVectorized() throws Exception {
+  public void testAddPartitionMMVectorized() throws Exception {
     hiveConf.setBoolVar(HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED, true);
-    addPartitionMM(true);
+    addPartitionMM();
   }
 
   /**
@@ -161,7 +158,7 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
    * adding partition when it already exists
    * adding partition when it already exists with "if not exists"
    */
-  private void addPartitionMM(boolean isVectorized) throws Exception {
+  private void addPartitionMM() throws Exception {
     runStatementOnDriver("drop table if exists T");
     runStatementOnDriver("drop table if exists Tstage");
 
@@ -179,21 +176,20 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
         " PARTITION (p=1) location '" + getWarehouseDir() + "/2/data'" +
         " PARTITION (p=2)");
 
-    String testQuery = isVectorized ? "select p, a, b from T order by p, a, b" :
-        "select p, a, b, INPUT__FILE__NAME from T order by p, a, b";
+    String testQuery = "select p, a, b, INPUT__FILE__NAME from T order by p, a, b";
     String[][] expected = new String[][]{
         {"0\t0\t2", "warehouse/t/p=0/delta_0000001_0000001_0000/000000_0"},
         {"0\t0\t4", "warehouse/t/p=0/delta_0000001_0000001_0000/000000_0"},
         {"1\t0\t2", "warehouse/t/p=1/delta_0000001_0000001_0000/000000_0"},
         {"1\t0\t4", "warehouse/t/p=1/delta_0000001_0000001_0000/000000_0"}};
-    checkResult(expected, testQuery, isVectorized, "add 2 parts w/data and 1 empty", LOG);
+    checkResultAndVectorization(expected, testQuery, "add 2 parts w/data and 1 empty", LOG);
 
     runStatementOnDriver("export table Tstage to '" + getWarehouseDir() + "/3'");
     //should be an error since p=3 exists
-    CommandProcessorResponse cpr = runStatementOnDriverNegative(
-        "ALTER TABLE T ADD PARTITION (p=0) location '" + getWarehouseDir() + "/3/data'");
-    Assert.assertTrue("add existing partition", cpr.getErrorMessage() != null
-        && cpr.getErrorMessage().contains("Partition already exists"));
+    CommandProcessorException e =
+        runStatementOnDriverNegative("ALTER TABLE T ADD PARTITION (p=0) location '" + getWarehouseDir() + "/3/data'");
+    Assert.assertTrue("add existing partition",
+        e.getMessage() != null && e.getMessage().contains("Partition(s) already exist"));
 
     //should be no-op since p=3 exists
     runStatementOnDriver("ALTER TABLE T ADD IF NOT EXISTS " +
@@ -207,7 +203,7 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
         {"1\t0\t4", "warehouse/t/p=1/delta_0000001_0000001_0000/000000_0"},
         {"3\t0\t2", "warehouse/t/p=3/delta_0000003_0000003_0000/000000_0"},
         {"3\t0\t4", "warehouse/t/p=3/delta_0000003_0000003_0000/000000_0"}};
-    checkResult(expected2, testQuery, isVectorized, "add 2 existing parts and 1 empty", LOG);
+    checkResultAndVectorization(expected2, testQuery, "add 2 existing parts and 1 empty", LOG);
   }
 
   @Test
@@ -228,15 +224,15 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
     List<String> rs = runStatementOnDriver(
         "select ROW__ID, p, a, b, INPUT__FILE__NAME from T order by p, ROW__ID");
     String[][] expected = new String[][]{
-        {"{\"writeid\":1,\"bucketid\":536936448,\"rowid\":0}\t0\t1\t4",
+        {"{\"writeid\":1,\"bucketid\":536936448,\"rowid\":0}\t0\t0\t2",
             "warehouse/t/p=0/delta_0000001_0000001_0000/000001_0"},
-        {"{\"writeid\":1,\"bucketid\":536936448,\"rowid\":1}\t0\t0\t2",
+        {"{\"writeid\":1,\"bucketid\":536936448,\"rowid\":1}\t0\t1\t4",
             "warehouse/t/p=0/delta_0000001_0000001_0000/000001_0"}};
     checkExpected(rs, expected, "add partition (p=0)");
   }
 
   private void checkExpected(List<String> rs, String[][] expected, String msg) {
-    super.checkExpected(rs, expected, msg, LOG, true);
+    super.checkExpected(rs, expected, msg, LOG);
   }
 
   /**
@@ -253,13 +249,11 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
     runStatementOnDriver("create table Tstage (a int, b int)  clustered by (a) into 2 " +
         "buckets stored as orc tblproperties('transactional'='false')");
 
-    runStatementOnDriver("insert into Tstage values(0,2),(1,4)");
+    runStatementOnDriver("insert into Tstage values(0,2),(2,4)");
     runStatementOnDriver("export table Tstage to '" + getWarehouseDir() + "/1'");
     FileSystem fs = FileSystem.get(hiveConf);
-    FileStatus[] status = fs.listStatus(new Path(getWarehouseDir() + "/1/data"),
-        AcidUtils.originalBucketFilter);
-    boolean b = fs.rename(new Path(getWarehouseDir() + "/1/data/000000_0"), new Path(getWarehouseDir() + "/1/data/part-m000"));
-    b = fs.rename(new Path(getWarehouseDir() + "/1/data/000001_0"), new Path(getWarehouseDir() + "/1/data/part-m001"));
+    fs.rename(new Path(getWarehouseDir() + "/1/data/000000_0"), new Path(getWarehouseDir() + "/1/data/part-m000"));
+    fs.rename(new Path(getWarehouseDir() + "/1/data/000001_0"), new Path(getWarehouseDir() + "/1/data/part-m001"));
 
     runStatementOnDriver("ALTER TABLE T ADD PARTITION (p=0) location '"
         + getWarehouseDir() + "/1/data'");
@@ -267,22 +261,13 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
     List<String> rs = runStatementOnDriver(
         "select ROW__ID, p, a, b, INPUT__FILE__NAME from T order by p, ROW__ID");
     String[][] expected = new String[][]{
-        {"{\"writeid\":1,\"bucketid\":536936448,\"rowid\":0}\t0\t1\t4",
-            "warehouse/t/p=0/delta_0000001_0000001_0000/000001_0"},
-        {"{\"writeid\":1,\"bucketid\":536936448,\"rowid\":1}\t0\t0\t2",
+            {"{\"writeid\":1,\"bucketid\":536870912,\"rowid\":0}\t0\t2\t4",
+                    "warehouse/t/p=0/delta_0000001_0000001_0000/000000_0"},
+        {"{\"writeid\":1,\"bucketid\":536936448,\"rowid\":0}\t0\t0\t2",
             "warehouse/t/p=0/delta_0000001_0000001_0000/000001_0"}};
     checkExpected(rs, expected, "add partition (p=0)");
   }
-
-  /**
-   * {@link TestDbTxnManager2#testAddPartitionLocks}
-   */
-  @Ignore
-  @Test
-  public void testLocks() throws Exception {
-  }
-
-
+  
   @Test
   public void addPartitionTransactional() throws Exception {
     exception.expect(RuntimeException.class);
@@ -298,6 +283,6 @@ public class TestTxnAddPartition extends TxnCommandsBaseForTests {
     runStatementOnDriver("insert into Tstage partition(p=1) values(0,2),(1,4)");
 
     runStatementOnDriver("ALTER TABLE T ADD PARTITION (p=0) location '"
-        + getWarehouseDir() + "/tstage/p=1/delta_0000001_0000001_0000/bucket_00001'");
+        + getWarehouseDir() + "/tstage/p=1/delta_0000001_0000001_0000/bucket_00001_0'");
   }
 }

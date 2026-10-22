@@ -9,15 +9,15 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse;
 
-import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,19 +27,22 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.antlr.runtime.tree.Tree;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.metastore.TableType;
+import org.apache.hadoop.hive.common.TableName;
 import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
 import org.apache.hadoop.hive.ql.Context;
-import org.apache.hadoop.hive.ql.DriverContext;
+import org.apache.hadoop.hive.ql.QueryProperties;
+import org.apache.hadoop.hive.ql.TaskQueue;
 import org.apache.hadoop.hive.ql.QueryState;
-import org.apache.hadoop.hive.ql.ddl.DDLTask2;
-import org.apache.hadoop.hive.ql.ddl.DDLWork2;
-import org.apache.hadoop.hive.ql.ddl.table.CreateTableLikeDesc;
-import org.apache.hadoop.hive.ql.ddl.table.DropTableDesc;
+import org.apache.hadoop.hive.ql.ddl.DDLTask;
+import org.apache.hadoop.hive.ql.ddl.DDLWork;
+import org.apache.hadoop.hive.ql.ddl.table.create.like.CreateTableLikeDesc;
+import org.apache.hadoop.hive.ql.ddl.table.drop.DropTableDesc;
+import org.apache.hadoop.hive.ql.ddl.table.misc.properties.AlterTableSetPropertiesDesc;
 import org.apache.hadoop.hive.ql.exec.StatsTask;
 import org.apache.hadoop.hive.ql.exec.Task;
 import org.apache.hadoop.hive.ql.exec.TaskFactory;
@@ -49,8 +52,7 @@ import org.apache.hadoop.hive.ql.metadata.Hive;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.HiveUtils;
 import org.apache.hadoop.hive.ql.metadata.Table;
-import org.apache.hadoop.hive.ql.plan.AlterTableDesc;
-import org.apache.hadoop.hive.ql.plan.DDLWork;
+import org.apache.hadoop.hive.ql.parse.ParseUtils.ReparseResult;
 import org.apache.hadoop.hive.ql.plan.ExportWork;
 import org.apache.hadoop.hive.ql.session.SessionState;
 
@@ -59,17 +61,24 @@ import org.apache.hadoop.hive.ql.session.SessionState;
  * acid export statements. It works by rewriting the acid export into insert statements into a temporary table,
  * and then export it from there.
  */
-public class AcidExportSemanticAnalyzer extends RewriteSemanticAnalyzer {
+public class AcidExportSemanticAnalyzer extends RewriteSemanticAnalyzer<Object> {
   AcidExportSemanticAnalyzer(QueryState queryState) throws SemanticException {
-    super(queryState);
+    super(queryState, null);
   }
 
-  protected void analyze(ASTNode tree) throws SemanticException {
+  @Override
+  protected ASTNode getTargetTableNode(ASTNode tree) {
+    ASTNode tableTree = (ASTNode)tree.getChild(0);
+    assert tableTree != null && tableTree.getType() == HiveParser.TOK_TAB;
+    return (ASTNode) tableTree.getChild(0);
+  }
+
+  protected void analyze(ASTNode tree, Table table, ASTNode tableNameNode) throws SemanticException {
     if (tree.getToken().getType() != HiveParser.TOK_EXPORT) {
       throw new RuntimeException("Asked to parse token " + tree.getName() + " in " +
           "AcidExportSemanticAnalyzer");
     }
-    analyzeAcidExport(tree);
+    analyzeAcidExport(tree, table, tableNameNode);
   }
 
   /**
@@ -81,7 +90,7 @@ public class AcidExportSemanticAnalyzer extends RewriteSemanticAnalyzer {
    * insert into tmpTable select * from &lt;export table&gt; to filter/apply the events in current
    * context and then export the tmpTable.  This export artifact can now be imported into any
    * table on any cluster (subject to schema checks etc).
-   * See {@link #analyzeAcidExport(ASTNode)}
+   * See {@link #analyzeAcidExport(ASTNode, Table , ASTNode)}
    * @param tree Export statement
    * @return true if exporting an Acid table.
    */
@@ -99,6 +108,7 @@ public class AcidExportSemanticAnalyzer extends RewriteSemanticAnalyzer {
     //tableHandle can be null if table doesn't exist
     return tableHandle != null && AcidUtils.isFullAcidTable(tableHandle);
   }
+
   private static String getTmptTableNameForExport(Table exportTable) {
     String tmpTableDb = exportTable.getDbName();
     String tmpTableName = exportTable.getTableName() + "_" + UUID.randomUUID().toString().replace('-', '_');
@@ -115,17 +125,18 @@ public class AcidExportSemanticAnalyzer extends RewriteSemanticAnalyzer {
    * Using a true temp (session level) table means it should not affect replication and the table
    * is not visible outside the Session that created for security
    */
-  private void analyzeAcidExport(ASTNode ast) throws SemanticException {
+  private void analyzeAcidExport(ASTNode ast, Table exportTable, ASTNode tokRefOrNameExportTable) throws SemanticException {
     assert ast != null && ast.getToken() != null && ast.getToken().getType() == HiveParser.TOK_EXPORT;
-    ASTNode tableTree = (ASTNode)ast.getChild(0);
-    assert tableTree != null && tableTree.getType() == HiveParser.TOK_TAB;
-    ASTNode tokRefOrNameExportTable = (ASTNode) tableTree.getChild(0);
-    Table exportTable = getTargetTable(tokRefOrNameExportTable);
+
+    if (exportTable != null && (exportTable.isView() || exportTable.isMaterializedView())) {
+      throw new SemanticException("Views and Materialized Views can not be exported.");
+    }
     assert AcidUtils.isFullAcidTable(exportTable);
 
     //need to create the table "manually" rather than creating a task since it has to exist to
     // compile the insert into T...
-    String newTableName = getTmptTableNameForExport(exportTable); //this is db.table
+    final String newTableName = getTmptTableNameForExport(exportTable); //this is db.table
+    final TableName newTableNameRef = HiveTableName.of(newTableName);
     Map<String, String> tblProps = new HashMap<>();
     tblProps.put(hive_metastoreConstants.TABLE_IS_TRANSACTIONAL, Boolean.FALSE.toString());
     String location;
@@ -152,29 +163,27 @@ public class AcidExportSemanticAnalyzer extends RewriteSemanticAnalyzer {
     try {
       ReadEntity dbForTmpTable = new ReadEntity(db.getDatabase(exportTable.getDbName()));
       inputs.add(dbForTmpTable); //so the plan knows we are 'reading' this db - locks, security...
-      DDLTask2 createTableTask = (DDLTask2) TaskFactory.get(new DDLWork2(new HashSet<>(), new HashSet<>(), ctlt), conf);
+      DDLTask createTableTask = (DDLTask) TaskFactory.get(new DDLWork(new HashSet<>(), new HashSet<>(), ctlt), conf);
       createTableTask.setConf(conf); //above get() doesn't set it
-      createTableTask.execute(new DriverContext(new Context(conf)));
+      Context context = new Context(conf);
+      createTableTask.initialize(null, null, new TaskQueue(context), context);
+      createTableTask.execute();
       newTable = db.getTable(newTableName);
-    } catch(IOException|HiveException ex) {
+    } catch(HiveException ex) {
       throw new SemanticException(ex);
     }
 
     //now generate insert statement
     //insert into newTableName select * from ts <where partition spec>
-    StringBuilder rewrittenQueryStr = generateExportQuery(newTable.getPartCols(), tokRefOrNameExportTable, tableTree,
-        newTableName);
-    ReparseResult rr = parseRewrittenQuery(rewrittenQueryStr, ctx.getCmd());
+    StringBuilder rewrittenQueryStr = generateExportQuery(
+        newTable.getPartCols(),
+        tokRefOrNameExportTable, (ASTNode) tokRefOrNameExportTable.parent, newTableName);
+    ReparseResult rr = ParseUtils.parseRewrittenQuery(ctx, rewrittenQueryStr);
     Context rewrittenCtx = rr.rewrittenCtx;
     rewrittenCtx.setIsUpdateDeleteMerge(false); //it's set in parseRewrittenQuery()
     ASTNode rewrittenTree = rr.rewrittenTree;
-    try {
-      useSuper = true;
-      //newTable has to exist at this point to compile
-      super.analyze(rewrittenTree, rewrittenCtx);
-    } finally {
-      useSuper = false;
-    }
+    //newTable has to exist at this point to compile
+    analyzeRewrittenTree(rewrittenTree, rewrittenCtx);
     //now we have the rootTasks set up for Insert ... Select
     removeStatsTasks(rootTasks);
     //now make an ExportTask from temp table
@@ -189,18 +198,17 @@ public class AcidExportSemanticAnalyzer extends RewriteSemanticAnalyzer {
     // do it after populating temp table so that it's written as non-transactional table but
     // update props before export so that export archive metadata has these props.  This way when
     // IMPORT is done for this archive and target table doesn't exist, it will be created as Acid.
-    AlterTableDesc alterTblDesc = new AlterTableDesc(AlterTableDesc.AlterTableTypes.ADDPROPS);
     Map<String, String> mapProps = new HashMap<>();
     mapProps.put(hive_metastoreConstants.TABLE_IS_TRANSACTIONAL, Boolean.TRUE.toString());
-    alterTblDesc.setProps(mapProps);
-    alterTblDesc.setOldName(newTableName);
+    AlterTableSetPropertiesDesc alterTblDesc = new AlterTableSetPropertiesDesc(newTableNameRef, null, null, false,
+        mapProps, false, false, null);
     addExportTask(rootTasks, exportTask, TaskFactory.get(new DDLWork(getInputs(), getOutputs(), alterTblDesc)));
 
     // Now make a task to drop temp table
-    // {@link DDLSemanticAnalyzer#analyzeDropTable(ASTNode ast, TableType expectedType)
+    // {@link DropTableAnalyzer#analyzeInternal(ASTNode ast)
     ReplicationSpec replicationSpec = new ReplicationSpec();
-    DropTableDesc dropTblDesc = new DropTableDesc(newTableName, TableType.MANAGED_TABLE, false, true, replicationSpec);
-    Task<DDLWork2> dropTask = TaskFactory.get(new DDLWork2(new HashSet<>(), new HashSet<>(), dropTblDesc), conf);
+    DropTableDesc dropTblDesc = new DropTableDesc(newTableName, false, true, replicationSpec);
+    Task<DDLWork> dropTask = TaskFactory.get(new DDLWork(new HashSet<>(), new HashSet<>(), dropTblDesc), conf);
     exportTask.addDependentTask(dropTask);
     markReadEntityForUpdate();
     if (ctx.isExplainPlan()) {
@@ -296,5 +304,16 @@ public class AcidExportSemanticAnalyzer extends RewriteSemanticAnalyzer {
       }
     }
     return statsTasks;
+  }
+
+  @Override
+  public void setQueryType(ASTNode tree) {
+    queryProperties.setQueryType(QueryProperties.QueryType.DDL);
+  }
+
+  @Override
+  protected void setSqlKind(SqlKind sqlKind) {
+    // NO-OP: prevent Semantic Analyzer to turn this query to a simple SqlKind=INSERT
+    // we classify acid export as HiveOperation.EXPORT
   }
 }

@@ -6,18 +6,20 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p/>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p/>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.llap.daemon.impl;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
@@ -25,8 +27,6 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.hive.llap.counters.LlapWmCounters;
 import org.apache.hadoop.hive.llap.counters.WmFragmentCounters;
 import org.apache.hadoop.hive.llap.daemon.FragmentCompletionHandler;
 import org.apache.hadoop.hive.llap.daemon.HistoryLogger;
@@ -86,6 +86,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 /**
  *
@@ -93,7 +94,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
   private static final Logger LOG = LoggerFactory.getLogger(TaskRunnerCallable.class);
   private final SubmitWorkRequestProto request;
-  private final Configuration conf;
+  private final Supplier<Configuration> conf;
   private final Map<String, String> envMap;
   private final String pid = null;
   private final ObjectRegistryImpl objectRegistry;
@@ -135,8 +136,9 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
 
   @VisibleForTesting
   public TaskRunnerCallable(SubmitWorkRequestProto request, QueryFragmentInfo fragmentInfo,
-                            Configuration conf, ExecutionContext executionContext, Map<String, String> envMap,
-                            Credentials credentials, long memoryAvailable, AMReporter amReporter, ConfParams confParams,
+                            Supplier<Configuration> conf, ExecutionContext executionContext,
+                            Map<String, String> envMap, Credentials credentials, long memoryAvailable,
+                            AMReporter amReporter, ConfParams confParams,
                             LlapDaemonExecutorMetrics metrics, KilledTaskHandler killedTaskHandler,
                             FragmentCompletionHandler fragmentCompleteHandler, HadoopShim tezHadoopShim,
                             TezTaskAttemptID attemptId, SignableVertexSpec vertex, TezEvent initialEvent,
@@ -158,7 +160,7 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
     this.amReporter = amReporter;
     // Register with the AMReporter when the callable is setup. Unregister once it starts running.
     if (amReporter != null && jobToken != null) {
-      this.amNodeInfo = amReporter.registerTask(request.getAmHost(), request.getAmPort(),
+      this.amNodeInfo = amReporter.registerTask(request.getIsExternalClientRequest(), request.getAmHost(), request.getAmPort(),
           vertex.getTokenIdentifier(), jobToken, fragmentInfo.getQueryInfo().getQueryIdentifier(),
           attemptId, isGuaranteed);
     } else {
@@ -176,6 +178,8 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
     this.tezHadoopShim = tezHadoopShim;
     this.initialEvent = initialEvent;
     this.fsTaskUgi = fsTaskUgi;
+    Preconditions.checkArgument(fsTaskUgi != null,
+        "fsTaskUgi must not be null, this implies a problem somewhere in LlapUgiManager");
     this.completionListener = completionListener;
     this.socketFactory = socketFactory;
     this.isGuaranteed = isGuaranteed;
@@ -192,6 +196,7 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
     setMDCFromNDC();
 
     try {
+      final Configuration config = conf.get();
       isStarted.set(true);
       this.startTime = System.currentTimeMillis();
       threadName = Thread.currentThread().getName();
@@ -223,10 +228,6 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
 
       // TODO Consolidate this code with TezChild.
       runtimeWatch.start();
-      if (fsTaskUgi == null) {
-        fsTaskUgi = UserGroupInformation.createRemoteUser(vertex.getUser());
-      }
-      fsTaskUgi.addCredentials(credentials);
 
       Map<String, ByteBuffer> serviceConsumerMetadata = new HashMap<>();
       serviceConsumerMetadata.put(TezConstants.TEZ_SHUFFLE_HANDLER_SERVICE_ID,
@@ -254,7 +255,7 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
         @Override
         public LlapTaskUmbilicalProtocol run() throws Exception {
           return RPC.getProxy(LlapTaskUmbilicalProtocol.class,
-              LlapTaskUmbilicalProtocol.versionID, address, taskOwner, conf, socketFactory);
+              LlapTaskUmbilicalProtocol.versionID, address, taskOwner, config, socketFactory);
         }
       });
 
@@ -277,7 +278,7 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
       try {
         synchronized (this) {
           if (shouldRunTask) {
-            taskRunner = new TezTaskRunner2(conf, fsTaskUgi, fragmentInfo.getLocalDirs(),
+            taskRunner = new TezTaskRunner2(config, fsTaskUgi, fragmentInfo.getLocalDirs(),
                 taskSpec, vertex.getQueryIdentifier().getAppAttemptNumber(),
                 serviceConsumerMetadata, envMap, startedInputsMap, taskReporter, executor,
                 objectRegistry, pid, executionContext, memoryAvailable, false, tezHadoopShim);
@@ -296,7 +297,6 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
           isCompleted.set(true);
           return result;
         } finally {
-          FileSystem.closeAllForUGI(fsTaskUgi);
           fragmentInfo.getQueryInfo().returnUmbilicalUgi(taskOwner);
           LOG.info("ExecutionTime for Container: " + request.getContainerIdString() + "=" +
                   runtimeWatch.stop().elapsed(TimeUnit.MILLISECONDS));
@@ -327,7 +327,7 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
     StringBuilder sb = new StringBuilder();
     TezTaskID taskId = taskAttemptId.getTaskID();
     TezVertexID vertexId = taskId.getVertexID();
-    TezDAGID dagId = vertexId.getDAGId();
+    TezDAGID dagId = vertexId.getDAGID();
     ApplicationId appId = dagId.getApplicationId();
     long clusterTs = appId.getClusterTimestamp();
     long clusterTsShort = clusterTs % 1_000_000L;
@@ -344,7 +344,7 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
   /**
    * Attempt to kill a running task. If the task has not started running, it will not start.
    * If it's already running, a kill request will be sent to it.
-   * <p/>
+   * <br>
    * The AM will be informed about the task kill.
    */
   public void killTask() {
@@ -380,9 +380,16 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
             // If the task hasn't started - inform about fragment completion immediately. It's possible for
             // the callable to never run.
             fragmentCompletionHanler.fragmentComplete(fragmentInfo);
-            this.amReporter
-                .unregisterTask(request.getAmHost(), request.getAmPort(),
-                    fragmentInfo.getQueryInfo().getQueryIdentifier(), ta);
+
+            try {
+              this.amReporter
+                  .unregisterTask(request.getAmHost(), request.getAmPort(),
+                      fragmentInfo.getQueryInfo().getQueryIdentifier(), ta);
+            } catch (Throwable thr) {
+              // unregisterTask can throw a RuntimeException (i.e. if task attempt not found)
+              // this brings down LLAP daemon if exception is not caught here
+              LOG.error("Unregistering task from AMReporter failed", thr);
+            }
           }
         }
       } else {
@@ -641,5 +648,19 @@ public class TaskRunnerCallable extends CallableWithNdc<TaskRunner2Result> {
     if (wmCounters != null) {
       wmCounters.changeStateRunning(isGuaranteed);
     }
+  }
+
+  public long getQueueTime() {
+    if (wmCounters != null) {
+      return wmCounters.getQueueTime();
+    }
+    return 0;
+  }
+
+  public long getRunningTime() {
+    if (wmCounters != null) {
+      return wmCounters.getRunningTime();
+    }
+    return 0;
   }
 }

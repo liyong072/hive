@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.util;
@@ -22,7 +23,6 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -182,13 +182,13 @@ public class FakeVectorRowBatchFromObjectIterables extends FakeVectorRowBatchBas
   public VectorizedRowBatch produceNextBatch() {
     batch.size = 0;
     batch.selectedInUse = false;
+
     for (int i=0; i < types.length; ++i) {
       ColumnVector col = batch.cols[i];
       col.noNulls = true;
       col.isRepeating = false;
     }
     while (!eof && batch.size < this.batchSize){
-      int r = batch.size;
       for (int i=0; i < types.length; ++i) {
         Iterator<Object> it = iterators.get(i);
         if (!it.hasNext()) {

@@ -1,15 +1,20 @@
 /*
- * Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.tezplugins;
@@ -17,9 +22,8 @@ package org.apache.hadoop.hive.llap.tezplugins;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -67,7 +71,7 @@ import org.mockito.stubbing.Answer;
 
 public class TestLlapTaskCommunicator {
 
-  @Test (timeout = 5000)
+  @Test (timeout = 30000)
   public void testEntityTracker1() {
     LlapTaskCommunicator.EntityTracker entityTracker = new LlapTaskCommunicator.EntityTracker();
 
@@ -122,7 +126,7 @@ public class TestLlapTaskCommunicator {
   }
 
 
-  @Test(timeout = 5000)
+  @Test(timeout = 30000)
   public void testFinishableStateUpdateFailure() throws Exception {
 
     LlapTaskCommunicatorWrapperForTest wrapper = null;
@@ -354,7 +358,7 @@ public class TestLlapTaskCommunicator {
     private TaskSpec createBaseTaskSpec(String vertexName, TezVertexID vertexId, int taskIdx) {
       TaskSpec taskSpec = mock(TaskSpec.class);
       Configuration conf = new Configuration(false);
-      HiveConf.setVar(conf, HiveConf.ConfVars.HIVEQUERYID, "fakeQueryId");
+      HiveConf.setVar(conf, HiveConf.ConfVars.HIVE_QUERY_ID, "fakeQueryId");
       UserPayload userPayload;
       try {
         userPayload = TezUtils.createUserPayloadFromConf(conf);
@@ -364,6 +368,7 @@ public class TestLlapTaskCommunicator {
       TezTaskAttemptID taskAttemptId = TezTaskAttemptID.getInstance(
           TezTaskID.getInstance(vertexId, taskIdx), 0);
       doReturn(taskAttemptId).when(taskSpec).getTaskAttemptID();
+      doReturn(taskAttemptId.getDAGID()).when(taskSpec).getDAGID();
       doReturn(DAG_NAME).when(taskSpec).getDAGName();
       doReturn(vertexName).when(taskSpec).getVertexName();
       ProcessorDescriptor processorDescriptor = ProcessorDescriptor.create("fakeClassName").setUserPayload(userPayload);

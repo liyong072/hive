@@ -9,18 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
 
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.shims.Utils;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -51,13 +52,15 @@ public class TestExportImport {
 
   @BeforeClass
   public static void classLevelSetup() throws Exception {
-    Configuration conf = new Configuration();
+    HiveConf conf = new HiveConfForTest(TestExportImport.class);
     conf.set("dfs.client.use.datanode.hostname", "true");
     conf.set("hadoop.proxyuser." + Utils.getUGI().getShortUserName() + ".hosts", "*");
+    conf.set("hive.repl.include.external.tables", "false");
+    conf.set(HiveConf.ConfVars.REPL_RUN_DATA_COPY_TASKS_ON_TARGET.varname, "false");
     MiniDFSCluster miniDFSCluster =
         new MiniDFSCluster.Builder(conf).numDataNodes(1).format(true).build();
     HashMap<String, String> overridesForHiveConf = new HashMap<String, String>() {{
-      put(HiveConf.ConfVars.HIVE_IN_TEST.varname, "false");
+      put(HiveConf.ConfVars.HIVE_IN_TEST.varname, "true");
     }};
     HashMap<String, String> overridesForHiveConfDump = new HashMap<String, String>() {{
         put(HiveConf.ConfVars.HIVE_IN_TEST.varname, "false");

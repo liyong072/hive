@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.mapjoin.fast;
@@ -28,6 +29,9 @@ import org.apache.hadoop.hive.ql.exec.vector.mapjoin.hashtable.VectorMapJoinNonM
 
 public abstract class VectorMapJoinFastHashTable implements VectorMapJoinHashTable {
   public static final Logger LOG = LoggerFactory.getLogger(VectorMapJoinFastHashTable.class);
+
+  // when rehashing, jump directly to 1M items
+  public static final int FIRST_SIZE_UP = 1048576;
 
   protected final boolean isFullOuter;
 
@@ -60,16 +64,21 @@ public abstract class VectorMapJoinFastHashTable implements VectorMapJoinHashTab
   }
 
   private static void validateCapacity(long capacity) {
-    if (Long.bitCount(capacity) != 1) {
-      throw new AssertionError("Capacity must be a power of two");
-    }
     if (capacity <= 0) {
       throw new AssertionError("Invalid capacity " + capacity);
+    }
+    if (Long.bitCount(capacity) != 1) {
+      throw new AssertionError("Capacity must be a power of two " + capacity);
     }
   }
 
   private static int nextHighestPowerOfTwo(int v) {
-    return Integer.highestOneBit(v) << 1;
+    int value = Integer.highestOneBit(v);
+    if (Integer.highestOneBit(v) == HIGHEST_INT_POWER_OF_2) {
+      LOG.warn("Reached highest 2 power: {}", HIGHEST_INT_POWER_OF_2);
+      return value;
+    }
+    return value << 1;
   }
 
   public VectorMapJoinFastHashTable(
@@ -78,14 +87,13 @@ public abstract class VectorMapJoinFastHashTable implements VectorMapJoinHashTab
 
     this.isFullOuter = isFullOuter;
 
-    initialCapacity = (Long.bitCount(initialCapacity) == 1)
+    this.logicalHashBucketCount = (Long.bitCount(initialCapacity) == 1)
         ? initialCapacity : nextHighestPowerOfTwo(initialCapacity);
+    LOG.info("Initial Capacity {} Recomputed Capacity {}", initialCapacity, logicalHashBucketCount);
 
-    validateCapacity(initialCapacity);
+    validateCapacity(logicalHashBucketCount);
 
     this.estimatedKeyCount = estimatedKeyCount;
-
-    logicalHashBucketCount = initialCapacity;
     logicalHashBucketMask = logicalHashBucketCount - 1;
     resizeThreshold = (int)(logicalHashBucketCount * loadFactor);
 
@@ -96,6 +104,12 @@ public abstract class VectorMapJoinFastHashTable implements VectorMapJoinHashTab
   @Override
   public int size() {
     return keysAssigned;
+  }
+
+  protected final boolean checkResize() {
+    // resize small hashtables up to a higher width (4096 items), but when there are collisions
+    return (resizeThreshold <= keysAssigned)
+        || (logicalHashBucketCount <= FIRST_SIZE_UP && largestNumberOfSteps > 1);
   }
 
   @Override

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.security;
@@ -21,24 +22,38 @@ package org.apache.hadoop.hive.metastore.security;
 import java.io.IOException;
 import java.util.List;
 
-import junit.framework.TestCase;
 
-import org.apache.hadoop.hive.metastore.HiveMetaStore.HMSHandler;
+
+import org.apache.hadoop.hive.metastore.HMSHandler;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.security.DBTokenStore;
 import org.apache.hadoop.hive.metastore.security.DelegationTokenStore.TokenStoreException;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenSecretManager.DelegationTokenInformation;
 import org.apache.hadoop.security.token.delegation.HiveDelegationTokenSupport;
 import org.junit.Assert;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotSame;
+import org.junit.Test;
 
-public class TestDBTokenStore extends TestCase{
+/**
+ * TestDBTokenStore.
+ */
+public class TestDBTokenStore {
 
+  @Test
   public void testDBTokenStore() throws TokenStoreException, MetaException, IOException {
 
     DelegationTokenStore ts = new DBTokenStore();
-    ts.init(new HMSHandler("Test handler"), HadoopThriftAuthBridge.Server.ServerMode.METASTORE);
+    HMSHandler hms = new HMSHandler("Test handler", MetastoreConf.newMetastoreConf());
+    hms.init();
+    ts.init(hms, HadoopThriftAuthBridge.Server.ServerMode.METASTORE);
     assertEquals(0, ts.getMasterKeys().length);
     assertEquals(false,ts.removeMasterKey(-1));
     try{

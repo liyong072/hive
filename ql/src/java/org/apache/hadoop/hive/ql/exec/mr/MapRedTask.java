@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.mr;
@@ -27,7 +28,7 @@ import java.util.Map;
 import java.util.Properties;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
@@ -37,7 +38,6 @@ import org.apache.hadoop.hive.common.metrics.common.Metrics;
 import org.apache.hadoop.hive.common.metrics.common.MetricsConstant;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.Context;
-import org.apache.hadoop.hive.ql.DriverContext;
 import org.apache.hadoop.hive.ql.MapRedStats;
 import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.exec.SerializationUtilities;
@@ -92,10 +92,10 @@ public class MapRedTask extends ExecDriver implements Serializable {
   }
 
   @Override
-  public int execute(DriverContext driverContext) {
+  public int execute() {
 
-    Context ctx = driverContext.getCtx();
     boolean ctxCreated = false;
+    Context ctx = context;
 
     try {
       if (ctx == null) {
@@ -108,10 +108,10 @@ public class MapRedTask extends ExecDriver implements Serializable {
 
       // auto-determine local mode if allowed
       if (!ctx.isLocalOnlyExecutionMode() &&
-          conf.getBoolVar(HiveConf.ConfVars.LOCALMODEAUTO)) {
+          conf.getBoolVar(HiveConf.ConfVars.LOCAL_MODE_AUTO)) {
 
         if (inputSummary == null) {
-          inputSummary = Utilities.getInputSummary(driverContext.getCtx(), work.getMapWork(), null);
+          inputSummary = Utilities.getInputSummary(ctx, work.getMapWork(), null);
         }
 
         // set the values of totalInputFileSize and totalInputNumFiles, estimating them
@@ -143,7 +143,7 @@ public class MapRedTask extends ExecDriver implements Serializable {
         }
       }
 
-      runningViaChild = conf.getBoolVar(HiveConf.ConfVars.SUBMITVIACHILD);
+      runningViaChild = conf.getBoolVar(HiveConf.ConfVars.SUBMIT_VIA_CHILD);
 
       if (!runningViaChild) {
         // since we are running the mapred task in the same jvm, we should update the job conf
@@ -156,7 +156,7 @@ public class MapRedTask extends ExecDriver implements Serializable {
         }
         // we are not running this mapred task via child jvm
         // so directly invoke ExecDriver
-        int ret = super.execute(driverContext);
+        int ret = super.execute();
 
         // restore the previous properties for framework name, RM address etc.
         if (this.isLocalMode()) {
@@ -173,7 +173,7 @@ public class MapRedTask extends ExecDriver implements Serializable {
       super.setInputAttributes(conf);
 
       // enable assertion
-      String hadoopExec = conf.getVar(HiveConf.ConfVars.HADOOPBIN);
+      String hadoopExec = conf.getVar(HiveConf.ConfVars.HADOOP_BIN);
       String hiveJar = conf.getJar();
 
       String libJars = super.getResource(conf, ResourceType.JAR);
@@ -248,7 +248,7 @@ public class MapRedTask extends ExecDriver implements Serializable {
         // if we are running in local mode - then the amount of memory used
         // by the child jvm can no longer default to the memory used by the
         // parent jvm
-        int hadoopMem = conf.getIntVar(HiveConf.ConfVars.HIVEHADOOPMAXMEM);
+        int hadoopMem = conf.getIntVar(HiveConf.ConfVars.HIVE_HADOOP_MAX_MEM);
         if (hadoopMem == 0) {
           // remove env var that would default child jvm to use parent's memory
           // as default. child jvm would use default memory for a hadoop client
@@ -324,7 +324,7 @@ public class MapRedTask extends ExecDriver implements Serializable {
       try {
         // creating the context can create a bunch of files. So make
         // sure to clear it out
-        if(ctxCreated) {
+        if (ctxCreated) {
           ctx.clear();
         }
 
@@ -442,7 +442,7 @@ public class MapRedTask extends ExecDriver implements Serializable {
             + reducers);
       } else {
         if (inputSummary == null) {
-          inputSummary =  Utilities.getInputSummary(driverContext.getCtx(), work.getMapWork(), null);
+          inputSummary = Utilities.getInputSummary(context, work.getMapWork(), null);
         }
         int reducers = Utilities.estimateNumberOfReducers(conf, inputSummary, work.getMapWork(),
                                                           work.isFinalMapRed());
@@ -454,13 +454,13 @@ public class MapRedTask extends ExecDriver implements Serializable {
       }
       console
           .printInfo("In order to change the average load for a reducer (in bytes):");
-      console.printInfo("  set " + HiveConf.ConfVars.BYTESPERREDUCER.varname
+      console.printInfo("  set " + HiveConf.ConfVars.BYTES_PER_REDUCER.varname
           + "=<number>");
       console.printInfo("In order to limit the maximum number of reducers:");
-      console.printInfo("  set " + HiveConf.ConfVars.MAXREDUCERS.varname
+      console.printInfo("  set " + HiveConf.ConfVars.MAX_REDUCERS.varname
           + "=<number>");
       console.printInfo("In order to set a constant number of reducers:");
-      console.printInfo("  set " + HiveConf.ConfVars.HADOOPNUMREDUCERS
+      console.printInfo("  set " + HiveConf.ConfVars.HADOOP_NUM_REDUCERS
           + "=<number>");
     }
   }
@@ -479,23 +479,23 @@ public class MapRedTask extends ExecDriver implements Serializable {
                                               long inputLength,
                                               long inputFileCount) {
 
-    long maxBytes = conf.getLongVar(HiveConf.ConfVars.LOCALMODEMAXBYTES);
-    long maxInputFiles = conf.getIntVar(HiveConf.ConfVars.LOCALMODEMAXINPUTFILES);
+    long maxBytes = conf.getLongVar(HiveConf.ConfVars.LOCAL_MODE_MAX_BYTES);
+    long maxInputFiles = conf.getIntVar(HiveConf.ConfVars.LOCAL_MODE_MAX_INPUT_FILES);
 
     // check for max input size
     if (inputLength > maxBytes) {
       return "Input Size (= " + inputLength + ") is larger than " +
-        HiveConf.ConfVars.LOCALMODEMAXBYTES.varname + " (= " + maxBytes + ")";
+        HiveConf.ConfVars.LOCAL_MODE_MAX_BYTES.varname + " (= " + maxBytes + ")";
     }
 
     // ideally we would like to do this check based on the number of splits
     // in the absence of an easy way to get the number of splits - do this
-    // based on the total number of files (pessimistically assumming that
+    // based on the total number of files (pessimistically assuming that
     // splits are equal to number of files in worst case)
     if (inputFileCount > maxInputFiles) {
       return "Number of Input Files (= " + inputFileCount +
         ") is larger than " +
-        HiveConf.ConfVars.LOCALMODEMAXINPUTFILES.varname + "(= " + maxInputFiles + ")";
+        HiveConf.ConfVars.LOCAL_MODE_MAX_INPUT_FILES.varname + "(= " + maxInputFiles + ")";
     }
 
     // since local mode only runs with 1 reducers - make sure that the
@@ -523,7 +523,7 @@ public class MapRedTask extends ExecDriver implements Serializable {
       try {
         queryDisplay.updateTaskStatistics(mapRedStats, rj, getId());
       } catch (IOException | JSONException e) {
-        LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e), e);
+        LOG.error("Failed to update web UI stats", e);
       }
     }
   }

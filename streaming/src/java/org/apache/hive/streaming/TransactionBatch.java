@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.streaming;
@@ -21,9 +22,11 @@ package org.apache.hive.streaming;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.hadoop.hive.common.JavaUtils;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.LockComponentBuilder;
 import org.apache.hadoop.hive.metastore.LockRequestBuilder;
 import org.apache.hadoop.hive.metastore.Warehouse;
+import org.apache.hadoop.hive.metastore.api.AbortTxnRequest;
 import org.apache.hadoop.hive.metastore.api.DataOperationType;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.HeartbeatTxnRangeResponse;
@@ -33,6 +36,7 @@ import org.apache.hadoop.hive.metastore.api.LockState;
 import org.apache.hadoop.hive.metastore.api.NoSuchTxnException;
 import org.apache.hadoop.hive.metastore.api.TxnAbortedException;
 import org.apache.hadoop.hive.metastore.api.TxnToWriteId;
+import org.apache.hadoop.hive.metastore.txn.TxnErrorMsg;
 import org.apache.hadoop.hive.ql.lockmgr.DbTxnManager;
 import org.apache.hadoop.hive.ql.lockmgr.LockException;
 import org.apache.thrift.TException;
@@ -114,8 +118,6 @@ public class TransactionBatch extends AbstractStreamingTransaction {
       this.numTxns = conn.getTransactionBatchSize();
       this.tableId = conn.getTable().getTTable().getId();
 
-      setupHeartBeatThread();
-
       List<Long> txnIds = openTxnImpl(username, numTxns);
       txnToWriteIds = allocateWriteIdsImpl(txnIds);
       assert (txnToWriteIds.size() == numTxns);
@@ -132,6 +134,7 @@ public class TransactionBatch extends AbstractStreamingTransaction {
           txnToWriteIds.get(numTxns - 1).getWriteId(), conn.getStatementId());
       this.minTxnId = new AtomicLong(txnIds.get(0));
       this.maxTxnId = txnIds.get(txnIds.size() - 1);
+      setupHeartBeatThread();
       success = true;
     } catch (TException e) {
       throw new StreamingException(conn.toString(), e);
@@ -285,6 +288,20 @@ public class TransactionBatch extends AbstractStreamingTransaction {
               DataOperationType.INSERT);
         }
       }
+
+      // If it is the last transaction in the batch, then close the files and add write events.
+      // We need to close the writer as file checksum can't be obtained on the opened file.
+      if ((currentTxnIndex + 1) >= txnToWriteIds.size()) {
+        // Replication doesn't work if txn batch size > 1 and the last txn is aborted as write events
+        // are ignored by abort txn event causing data loss. However, if the last txn in the batch is
+        // committed, then data gets replicated making eventually consistent, but doesn't guarantee
+        // point-in-time consistency.
+        recordWriter.close();
+
+        // Add write notification events if it is enabled.
+        conn.addWriteNotificationEvents();
+      }
+
       transactionLock.lock();
       try {
         if (key != null) {
@@ -353,7 +370,9 @@ public class TransactionBatch extends AbstractStreamingTransaction {
                 ? 1 : 0), 0);
         for (currentTxnIndex = minOpenTxnIndex;
              currentTxnIndex < txnToWriteIds.size(); currentTxnIndex++) {
-          conn.getMSC().rollbackTxn(txnToWriteIds.get(currentTxnIndex).getTxnId());
+          AbortTxnRequest abortTxnRequest = new AbortTxnRequest(txnToWriteIds.get(currentTxnIndex).getTxnId());
+          abortTxnRequest.setErrorCode(TxnErrorMsg.ABORT_ROLLBACK.getErrorCode());
+          conn.getMSC().rollbackTxn(abortTxnRequest);
           txnStatus[currentTxnIndex] = HiveStreamingConnection.TxnState.ABORTED;
         }
         currentTxnIndex--; //since the loop left it == txnToWriteIds.size()
@@ -368,7 +387,9 @@ public class TransactionBatch extends AbstractStreamingTransaction {
         }
         long currTxnId = getCurrentTxnId();
         if (currTxnId > 0) {
-          conn.getMSC().rollbackTxn(currTxnId);
+          AbortTxnRequest abortTxnRequest = new AbortTxnRequest(currTxnId);
+          abortTxnRequest.setErrorCode(TxnErrorMsg.ABORT_ROLLBACK.getErrorCode());
+          conn.getMSC().rollbackTxn(abortTxnRequest);
           txnStatus[currentTxnIndex] = HiveStreamingConnection.TxnState.ABORTED;
         }
       }
@@ -416,18 +437,26 @@ public class TransactionBatch extends AbstractStreamingTransaction {
     }
   }
 
-  private static LockRequest createLockRequest(final HiveStreamingConnection connection,
+  private static LockRequest createLockRequest(final HiveStreamingConnection conn,
       String partNameForLock, String user, long txnId, String agentInfo) {
     LockRequestBuilder requestBuilder = new LockRequestBuilder(agentInfo);
     requestBuilder.setUser(user);
     requestBuilder.setTransactionId(txnId);
 
     LockComponentBuilder lockCompBuilder = new LockComponentBuilder()
-        .setDbName(connection.getDatabase())
-        .setTableName(connection.getTable().getTableName())
-        .setShared()
+        .setCatName(conn.getTable().getCatName())
+        .setDbName(conn.getDatabase())
+        .setTableName(conn.getTable().getTableName())
+        .setSharedRead()
         .setOperationType(DataOperationType.INSERT);
-    if (connection.isDynamicPartitioning()) {
+
+    boolean isLocklessReadsEnabled = conn.getConf().getBoolVar(HiveConf.ConfVars.HIVE_ACID_LOCKLESS_READS_ENABLED);
+    boolean sharedWrite = !conn.getConf().getBoolVar(HiveConf.ConfVars.TXN_WRITE_X_LOCK);
+
+    if (sharedWrite || isLocklessReadsEnabled) {
+      lockCompBuilder.setSharedWrite();
+    }
+    if (conn.isDynamicPartitioning()) {
       lockCompBuilder.setIsDynamicPartitionWrite(true);
     }
     if (partNameForLock != null && !partNameForLock.isEmpty()) {

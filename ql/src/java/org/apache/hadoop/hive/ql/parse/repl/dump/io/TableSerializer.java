@@ -9,18 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse.repl.dump.io;
 
+import org.apache.hadoop.hive.common.repl.ReplConst;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.ql.ErrorMsg;
-import org.apache.hadoop.hive.ql.exec.repl.util.ReplUtils;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.parse.ReplicationSpec;
 import org.apache.hadoop.hive.ql.parse.SemanticException;
@@ -52,7 +53,8 @@ public class TableSerializer implements JsonWriter.Serializer {
   @Override
   public void writeTo(JsonWriter writer, ReplicationSpec additionalPropertiesProvider)
       throws SemanticException, IOException {
-    if (!Utils.shouldReplicate(additionalPropertiesProvider, tableHandle, false, hiveConf)) {
+    if (!Utils.shouldReplicate(additionalPropertiesProvider, tableHandle,
+            false, null, null, hiveConf)) {
       return;
     }
 
@@ -62,7 +64,7 @@ public class TableSerializer implements JsonWriter.Serializer {
     try {
       TSerializer serializer = new TSerializer(new TJSONProtocol.Factory());
       writer.jsonGenerator
-          .writeStringField(FIELD_NAME, serializer.toString(tTable, UTF_8));
+          .writeStringField(FIELD_NAME, serializer.toString(tTable));
       writer.jsonGenerator.writeFieldName(PartitionSerializer.FIELD_NAME);
       writePartitions(writer, additionalPropertiesProvider);
     } catch (TException e) {
@@ -75,8 +77,8 @@ public class TableSerializer implements JsonWriter.Serializer {
     Map<String, String> parameters = table.getParameters();
     if (parameters != null) {
       parameters.entrySet()
-              .removeIf(e -> (e.getKey().equals(ReplUtils.REPL_CHECKPOINT_KEY) ||
-                      e.getKey().equals(ReplUtils.REPL_FIRST_INC_PENDING_FLAG)));
+              .removeIf(e -> (e.getKey().equals(ReplConst.REPL_TARGET_DB_PROPERTY) ||
+                      e.getKey().equals(ReplConst.REPL_FIRST_INC_PENDING_FLAG)));
     }
 
     if (additionalPropertiesProvider.isInReplicationScope()) {
@@ -85,7 +87,7 @@ public class TableSerializer implements JsonWriter.Serializer {
       if (additionalPropertiesProvider.getReplSpecType()
               != ReplicationSpec.Type.INCREMENTAL_DUMP) {
         table.putToParameters(
-                ReplicationSpec.KEY.CURR_STATE_ID.toString(),
+                ReplicationSpec.KEY.CURR_STATE_ID_SOURCE.toString(),
                 additionalPropertiesProvider.getCurrentReplicationState());
       }
     } else {

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules;
 
@@ -51,16 +52,16 @@ public class HiveProjectMergeRule extends ProjectMergeRule {
 
   @Override
   public boolean matches(RelOptRuleCall call) {
-    // Currently we do not support merging windowing functions with other
+    // Currently, we do not support merging windowing functions with other
     // windowing functions i.e. embedding windowing functions within each
     // other
     final Project topProject = call.rel(0);
     final Project bottomProject = call.rel(1);
-    for (RexNode expr : topProject.getChildExps()) {
+    for (RexNode expr : topProject.getProjects()) {
       if (expr instanceof RexOver) {
         Set<Integer> positions = HiveCalciteUtil.getInputRefs(expr);
         for (int pos : positions) {
-          if (bottomProject.getChildExps().get(pos) instanceof RexOver) {
+          if (bottomProject.getProjects().get(pos) instanceof RexOver) {
             return false;
           }
         }
@@ -76,11 +77,11 @@ public class HiveProjectMergeRule extends ProjectMergeRule {
     // If top project does not reference any column at the bottom project,
     // we can just remove botton project
     final ImmutableBitSet topRefs =
-        RelOptUtil.InputFinder.bits(topProject.getChildExps(), null);
+        RelOptUtil.InputFinder.bits(topProject.getProjects(), null);
     if (topRefs.isEmpty()) {
       RelBuilder relBuilder = call.builder();
       relBuilder.push(bottomProject.getInput());
-      relBuilder.project(topProject.getChildExps());
+      relBuilder.project(topProject.getProjects());
       call.transformTo(relBuilder.build());
       return;
     }

@@ -9,18 +9,23 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service.auth;
 
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.PrivilegedExceptionAction;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -29,7 +34,6 @@ import java.util.StringTokenizer;
 
 import javax.security.auth.Subject;
 
-import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.hive.metastore.security.HadoopThriftAuthBridge;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.http.protocol.BasicHttpContext;
@@ -48,6 +52,7 @@ public final class HttpAuthUtils {
   public static final String WWW_AUTHENTICATE = "WWW-Authenticate";
   public static final String AUTHORIZATION = "Authorization";
   public static final String BASIC = "Basic";
+  public static final String BEARER = "Bearer";
   public static final String NEGOTIATE = "Negotiate";
   private static final Logger LOG = LoggerFactory.getLogger(HttpAuthUtils.class);
   private static final String COOKIE_ATTR_SEPARATOR = "&";
@@ -78,12 +83,14 @@ public final class HttpAuthUtils {
    * @param clientUserName Client User name.
    * @return An unsigned cookie token generated from input parameters.
    * The final cookie generated is of the following format :
-   * cu=<username>&rn=<randomNumber>&s=<cookieSignature>
+   * cu=&lt;username&gt;&amp;rn=&lt;randomNumber&gt;&amp;s=&lt;cookieSignature&gt;
    */
   public static String createCookieToken(String clientUserName) {
     StringBuilder sb = new StringBuilder();
-    sb.append(COOKIE_CLIENT_USER_NAME).append(COOKIE_KEY_VALUE_SEPARATOR).append(clientUserName).
-    append(COOKIE_ATTR_SEPARATOR);
+    sb.append(COOKIE_CLIENT_USER_NAME)
+        .append(COOKIE_KEY_VALUE_SEPARATOR)
+        .append(URLEncoder.encode(clientUserName, StandardCharsets.UTF_8))
+        .append(COOKIE_ATTR_SEPARATOR);
     sb.append(COOKIE_CLIENT_RAND_NUMBER).append(COOKIE_KEY_VALUE_SEPARATOR).
     append((new SecureRandom()).nextLong());
     return sb.toString();
@@ -97,11 +104,17 @@ public final class HttpAuthUtils {
   public static String getUserNameFromCookieToken(String tokenStr) {
     Map<String, String> map = splitCookieToken(tokenStr);
 
-    if (!map.keySet().equals(COOKIE_ATTRIBUTES)) {
-      LOG.error("Invalid token with missing attributes " + tokenStr);
+    if (map == null || !map.keySet().equals(COOKIE_ATTRIBUTES)) {
+      LOG.error("Invalid token with missing attributes {}", tokenStr);
       return null;
     }
-    return map.get(COOKIE_CLIENT_USER_NAME);
+    try {
+      // Reverse the encoding applied in createCookieToken.
+      return URLDecoder.decode(map.get(COOKIE_CLIENT_USER_NAME), StandardCharsets.UTF_8);
+    } catch (IllegalArgumentException e) {
+      LOG.error("Invalid token with malformed user name encoding {}", tokenStr, e);
+      return null;
+    }
   }
 
   /**
@@ -123,7 +136,11 @@ public final class HttpAuthUtils {
       }
       String key = part.substring(0, separator);
       String value = part.substring(separator + 1);
-      map.put(key, value);
+      // Reject duplicate keys to keep the token unambiguous.
+      if (map.put(key, value) != null) {
+        LOG.error("Invalid token with duplicate attribute {}: {}", key, tokenStr);
+        return null;
+      }
     }
     return map;
   }
@@ -142,13 +159,11 @@ public final class HttpAuthUtils {
     public static final String SERVER_HTTP_URL = "SERVER_HTTP_URL";
     private final String serverPrincipal;
     private final String serverHttpUrl;
-    private final Base64 base64codec;
     private final HttpContext httpContext;
 
     public HttpKerberosClientAction(String serverPrincipal, String serverHttpUrl) {
       this.serverPrincipal = serverPrincipal;
       this.serverHttpUrl = serverHttpUrl;
-      base64codec = new Base64(0);
       httpContext = new BasicHttpContext();
       httpContext.setAttribute(SERVER_HTTP_URL, serverHttpUrl);
     }
@@ -172,7 +187,7 @@ public final class HttpAuthUtils {
       byte[] outToken = gssContext.initSecContext(inToken, 0, inToken.length);
       gssContext.dispose();
       // Base64 encoded and stringified token for server
-      return new String(base64codec.encode(outToken));
+      return Base64.getEncoder().encodeToString(outToken);
     }
   }
 }

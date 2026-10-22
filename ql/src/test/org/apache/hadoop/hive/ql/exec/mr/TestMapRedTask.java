@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.exec.mr;
 
@@ -26,16 +27,13 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.util.Arrays;
 
-import javax.security.auth.login.LoginException;
-
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.metrics.common.Metrics;
 import org.apache.hadoop.hive.common.metrics.common.MetricsConstant;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.Context;
-import org.apache.hadoop.hive.ql.DriverContext;
+import org.apache.hadoop.hive.ql.TaskQueue;
 import org.apache.hadoop.hive.ql.QueryState;
-import org.apache.hadoop.hive.ql.exec.spark.SparkTask;
 import org.apache.hadoop.hive.ql.plan.MapWork;
 import org.apache.hadoop.hive.ql.plan.MapredWork;
 import org.apache.hadoop.hive.shims.Utils;
@@ -57,21 +55,20 @@ public class TestMapRedTask {
 
     verify(mockMetrics, times(1)).incrementCounter(MetricsConstant.HIVE_MR_TASKS);
     verify(mockMetrics, never()).incrementCounter(MetricsConstant.HIVE_TEZ_TASKS);
-    verify(mockMetrics, never()).incrementCounter(MetricsConstant.HIVE_SPARK_TASKS);
   }
 
   @Test
-  public void mrTaskSumbitViaChildWithImpersonation() throws IOException, LoginException {
+  public void mrTaskSumbitViaChildWithImpersonation() throws IOException {
     Utils.getUGI().setAuthenticationMethod(PROXY);
 
     Context ctx = Mockito.mock(Context.class);
     when(ctx.getLocalTmpPath()).thenReturn(new Path(System.getProperty("java.io.tmpdir")));
 
-    DriverContext dctx = new DriverContext(ctx);
+    TaskQueue taskQueue = new TaskQueue(ctx);
 
     QueryState queryState = new QueryState.Builder().build();
     HiveConf conf= queryState.getConf();
-    conf.setBoolVar(HiveConf.ConfVars.SUBMITVIACHILD, true);
+    conf.setBoolVar(HiveConf.ConfVars.SUBMIT_VIA_CHILD, true);
 
     MapredWork mrWork = new MapredWork();
     mrWork.setMapWork(Mockito.mock(MapWork.class));
@@ -79,12 +76,12 @@ public class TestMapRedTask {
     MapRedTask mrTask = Mockito.spy(new MapRedTask());
     mrTask.setWork(mrWork);
 
-    mrTask.initialize(queryState, null, dctx, null);
+    mrTask.initialize(queryState, null, taskQueue, ctx);
 
     mrTask.jobExecHelper = Mockito.mock(HadoopJobExecHelper.class);
     when(mrTask.jobExecHelper.progressLocal(Mockito.any(Process.class), Mockito.anyString())).thenReturn(0);
 
-    mrTask.execute(dctx);
+    mrTask.execute();
 
     ArgumentCaptor<String[]> captor = ArgumentCaptor.forClass(String[].class);
     verify(mrTask).spawn(Mockito.anyString(), Mockito.anyString(), captor.capture());

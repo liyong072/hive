@@ -9,17 +9,19 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2;
 
 import org.apache.hadoop.hive.common.type.Date;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.common.type.Timestamp;
+import org.apache.hive.common.util.DateParser;
 
 import java.text.DateFormat;
 import java.text.ParseException;
@@ -121,8 +123,7 @@ public class RandomTypeUtil {
         Integer.valueOf(1800 + r.nextInt(500)),  // year
         Integer.valueOf(1 + r.nextInt(12)),      // month
         Integer.valueOf(1 + r.nextInt(28)));     // day
-    Date dateVal = Date.valueOf(dateStr);
-    return dateVal;
+    return DateParser.parseDate(dateStr);
   }
 
   /**
@@ -131,7 +132,7 @@ public class RandomTypeUtil {
 
   public static final long NANOSECONDS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
   public static final long MILLISECONDS_PER_SECOND = TimeUnit.SECONDS.toMillis(1);
-  public static final long NANOSECONDS_PER_MILLISSECOND = TimeUnit.MILLISECONDS.toNanos(1);
+  public static final long NANOSECONDS_PER_MILLISECOND = TimeUnit.MILLISECONDS.toNanos(1);
 
   private static final ThreadLocal<DateFormat> DATE_FORMAT =
       new ThreadLocal<DateFormat>() {
@@ -172,12 +173,12 @@ public class RandomTypeUtil {
     case 2:
       // Limit to milliseconds only...
       optionalNanos = String.format(".%09d",
-          Integer.valueOf(r.nextInt((int) MILLISECONDS_PER_SECOND)) * NANOSECONDS_PER_MILLISSECOND);
+          Integer.valueOf(r.nextInt((int) MILLISECONDS_PER_SECOND)) * NANOSECONDS_PER_MILLISECOND);
       break;
     case 3:
       // Limit to below milliseconds only...
       optionalNanos = String.format(".%09d",
-          Integer.valueOf(r.nextInt((int) NANOSECONDS_PER_MILLISSECOND)));
+          Integer.valueOf(r.nextInt((int) NANOSECONDS_PER_MILLISECOND)));
       break;
     }
     String timestampStr = String.format("%04d-%02d-%02d %02d:%02d:%02d%s",

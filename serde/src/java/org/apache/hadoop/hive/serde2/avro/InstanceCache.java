@@ -7,19 +7,20 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.serde2.avro;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +36,7 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class InstanceCache<SeedObject, Instance> {
   private static final Logger LOG = LoggerFactory.getLogger(InstanceCache.class);
-  Map<SeedObject, Instance> cache = new HashMap<SeedObject, Instance>();
+  Map<SeedObject, Instance> cache = new ConcurrentHashMap<>();
   
   public InstanceCache() {}
 
@@ -51,20 +52,19 @@ public abstract class InstanceCache<SeedObject, Instance> {
    * Retrieve (or create if it doesn't exist) the correct Instance for this
    * SeedObject using 'seenSchemas' to resolve circular references
    */
-  public synchronized Instance retrieve(SeedObject hv,
-      Set<SeedObject> seenSchemas) throws AvroSerdeException {
-    if(LOG.isDebugEnabled()) LOG.debug("Checking for hv: " + hv.toString());
+  public Instance retrieve(SeedObject hv, Set<SeedObject> seenSchemas)
+    throws AvroSerdeException {
+    LOG.debug("Checking for hv: {}", hv);
 
     if(cache.containsKey(hv)) {
-      if(LOG.isDebugEnabled()) LOG.debug("Returning cache result.");
+      LOG.debug("Returning cache result");
       return cache.get(hv);
+    } else {
+      LOG.debug("Creating new instance and storing in cache");
+      Instance newInstance = makeInstance(hv, seenSchemas);
+      Instance cachedInstance = cache.putIfAbsent(hv, newInstance);
+      return cachedInstance == null ? newInstance : cachedInstance;
     }
-
-    if(LOG.isDebugEnabled()) LOG.debug("Creating new instance and storing in cache");
-
-    Instance instance = makeInstance(hv, seenSchemas);
-    cache.put(hv, instance);
-    return instance;
   }
 
   protected abstract Instance makeInstance(SeedObject hv,

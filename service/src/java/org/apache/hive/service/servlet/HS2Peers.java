@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.service.servlet;
 
@@ -31,11 +32,12 @@ import org.apache.hive.http.HttpServer;
 import org.apache.hive.service.server.HS2ActivePassiveHARegistry;
 import org.apache.hive.service.server.HS2ActivePassiveHARegistryClient;
 import org.apache.hive.service.server.HiveServer2Instance;
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.map.SerializationConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
  * Returns all HS2 instances in Active-Passive standy modes.
@@ -65,7 +67,7 @@ public class HS2Peers extends HttpServlet {
     @JsonIgnore
     public String toJson() throws IOException {
       ObjectMapper mapper = new ObjectMapper();
-      mapper.configure(SerializationConfig.Feature.FAIL_ON_EMPTY_BEANS, false);
+      mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
       return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(this);
     }
   }
@@ -87,7 +89,7 @@ public class HS2Peers extends HttpServlet {
     response.setHeader(HttpConstants.ACCESS_CONTROL_ALLOW_ORIGIN, HttpConstants.WILDCARD);
 
     ServletContext ctx = getServletContext();
-    HiveConf hiveConf = (HiveConf) ctx.getAttribute("hiveconf");
+    HiveConf hiveConf = (HiveConf) ctx.getAttribute(HttpServer.CONF_CONTEXT_ATTRIBUTE);
     HS2ActivePassiveHARegistry hs2Registry = HS2ActivePassiveHARegistryClient.getClient(hiveConf);
     HS2Instances instances = new HS2Instances(hs2Registry.getAll());
     response.getWriter().write(instances.toJson());

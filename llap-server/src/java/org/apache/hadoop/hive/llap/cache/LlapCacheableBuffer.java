@@ -9,13 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.llap.cache;
+
+import org.apache.hadoop.hive.common.io.CacheTag;
 
 /**
  * Buffer that can be managed by LowLevelEvictionPolicy.
@@ -44,7 +47,7 @@ public abstract class LlapCacheableBuffer {
   public static final int INVALIDATE_OK = 0, INVALIDATE_FAILED = 1, INVALIDATE_ALREADY_INVALID = 2;
   protected abstract int invalidate();
   public abstract long getMemoryUsage();
-  public abstract void notifyEvicted(EvictionDispatcher evictionDispatcher);
+  public abstract void notifyEvicted(EvictionDispatcher evictionDispatcher, boolean isProactiveEviction);
 
   @Override
   public String toString() {
@@ -56,7 +59,24 @@ public abstract class LlapCacheableBuffer {
         + lastUpdate + " " + (isLocked() ? "!" : ".") + "]";
   }
 
-  public abstract String getTag();
+  public abstract CacheTag getTag();
 
   protected abstract boolean isLocked();
+
+  /**
+   * Marks this buffer as eligible for proactive eviction.
+   * @return buffer size
+   */
+  public abstract long markForEviction();
+
+  /**
+   * Un-marks proactive eviction flag from this buffer.
+   */
+  public abstract void removeProactiveEvictionMark();
+
+  /**
+   * Checks if this buffer is marked for proactive eviction
+   * @return true if marked
+   */
+  public abstract boolean isMarkedForEviction();
 }

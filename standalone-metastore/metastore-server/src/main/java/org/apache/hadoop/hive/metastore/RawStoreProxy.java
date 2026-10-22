@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
@@ -26,7 +27,7 @@ import java.lang.reflect.UndeclaredThrowableException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang.ClassUtils;
+import org.apache.commons.lang3.ClassUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
@@ -47,7 +48,7 @@ public class RawStoreProxy implements InvocationHandler {
   private final long socketTimeout;
 
   protected RawStoreProxy(Configuration hiveConf, Configuration conf,
-      Class<? extends RawStore> rawStoreClass, int id) throws MetaException {
+      Class<? extends RawStore> rawStoreClass) throws MetaException {
     this.conf = conf;
     this.hiveConf = hiveConf;
     this.socketTimeout = MetastoreConf.getTimeVar(hiveConf,
@@ -59,12 +60,12 @@ public class RawStoreProxy implements InvocationHandler {
     this.base = ReflectionUtils.newInstance(rawStoreClass, conf);
   }
 
-  public static RawStore getProxy(Configuration hiveConf, Configuration conf, String rawStoreClassName,
-      int id) throws MetaException {
+  public static RawStore getProxy(Configuration hiveConf, Configuration conf, String rawStoreClassName)
+      throws MetaException {
 
     Class<? extends RawStore> baseClass = JavaUtils.getClass(rawStoreClassName, RawStore.class);
 
-    RawStoreProxy handler = new RawStoreProxy(hiveConf, conf, baseClass, id);
+    RawStoreProxy handler = new RawStoreProxy(hiveConf, conf, baseClass);
 
     // Look for interfaces on both the class and all base classes.
     return (RawStore) Proxy.newProxyInstance(RawStoreProxy.class.getClassLoader(),

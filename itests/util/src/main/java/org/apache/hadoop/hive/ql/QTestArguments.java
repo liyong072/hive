@@ -9,14 +9,22 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql;
+
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.ql.QTestMiniClusters.FsType;
+import org.apache.hadoop.hive.ql.QTestMiniClusters.QTestSetup;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * QTestArguments composite used as arguments holder for QTestUtil initialization.
@@ -26,21 +34,23 @@ public final class QTestArguments {
   private String outDir;
   private String logDir;
   private String confDir;
-  private QTestUtil.MiniClusterType clusterType;
+  private QTestMiniClusters.MiniClusterType clusterType;
   private String initScript;
   private String cleanupScript;
   private boolean withLlapIo;
-  private QTestUtil.FsType fsType;
-  private QTestUtil.QTestSetup qtestSetup;
+  private FsType fsType;
+  private QTestSetup qtestSetup;
+
+  private Map<HiveConf.ConfVars,String> customConfigValueMap;
 
   private QTestArguments() {
   }
 
-  public QTestUtil.MiniClusterType getClusterType() {
+  public QTestMiniClusters.MiniClusterType getClusterType() {
     return clusterType;
   }
 
-  private void setClusterType(QTestUtil.MiniClusterType clusterType) {
+  private void setClusterType(QTestMiniClusters.MiniClusterType clusterType) {
     this.clusterType = clusterType;
   }
 
@@ -92,20 +102,28 @@ public final class QTestArguments {
     this.withLlapIo = withLlapIo;
   }
 
-  public QTestUtil.FsType getFsType() {
+  public FsType getFsType() {
     return fsType;
   }
 
-  private void setFsType(QTestUtil.FsType fsType) {
+  private void setFsType(QTestMiniClusters.FsType fsType) {
     this.fsType = fsType;
   }
 
-  public QTestUtil.QTestSetup getQTestSetup() {
+  public QTestSetup getQTestSetup() {
     return qtestSetup;
   }
 
-  private void setQTestSetup(QTestUtil.QTestSetup qtestSetup) {
+  private void setQTestSetup(QTestSetup qtestSetup) {
     this.qtestSetup = qtestSetup;
+  }
+
+  private void setCustomConfigValueMap(Map<HiveConf.ConfVars,String> customConfigValueMap){
+    this.customConfigValueMap = customConfigValueMap;
+  }
+
+  public Map<HiveConf.ConfVars, String> getCustomConfs() {
+    return this.customConfigValueMap;
   }
 
   /**
@@ -116,14 +134,16 @@ public final class QTestArguments {
     private String outDir;
     private String logDir;
     private String confDir;
-    private QTestUtil.MiniClusterType clusterType;
+    private QTestMiniClusters.MiniClusterType clusterType;
     private String initScript;
     private String cleanupScript;
     private boolean withLlapIo;
-    private QTestUtil.FsType fsType;
-    private QTestUtil.QTestSetup qtestSetup;
+    private FsType fsType;
+    private QTestSetup qtestSetup;
 
-    private QTestArgumentsBuilder(){
+    private Map<HiveConf.ConfVars, String> customConfigValueMap;
+
+    private QTestArgumentsBuilder() {
     }
 
     public static QTestArgumentsBuilder instance() {
@@ -145,7 +165,7 @@ public final class QTestArguments {
       return this;
     }
 
-    public QTestArgumentsBuilder withClusterType(QTestUtil.MiniClusterType clusterType) {
+    public QTestArgumentsBuilder withClusterType(QTestMiniClusters.MiniClusterType clusterType) {
       this.clusterType = clusterType;
       return this;
     }
@@ -165,13 +185,18 @@ public final class QTestArguments {
       return this;
     }
 
-    public QTestArgumentsBuilder withFsType(QTestUtil.FsType fsType) {
+    public QTestArgumentsBuilder withFsType(QTestMiniClusters.FsType fsType) {
       this.fsType = fsType;
       return this;
     }
 
-    public QTestArgumentsBuilder withQTestSetup(QTestUtil.QTestSetup qtestSetup) {
+    public QTestArgumentsBuilder withQTestSetup(QTestSetup qtestSetup) {
       this.qtestSetup = qtestSetup;
+      return this;
+    }
+
+    public QTestArgumentsBuilder withCustomConfigValueMap(Map<HiveConf.ConfVars, String> customConfigValueMap) {
+      this. customConfigValueMap =  customConfigValueMap;
       return this;
     }
 
@@ -184,13 +209,14 @@ public final class QTestArguments {
       testArguments.setInitScript(initScript);
       testArguments.setCleanupScript(cleanupScript);
       testArguments.setWithLlapIo(withLlapIo);
-
+      
       testArguments.setFsType(
           fsType != null ? fsType : clusterType.getDefaultFsType());
 
       testArguments.setQTestSetup(
-          qtestSetup != null ? qtestSetup : new QTestUtil.QTestSetup());
+          qtestSetup != null ? qtestSetup : new QTestSetup());
 
+      testArguments.setCustomConfigValueMap(customConfigValueMap != null ? customConfigValueMap : new HashMap<>());
       return testArguments;
     }
   }

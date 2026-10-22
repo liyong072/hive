@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hive.service.cli;
@@ -50,7 +51,7 @@ public class ColumnDescriptor {
   public static ColumnDescriptor newPrimitiveColumnDescriptor(String name, String comment,
       Type type, int position) {
     // Current usage looks like it's only for metadata columns, but if that changes then
-    // this method may need to require a type qualifiers aruments.
+    // this method may need to require a type qualifiers arguments.
     return new ColumnDescriptor(name, comment, new TypeDescriptor(type), position);
   }
 

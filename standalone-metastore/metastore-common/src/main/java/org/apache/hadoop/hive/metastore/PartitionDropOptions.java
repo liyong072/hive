@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore;
@@ -27,6 +28,9 @@ public class PartitionDropOptions {
   public boolean ifExists = false;
   public boolean returnResults = true;
   public boolean purgeData = false;
+
+  public Long writeId;
+  public Long txnId;
 
   public static PartitionDropOptions instance() { return new PartitionDropOptions(); }
 
@@ -48,6 +52,15 @@ public class PartitionDropOptions {
   public PartitionDropOptions purgeData(boolean purgeData) {
     this.purgeData = purgeData;
     return this;
+  }
+
+  public PartitionDropOptions setWriteId(Long writeId) {
+    this.writeId = writeId;
+    return this;
+  }
+
+  public void setTxnId(Long txnId) {
+    this.txnId = txnId;
   }
 
 } // class PartitionDropSwitches;

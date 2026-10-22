@@ -90,9 +90,9 @@ STAGE PLANS:
       Processor Tree:
         TableScan
           alias: customer_removal_n0
-          filterExpr: (c_nation) IN ('USA', 'INDIA') (type: boolean)
+          filterExpr: (c_nation) IN ('INDIA', 'USA') (type: boolean)
           Filter Operator
-            predicate: (c_nation) IN ('USA', 'INDIA') (type: boolean)
+            predicate: (c_nation) IN ('INDIA', 'USA') (type: boolean)
             Select Operator
               expressions: c_custkey (type: bigint)
               outputColumnNames: _col0
@@ -118,9 +118,9 @@ STAGE PLANS:
       Processor Tree:
         TableScan
           alias: customer_removal_n0
-          filterExpr: (c_nation) IN ('USA', 'INDIA') (type: boolean)
+          filterExpr: (c_nation) IN ('INDIA', 'USA') (type: boolean)
           Filter Operator
-            predicate: (c_nation) IN ('USA', 'INDIA') (type: boolean)
+            predicate: (c_nation) IN ('INDIA', 'USA') (type: boolean)
             Select Operator
               expressions: c_custkey (type: bigint)
               outputColumnNames: _col0
@@ -187,17 +187,23 @@ STAGE PLANS:
                   Filter Operator
                     predicate: (d_year) IN (1985, 2004) (type: boolean)
                     Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
-                    Select Operator
-                      expressions: d_datekey (type: bigint)
-                      outputColumnNames: _col0
+                    Top N Key Operator
+                      sort order: +
+                      keys: d_datekey (type: bigint)
+                      null sort order: z
                       Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
-                      Reduce Output Operator
-                        key expressions: _col0 (type: bigint)
-                        sort order: +
+                      top n: 10
+                      Select Operator
+                        expressions: d_datekey (type: bigint)
+                        outputColumnNames: _col0
                         Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
-                        TopN Hash Memory Usage: 0.1
+                        Reduce Output Operator
+                          key expressions: _col0 (type: bigint)
+                          null sort order: z
+                          sort order: +
+                          Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -255,17 +261,23 @@ STAGE PLANS:
                   Filter Operator
                     predicate: (d_year) IN (1985, 2004) (type: boolean)
                     Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
-                    Select Operator
-                      expressions: d_datekey (type: bigint)
-                      outputColumnNames: _col0
+                    Top N Key Operator
+                      sort order: +
+                      keys: d_datekey (type: bigint)
+                      null sort order: z
                       Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
-                      Reduce Output Operator
-                        key expressions: _col0 (type: bigint)
-                        sort order: +
+                      top n: 10
+                      Select Operator
+                        expressions: d_datekey (type: bigint)
+                        outputColumnNames: _col0
                         Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
-                        TopN Hash Memory Usage: 0.1
+                        Reduce Output Operator
+                          key expressions: _col0 (type: bigint)
+                          null sort order: z
+                          sort order: +
+                          Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -324,15 +336,16 @@ STAGE PLANS:
                   Filter Operator
                     predicate: (d_year) IN (1985, 2004) (type: boolean)
                     Statistics: Num rows: 1 Data size: 20 Basic stats: COMPLETE Column stats: NONE
-                    Select Operator
-                      expressions: d_datekey (type: bigint), d_id (type: bigint)
-                      outputColumnNames: d_datekey, d_id
+                    Top N Key Operator
+                      sort order: ++
+                      keys: d_datekey (type: bigint), d_id (type: bigint)
+                      null sort order: zz
                       Statistics: Num rows: 1 Data size: 20 Basic stats: COMPLETE Column stats: NONE
-                      Top N Key Operator
-                        sort order: ++
-                        keys: d_datekey (type: bigint), d_id (type: bigint)
+                      top n: 10
+                      Select Operator
+                        expressions: d_datekey (type: bigint), d_id (type: bigint)
+                        outputColumnNames: d_datekey, d_id
                         Statistics: Num rows: 1 Data size: 20 Basic stats: COMPLETE Column stats: NONE
-                        top n: 10
                         Group By Operator
                           aggregations: count()
                           keys: d_datekey (type: bigint), d_id (type: bigint)
@@ -342,13 +355,13 @@ STAGE PLANS:
                           Statistics: Num rows: 1 Data size: 20 Basic stats: COMPLETE Column stats: NONE
                           Reduce Output Operator
                             key expressions: _col0 (type: bigint), _col1 (type: bigint)
+                            null sort order: zz
                             sort order: ++
                             Map-reduce partition columns: _col0 (type: bigint), _col1 (type: bigint)
                             Statistics: Num rows: 1 Data size: 20 Basic stats: COMPLETE Column stats: NONE
-                            TopN Hash Memory Usage: 0.1
                             value expressions: _col2 (type: bigint)
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -364,9 +377,9 @@ STAGE PLANS:
                   Statistics: Num rows: 1 Data size: 20 Basic stats: COMPLETE Column stats: NONE
                   Reduce Output Operator
                     key expressions: _col1 (type: bigint)
+                    null sort order: z
                     sort order: +
                     Statistics: Num rows: 1 Data size: 20 Basic stats: COMPLETE Column stats: NONE
-                    TopN Hash Memory Usage: 0.1
                     value expressions: _col0 (type: bigint)
         Reducer 3 
             Execution mode: vectorized, llap
@@ -495,11 +508,12 @@ STAGE PLANS:
                     Statistics: Num rows: 2 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                     Reduce Output Operator
                       key expressions: _col0 (type: bigint)
+                      null sort order: z
                       sort order: +
                       Map-reduce partition columns: _col0 (type: bigint)
                       Statistics: Num rows: 2 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Map 3 
             Map Operator Tree:
                 TableScan
@@ -511,11 +525,12 @@ STAGE PLANS:
                     Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
                     Reduce Output Operator
                       key expressions: _col0 (type: bigint)
+                      null sort order: z
                       sort order: +
                       Map-reduce partition columns: _col0 (type: bigint)
                       Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: llap
             Reduce Operator Tree:
@@ -586,30 +601,31 @@ STAGE PLANS:
                   Statistics: Num rows: 2 Data size: 104 Basic stats: COMPLETE Column stats: COMPLETE
                   Filter Operator
                     predicate: (d_year) IN (1985, 2004) (type: boolean)
-                    Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
-                    Select Operator
-                      expressions: d_datekey (type: bigint), d_sellingseason (type: string)
-                      outputColumnNames: d_datekey, d_sellingseason
-                      Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
-                      Top N Key Operator
-                        sort order: ++
-                        keys: d_datekey (type: bigint), d_sellingseason (type: string)
-                        Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
-                        top n: 10
+                    Statistics: Num rows: 2 Data size: 104 Basic stats: COMPLETE Column stats: COMPLETE
+                    Top N Key Operator
+                      sort order: ++
+                      keys: d_datekey (type: bigint), d_sellingseason (type: string)
+                      null sort order: zz
+                      Statistics: Num rows: 2 Data size: 104 Basic stats: COMPLETE Column stats: COMPLETE
+                      top n: 10
+                      Select Operator
+                        expressions: d_datekey (type: bigint), d_sellingseason (type: string)
+                        outputColumnNames: d_datekey, d_sellingseason
+                        Statistics: Num rows: 2 Data size: 104 Basic stats: COMPLETE Column stats: COMPLETE
                         Group By Operator
                           keys: d_datekey (type: bigint), d_sellingseason (type: string)
-                          minReductionHashAggr: 0.0
+                          minReductionHashAggr: 0.4
                           mode: hash
                           outputColumnNames: _col0, _col1
                           Statistics: Num rows: 1 Data size: 92 Basic stats: COMPLETE Column stats: COMPLETE
                           Reduce Output Operator
                             key expressions: _col0 (type: bigint), _col1 (type: string)
+                            null sort order: zz
                             sort order: ++
                             Map-reduce partition columns: _col0 (type: bigint), _col1 (type: string)
                             Statistics: Num rows: 1 Data size: 92 Basic stats: COMPLETE Column stats: COMPLETE
-                            TopN Hash Memory Usage: 0.1
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -624,9 +640,9 @@ STAGE PLANS:
                   Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
                   Reduce Output Operator
                     key expressions: _col0 (type: bigint)
+                    null sort order: z
                     sort order: +
                     Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
-                    TopN Hash Memory Usage: 0.1
         Reducer 3 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -681,10 +697,10 @@ STAGE PLANS:
             Map Operator Tree:
                 TableScan
                   alias: customer_removal_n0
-                  filterExpr: (c_nation) IN ('USA', 'INDIA') (type: boolean)
+                  filterExpr: (c_nation) IN ('INDIA', 'USA') (type: boolean)
                   Statistics: Num rows: 1 Data size: 92 Basic stats: COMPLETE Column stats: COMPLETE
                   Filter Operator
-                    predicate: (c_nation) IN ('USA', 'INDIA') (type: boolean)
+                    predicate: (c_nation) IN ('INDIA', 'USA') (type: boolean)
                     Statistics: Num rows: 1 Data size: 92 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: c_custkey (type: bigint)
@@ -693,18 +709,19 @@ STAGE PLANS:
                       Group By Operator
                         aggregations: count()
                         keys: c_custkey (type: bigint)
-                        minReductionHashAggr: 0.0
+                        minReductionHashAggr: 0.4
                         mode: hash
                         outputColumnNames: _col0, _col1
                         Statistics: Num rows: 1 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                         Reduce Output Operator
                           key expressions: _col0 (type: bigint)
+                          null sort order: z
                           sort order: +
                           Map-reduce partition columns: _col0 (type: bigint)
                           Statistics: Num rows: 1 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                           value expressions: _col1 (type: bigint)
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -735,18 +752,22 @@ STAGE PLANS:
 PREHOOK: query: DROP TABLE customer_removal_n0
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@customer_removal_n0
+PREHOOK: Output: database:default
 PREHOOK: Output: default@customer_removal_n0
 POSTHOOK: query: DROP TABLE customer_removal_n0
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@customer_removal_n0
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@customer_removal_n0
 PREHOOK: query: DROP TABLE dates_removal_n0
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@dates_removal_n0
+PREHOOK: Output: database:default
 PREHOOK: Output: default@dates_removal_n0
 POSTHOOK: query: DROP TABLE dates_removal_n0
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@dates_removal_n0
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@dates_removal_n0
 PREHOOK: query: -- group by reduction optimization
   create table dest_g21 (key1 int, value1 double, primary key(key1) disable rely)
@@ -919,18 +940,19 @@ STAGE PLANS:
                     Group By Operator
                       aggregations: count()
                       keys: key1 (type: int)
-                      minReductionHashAggr: 0.0
+                      minReductionHashAggr: 0.4
                       mode: hash
                       outputColumnNames: _col0, _col1
-                      Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                      Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                       Reduce Output Operator
                         key expressions: _col0 (type: int)
+                        null sort order: z
                         sort order: +
                         Map-reduce partition columns: _col0 (type: int)
-                        Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                        Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                         value expressions: _col1 (type: bigint)
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -939,14 +961,14 @@ STAGE PLANS:
                 keys: KEY._col0 (type: int)
                 mode: mergepartial
                 outputColumnNames: _col0, _col1
-                Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                 Select Operator
                   expressions: _col1 (type: bigint)
                   outputColumnNames: _col0
-                  Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 6 Data size: 48 Basic stats: COMPLETE Column stats: COMPLETE
                   File Output Operator
                     compressed: false
-                    Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 6 Data size: 48 Basic stats: COMPLETE Column stats: COMPLETE
                     table:
                         input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                         output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1008,18 +1030,19 @@ STAGE PLANS:
                       Group By Operator
                         aggregations: count()
                         keys: key1 (type: int)
-                        minReductionHashAggr: 0.0
+                        minReductionHashAggr: 0.4
                         mode: hash
                         outputColumnNames: _col0, _col1
-                        Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                        Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                         Reduce Output Operator
                           key expressions: _col0 (type: int)
+                          null sort order: z
                           sort order: +
                           Map-reduce partition columns: _col0 (type: int)
-                          Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                          Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                           value expressions: _col1 (type: bigint)
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -1028,14 +1051,14 @@ STAGE PLANS:
                 keys: KEY._col0 (type: int)
                 mode: mergepartial
                 outputColumnNames: _col0, _col1
-                Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                 Select Operator
                   expressions: _col1 (type: bigint)
                   outputColumnNames: _col0
-                  Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 6 Data size: 48 Basic stats: COMPLETE Column stats: COMPLETE
                   File Output Operator
                     compressed: false
-                    Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 6 Data size: 48 Basic stats: COMPLETE Column stats: COMPLETE
                     table:
                         input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                         output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1091,11 +1114,12 @@ STAGE PLANS:
                     Statistics: Num rows: 6 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                     Reduce Output Operator
                       key expressions: _col0 (type: int)
+                      null sort order: z
                       sort order: +
                       Map-reduce partition columns: _col0 (type: int)
                       Statistics: Num rows: 6 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Map 3 
             Map Operator Tree:
                 TableScan
@@ -1104,18 +1128,19 @@ STAGE PLANS:
                   Statistics: Num rows: 6 Data size: 64 Basic stats: COMPLETE Column stats: COMPLETE
                   Filter Operator
                     predicate: (value1 > 2.0D) (type: boolean)
-                    Statistics: Num rows: 2 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 4 Data size: 48 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key1 (type: int)
                       outputColumnNames: _col0
-                      Statistics: Num rows: 2 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                      Statistics: Num rows: 4 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                       Reduce Output Operator
                         key expressions: _col0 (type: int)
+                        null sort order: z
                         sort order: +
                         Map-reduce partition columns: _col0 (type: int)
-                        Statistics: Num rows: 2 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                        Statistics: Num rows: 4 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: llap
             Reduce Operator Tree:
@@ -1126,10 +1151,10 @@ STAGE PLANS:
                   0 _col0 (type: int)
                   1 _col0 (type: int)
                 outputColumnNames: _col0
-                Statistics: Num rows: 2 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 4 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                 File Output Operator
                   compressed: false
-                  Statistics: Num rows: 2 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 4 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                   table:
                       input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                       output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1182,11 +1207,12 @@ STAGE PLANS:
                     Statistics: Num rows: 6 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                     Reduce Output Operator
                       key expressions: _col0 (type: int)
+                      null sort order: z
                       sort order: +
                       Map-reduce partition columns: _col0 (type: int)
                       Statistics: Num rows: 6 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Map 4 
             Map Operator Tree:
                 TableScan
@@ -1195,18 +1221,19 @@ STAGE PLANS:
                   Statistics: Num rows: 6 Data size: 64 Basic stats: COMPLETE Column stats: COMPLETE
                   Filter Operator
                     predicate: (value1 > 2.0D) (type: boolean)
-                    Statistics: Num rows: 2 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 4 Data size: 48 Basic stats: COMPLETE Column stats: COMPLETE
                     Select Operator
                       expressions: key1 (type: int)
                       outputColumnNames: _col0
-                      Statistics: Num rows: 2 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                      Statistics: Num rows: 4 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                       Reduce Output Operator
                         key expressions: _col0 (type: int)
+                        null sort order: z
                         sort order: +
                         Map-reduce partition columns: _col0 (type: int)
-                        Statistics: Num rows: 2 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                        Statistics: Num rows: 4 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: llap
             Reduce Operator Tree:
@@ -1217,19 +1244,20 @@ STAGE PLANS:
                   0 _col0 (type: int)
                   1 _col0 (type: int)
                 outputColumnNames: _col0
-                Statistics: Num rows: 2 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 4 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                 Group By Operator
                   aggregations: count()
                   keys: _col0 (type: int)
-                  minReductionHashAggr: 0.0
+                  minReductionHashAggr: 0.4
                   mode: hash
                   outputColumnNames: _col0, _col1
-                  Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
                   Reduce Output Operator
                     key expressions: _col0 (type: int)
+                    null sort order: z
                     sort order: +
                     Map-reduce partition columns: _col0 (type: int)
-                    Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
                     value expressions: _col1 (type: bigint)
         Reducer 3 
             Execution mode: vectorized, llap
@@ -1239,14 +1267,14 @@ STAGE PLANS:
                 keys: KEY._col0 (type: int)
                 mode: mergepartial
                 outputColumnNames: _col0, _col1
-                Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
                 Select Operator
                   expressions: _col1 (type: bigint)
                   outputColumnNames: _col0
-                  Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                   File Output Operator
                     compressed: false
-                    Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                     table:
                         input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                         output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1345,18 +1373,19 @@ STAGE PLANS:
                       Group By Operator
                         aggregations: sum(key1)
                         keys: key1 (type: int)
-                        minReductionHashAggr: 0.0
+                        minReductionHashAggr: 0.4
                         mode: hash
                         outputColumnNames: _col0, _col1
-                        Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                        Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                         Reduce Output Operator
                           key expressions: _col0 (type: int)
+                          null sort order: z
                           sort order: +
                           Map-reduce partition columns: _col0 (type: int)
-                          Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                          Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                           value expressions: _col1 (type: bigint)
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -1365,10 +1394,10 @@ STAGE PLANS:
                 keys: KEY._col0 (type: int)
                 mode: mergepartial
                 outputColumnNames: _col0, _col1
-                Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                 File Output Operator
                   compressed: false
-                  Statistics: Num rows: 3 Data size: 36 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 6 Data size: 72 Basic stats: COMPLETE Column stats: COMPLETE
                   table:
                       input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                       output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1388,17 +1417,19 @@ POSTHOOK: query: select key1, sm from (select key1, count(key1), sum(key1) as sm
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@dest_g21
 #### A masked pattern was here ####
+3	3
 1	1
 2	2
-3	3
 4	4
 PREHOOK: query: DROP table dest_g21
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@dest_g21
+PREHOOK: Output: database:default
 PREHOOK: Output: default@dest_g21
 POSTHOOK: query: DROP table dest_g21
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@dest_g21
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@dest_g21
 PREHOOK: query: CREATE TABLE tconst(i int NOT NULL disable rely, j INT NOT NULL disable norely, d_year string)
 PREHOOK: type: CREATETABLE
@@ -1450,17 +1481,18 @@ STAGE PLANS:
                     Statistics: Num rows: 3 Data size: 288 Basic stats: COMPLETE Column stats: COMPLETE
                     Group By Operator
                       keys: i (type: int), j (type: int), d_year (type: string)
-                      minReductionHashAggr: 0.0
+                      minReductionHashAggr: 0.4
                       mode: hash
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
+                      Statistics: Num rows: 3 Data size: 288 Basic stats: COMPLETE Column stats: COMPLETE
                       Reduce Output Operator
                         key expressions: _col0 (type: int), _col1 (type: int), _col2 (type: string)
+                        null sort order: zzz
                         sort order: +++
                         Map-reduce partition columns: _col0 (type: int), _col1 (type: int), _col2 (type: string)
-                        Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
+                        Statistics: Num rows: 3 Data size: 288 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -1468,14 +1500,14 @@ STAGE PLANS:
                 keys: KEY._col0 (type: int), KEY._col1 (type: int), KEY._col2 (type: string)
                 mode: mergepartial
                 outputColumnNames: _col0, _col1, _col2
-                Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 3 Data size: 288 Basic stats: COMPLETE Column stats: COMPLETE
                 Select Operator
                   expressions: _col0 (type: int), _col1 (type: int)
                   outputColumnNames: _col0, _col1
-                  Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                   File Output Operator
                     compressed: false
-                    Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                     table:
                         input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                         output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1495,9 +1527,9 @@ POSTHOOK: query: select i, j from tconst where i is not null group by i,j, d_yea
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@tconst
 #### A masked pattern was here ####
-2	NULL
 1	1
 3	3
+2	NULL
 PREHOOK: query: explain select i, j from tconst where i IS NOT NULL and j IS NOT NULL group by i,j, d_year
 PREHOOK: type: QUERY
 PREHOOK: Input: default@tconst
@@ -1529,17 +1561,18 @@ STAGE PLANS:
                     Statistics: Num rows: 2 Data size: 192 Basic stats: COMPLETE Column stats: COMPLETE
                     Group By Operator
                       keys: i (type: int), j (type: int), d_year (type: string)
-                      minReductionHashAggr: 0.0
+                      minReductionHashAggr: 0.4
                       mode: hash
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
+                      Statistics: Num rows: 2 Data size: 192 Basic stats: COMPLETE Column stats: COMPLETE
                       Reduce Output Operator
                         key expressions: _col0 (type: int), _col1 (type: int), _col2 (type: string)
+                        null sort order: zzz
                         sort order: +++
                         Map-reduce partition columns: _col0 (type: int), _col1 (type: int), _col2 (type: string)
-                        Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
+                        Statistics: Num rows: 2 Data size: 192 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -1547,14 +1580,14 @@ STAGE PLANS:
                 keys: KEY._col0 (type: int), KEY._col1 (type: int), KEY._col2 (type: string)
                 mode: mergepartial
                 outputColumnNames: _col0, _col1, _col2
-                Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 2 Data size: 192 Basic stats: COMPLETE Column stats: COMPLETE
                 Select Operator
                   expressions: _col0 (type: int), _col1 (type: int)
                   outputColumnNames: _col0, _col1
-                  Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 2 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                   File Output Operator
                     compressed: false
-                    Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 2 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                     table:
                         input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                         output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1607,17 +1640,18 @@ STAGE PLANS:
                     Statistics: Num rows: 3 Data size: 288 Basic stats: COMPLETE Column stats: COMPLETE
                     Group By Operator
                       keys: i (type: int), j (type: int), d_year (type: string)
-                      minReductionHashAggr: 0.0
+                      minReductionHashAggr: 0.4
                       mode: hash
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
+                      Statistics: Num rows: 3 Data size: 288 Basic stats: COMPLETE Column stats: COMPLETE
                       Reduce Output Operator
                         key expressions: _col0 (type: int), _col1 (type: int), _col2 (type: string)
+                        null sort order: zzz
                         sort order: +++
                         Map-reduce partition columns: _col0 (type: int), _col1 (type: int), _col2 (type: string)
-                        Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
+                        Statistics: Num rows: 3 Data size: 288 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -1625,14 +1659,14 @@ STAGE PLANS:
                 keys: KEY._col0 (type: int), KEY._col1 (type: int), KEY._col2 (type: string)
                 mode: mergepartial
                 outputColumnNames: _col0, _col1, _col2
-                Statistics: Num rows: 1 Data size: 96 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 3 Data size: 288 Basic stats: COMPLETE Column stats: COMPLETE
                 Select Operator
                   expressions: _col0 (type: int), _col1 (type: int)
                   outputColumnNames: _col0, _col1
-                  Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                   File Output Operator
                     compressed: false
-                    Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                     table:
                         input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                         output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1652,9 +1686,9 @@ POSTHOOK: query: select i,j from tconst where i is not null OR j IS NOT NULL gro
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@tconst
 #### A masked pattern was here ####
-2	NULL
 1	1
 3	3
+2	NULL
 PREHOOK: query: explain select sum(t1.i) from tconst t1 join tconst t2 on t1.i=t2.j group by t1.i, t1.d_year
 PREHOOK: type: QUERY
 PREHOOK: Input: default@tconst
@@ -1687,12 +1721,13 @@ STAGE PLANS:
                     Statistics: Num rows: 3 Data size: 276 Basic stats: COMPLETE Column stats: COMPLETE
                     Reduce Output Operator
                       key expressions: _col0 (type: int)
+                      null sort order: z
                       sort order: +
                       Map-reduce partition columns: _col0 (type: int)
                       Statistics: Num rows: 3 Data size: 276 Basic stats: COMPLETE Column stats: COMPLETE
                       value expressions: _col1 (type: string)
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Map 4 
             Map Operator Tree:
                 TableScan
@@ -1708,11 +1743,12 @@ STAGE PLANS:
                       Statistics: Num rows: 2 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
                       Reduce Output Operator
                         key expressions: _col0 (type: int)
+                        null sort order: z
                         sort order: +
                         Map-reduce partition columns: _col0 (type: int)
                         Statistics: Num rows: 2 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: llap
             Reduce Operator Tree:
@@ -1727,15 +1763,16 @@ STAGE PLANS:
                 Group By Operator
                   aggregations: sum(_col0)
                   keys: _col0 (type: int), _col1 (type: string)
-                  minReductionHashAggr: 0.0
+                  minReductionHashAggr: 0.4
                   mode: hash
                   outputColumnNames: _col0, _col1, _col2
-                  Statistics: Num rows: 1 Data size: 100 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 2 Data size: 200 Basic stats: COMPLETE Column stats: COMPLETE
                   Reduce Output Operator
                     key expressions: _col0 (type: int), _col1 (type: string)
+                    null sort order: zz
                     sort order: ++
                     Map-reduce partition columns: _col0 (type: int), _col1 (type: string)
-                    Statistics: Num rows: 1 Data size: 100 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 2 Data size: 200 Basic stats: COMPLETE Column stats: COMPLETE
                     value expressions: _col2 (type: bigint)
         Reducer 3 
             Execution mode: vectorized, llap
@@ -1745,14 +1782,14 @@ STAGE PLANS:
                 keys: KEY._col0 (type: int), KEY._col1 (type: string)
                 mode: mergepartial
                 outputColumnNames: _col0, _col1, _col2
-                Statistics: Num rows: 1 Data size: 100 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 2 Data size: 200 Basic stats: COMPLETE Column stats: COMPLETE
                 Select Operator
                   expressions: _col2 (type: bigint)
                   outputColumnNames: _col0
-                  Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 2 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                   File Output Operator
                     compressed: false
-                    Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 2 Data size: 16 Basic stats: COMPLETE Column stats: COMPLETE
                     table:
                         input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                         output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1806,12 +1843,13 @@ STAGE PLANS:
                     Statistics: Num rows: 3 Data size: 276 Basic stats: COMPLETE Column stats: COMPLETE
                     Reduce Output Operator
                       key expressions: _col0 (type: int)
+                      null sort order: z
                       sort order: +
                       Map-reduce partition columns: _col0 (type: int)
                       Statistics: Num rows: 3 Data size: 276 Basic stats: COMPLETE Column stats: COMPLETE
                       value expressions: _col1 (type: string)
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Map 4 
             Map Operator Tree:
                 TableScan
@@ -1823,11 +1861,12 @@ STAGE PLANS:
                     Statistics: Num rows: 3 Data size: 12 Basic stats: COMPLETE Column stats: COMPLETE
                     Reduce Output Operator
                       key expressions: _col0 (type: int)
+                      null sort order: z
                       sort order: +
                       Map-reduce partition columns: _col0 (type: int)
                       Statistics: Num rows: 3 Data size: 12 Basic stats: COMPLETE Column stats: COMPLETE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: llap
             Reduce Operator Tree:
@@ -1842,15 +1881,16 @@ STAGE PLANS:
                 Group By Operator
                   aggregations: sum(_col0)
                   keys: _col0 (type: int), _col1 (type: string)
-                  minReductionHashAggr: 0.0
+                  minReductionHashAggr: 0.4
                   mode: hash
                   outputColumnNames: _col0, _col1, _col2
-                  Statistics: Num rows: 1 Data size: 100 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 3 Data size: 300 Basic stats: COMPLETE Column stats: COMPLETE
                   Reduce Output Operator
                     key expressions: _col0 (type: int), _col1 (type: string)
+                    null sort order: zz
                     sort order: ++
                     Map-reduce partition columns: _col0 (type: int), _col1 (type: string)
-                    Statistics: Num rows: 1 Data size: 100 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 3 Data size: 300 Basic stats: COMPLETE Column stats: COMPLETE
                     value expressions: _col2 (type: bigint)
         Reducer 3 
             Execution mode: vectorized, llap
@@ -1860,14 +1900,14 @@ STAGE PLANS:
                 keys: KEY._col0 (type: int), KEY._col1 (type: string)
                 mode: mergepartial
                 outputColumnNames: _col0, _col1, _col2
-                Statistics: Num rows: 1 Data size: 100 Basic stats: COMPLETE Column stats: COMPLETE
+                Statistics: Num rows: 3 Data size: 300 Basic stats: COMPLETE Column stats: COMPLETE
                 Select Operator
                   expressions: _col2 (type: bigint)
                   outputColumnNames: _col0
-                  Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                  Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                   File Output Operator
                     compressed: false
-                    Statistics: Num rows: 1 Data size: 8 Basic stats: COMPLETE Column stats: COMPLETE
+                    Statistics: Num rows: 3 Data size: 24 Basic stats: COMPLETE Column stats: COMPLETE
                     table:
                         input format: org.apache.hadoop.mapred.SequenceFileInputFormat
                         output format: org.apache.hadoop.hive.ql.io.HiveSequenceFileOutputFormat
@@ -1887,16 +1927,18 @@ POSTHOOK: query: select sum(t1.i) from tconst t1 join tconst t2 on t1.i=t2.i gro
 POSTHOOK: type: QUERY
 POSTHOOK: Input: default@tconst
 #### A masked pattern was here ####
-1
 2
+1
 3
 PREHOOK: query: DROP TABLE tconst
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@tconst
+PREHOOK: Output: database:default
 PREHOOK: Output: default@tconst
 POSTHOOK: query: DROP TABLE tconst
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@tconst
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@tconst
 PREHOOK: query: create table dest_g21 (key1 int NOT NULL disable rely, value1 double, UNIQUE(key1) disable rely)
 PREHOOK: type: CREATETABLE
@@ -1974,11 +2016,12 @@ STAGE PLANS:
                       Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
                       Reduce Output Operator
                         key expressions: _col0 (type: int), _col1 (type: double)
+                        null sort order: zz
                         sort order: ++
                         Map-reduce partition columns: _col0 (type: int), _col1 (type: double)
                         Statistics: Num rows: 1 Data size: 12 Basic stats: COMPLETE Column stats: NONE
             Execution mode: vectorized, llap
-            LLAP IO: no inputs
+            LLAP IO: all inputs
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Operator Tree:
@@ -2008,18 +2051,22 @@ STAGE PLANS:
 PREHOOK: query: DROP TABLE dest_g21
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@dest_g21
+PREHOOK: Output: database:default
 PREHOOK: Output: default@dest_g21
 POSTHOOK: query: DROP TABLE dest_g21
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@dest_g21
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@dest_g21
 PREHOOK: query: DROP TABLE dest_g24
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@dest_g24
+PREHOOK: Output: database:default
 PREHOOK: Output: default@dest_g24
 POSTHOOK: query: DROP TABLE dest_g24
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@dest_g24
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@dest_g24
 PREHOOK: query: CREATE TABLE `customer`(
   `c_customer_sk` int,
@@ -2121,8 +2168,12 @@ POSTHOOK: Output: database:default
 POSTHOOK: Output: default@store_sales
 PREHOOK: query: alter table customer add constraint pk_c primary key (c_customer_sk) disable novalidate rely
 PREHOOK: type: ALTERTABLE_ADDCONSTRAINT
+PREHOOK: Input: default@customer
+PREHOOK: Output: default@customer
 POSTHOOK: query: alter table customer add constraint pk_c primary key (c_customer_sk) disable novalidate rely
 POSTHOOK: type: ALTERTABLE_ADDCONSTRAINT
+POSTHOOK: Input: default@customer
+POSTHOOK: Output: default@customer
 PREHOOK: query: alter table customer change column c_customer_id c_customer_id string constraint cid_nn not null disable novalidate rely
 PREHOOK: type: ALTERTABLE_RENAMECOL
 PREHOOK: Input: default@customer
@@ -2133,16 +2184,28 @@ POSTHOOK: Input: default@customer
 POSTHOOK: Output: default@customer
 PREHOOK: query: alter table customer add constraint uk1 UNIQUE(c_customer_id) disable novalidate rely
 PREHOOK: type: ALTERTABLE_ADDCONSTRAINT
+PREHOOK: Input: default@customer
+PREHOOK: Output: default@customer
 POSTHOOK: query: alter table customer add constraint uk1 UNIQUE(c_customer_id) disable novalidate rely
 POSTHOOK: type: ALTERTABLE_ADDCONSTRAINT
+POSTHOOK: Input: default@customer
+POSTHOOK: Output: default@customer
 PREHOOK: query: alter table store_sales add constraint pk_ss primary key (ss_item_sk, ss_ticket_number) disable novalidate rely
 PREHOOK: type: ALTERTABLE_ADDCONSTRAINT
+PREHOOK: Input: default@store_sales
+PREHOOK: Output: default@store_sales
 POSTHOOK: query: alter table store_sales add constraint pk_ss primary key (ss_item_sk, ss_ticket_number) disable novalidate rely
 POSTHOOK: type: ALTERTABLE_ADDCONSTRAINT
+POSTHOOK: Input: default@store_sales
+POSTHOOK: Output: default@store_sales
 PREHOOK: query: alter table store_sales add constraint ss_c foreign key  (ss_customer_sk) references customer (c_customer_sk) disable novalidate rely
 PREHOOK: type: ALTERTABLE_ADDCONSTRAINT
+PREHOOK: Input: default@store_sales
+PREHOOK: Output: default@store_sales
 POSTHOOK: query: alter table store_sales add constraint ss_c foreign key  (ss_customer_sk) references customer (c_customer_sk) disable novalidate rely
 POSTHOOK: type: ALTERTABLE_ADDCONSTRAINT
+POSTHOOK: Input: default@store_sales
+POSTHOOK: Output: default@store_sales
 PREHOOK: query: explain cbo
      select c_customer_id
      from customer
@@ -2176,13 +2239,14 @@ POSTHOOK: Input: default@customer
 POSTHOOK: Input: default@store_sales
 #### A masked pattern was here ####
 CBO PLAN:
-HiveAggregate(group=[{1}])
-  HiveJoin(condition=[=($0, $8)], joinType=[inner], algorithm=[none], cost=[not available])
-    HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
-      HiveTableScan(table=[[default, customer]], table:alias=[customer])
-    HiveProject(ss_customer_sk=[$3])
-      HiveFilter(condition=[IS NOT NULL($3)])
-        HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+HiveProject(c_customer_id=[$0])
+  HiveAggregate(group=[{1}])
+    HiveJoin(condition=[=($0, $8)], joinType=[inner], algorithm=[none], cost=[not available])
+      HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
+        HiveTableScan(table=[[default, customer]], table:alias=[customer])
+      HiveProject(ss_customer_sk=[$3])
+        HiveFilter(condition=[IS NOT NULL($3)])
+          HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
 
 PREHOOK: query: explain cbo
           select c_customer_id
@@ -2217,13 +2281,14 @@ POSTHOOK: Input: default@customer
 POSTHOOK: Input: default@store_sales
 #### A masked pattern was here ####
 CBO PLAN:
-HiveAggregate(group=[{2}])
-  HiveJoin(condition=[=($1, $0)], joinType=[inner], algorithm=[none], cost=[not available])
-    HiveProject(ss_customer_sk=[$3])
-      HiveFilter(condition=[IS NOT NULL($3)])
-        HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
-    HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
-      HiveTableScan(table=[[default, customer]], table:alias=[customer])
+HiveProject(c_customer_id=[$0])
+  HiveAggregate(group=[{2}])
+    HiveJoin(condition=[=($1, $0)], joinType=[inner], algorithm=[none], cost=[not available])
+      HiveProject(ss_customer_sk=[$3])
+        HiveFilter(condition=[IS NOT NULL($3)])
+          HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+      HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
+        HiveTableScan(table=[[default, customer]], table:alias=[customer])
 
 PREHOOK: query: explain cbo
     with year_total as (
@@ -2291,12 +2356,12 @@ POSTHOOK: Input: default@store_sales
 #### A masked pattern was here ####
 CBO PLAN:
 HiveSortLimit(sort0=[$0], dir0=[ASC], fetch=[100])
-  HiveProject(customer_preferred_cust_flag=[$1])
+  HiveProject(t_s_secyear.customer_preferred_cust_flag=[$1])
     HiveAggregate(group=[{1, 4}])
       HiveJoin(condition=[=($0, $8)], joinType=[inner], algorithm=[none], cost=[not available])
         HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
           HiveTableScan(table=[[default, customer]], table:alias=[customer])
-        HiveProject(ss_customer_sk=[$3], /=[/(+(-(-($17, $16), $14), $15), CAST(2):DECIMAL(10, 0))])
+        HiveProject(ss_customer_sk=[$3], $f7=[/(+(-(-($17, $16), $14), $15), 2:DECIMAL(10, 0))])
           HiveFilter(condition=[IS NOT NULL($3)])
             HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
 
@@ -2366,12 +2431,12 @@ POSTHOOK: Input: default@store_sales
 #### A masked pattern was here ####
 CBO PLAN:
 HiveSortLimit(sort0=[$0], dir0=[ASC], fetch=[100])
-  HiveProject(customer_preferred_cust_flag=[$1])
+  HiveProject(t_s_secyear.customer_preferred_cust_flag=[$1])
     HiveAggregate(group=[{1, 4}])
       HiveJoin(condition=[=($0, $8)], joinType=[inner], algorithm=[none], cost=[not available])
         HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
           HiveTableScan(table=[[default, customer]], table:alias=[customer])
-        HiveProject(ss_customer_sk=[$3], /=[/(+(-(-($17, $16), $14), $15), CAST(2):DECIMAL(10, 0))])
+        HiveProject(ss_customer_sk=[$3], $f7=[/(+(-(-($17, $16), $14), $15), 2:DECIMAL(10, 0))])
           HiveFilter(condition=[IS NOT NULL($3)])
             HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
 
@@ -2525,7 +2590,7 @@ POSTHOOK: Input: default@store_sales
 #### A masked pattern was here ####
 CBO PLAN:
 HiveSortLimit(sort0=[$0], dir0=[ASC], fetch=[100])
-  HiveProject(customer_preferred_cust_flag=[$1])
+  HiveProject(t_s_secyear.customer_preferred_cust_flag=[$1])
     HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
       HiveProject(c_customer_id=[$0], c_preferred_cust_flag=[$1])
         HiveAggregate(group=[{1, 4}])
@@ -2533,20 +2598,20 @@ HiveSortLimit(sort0=[$0], dir0=[ASC], fetch=[100])
             HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
               HiveTableScan(table=[[default, customer]], table:alias=[customer])
             HiveJoin(condition=[=($0, $3)], joinType=[inner], algorithm=[none], cost=[not available])
-              HiveProject(ss_sold_date_sk=[$0], ss_customer_sk=[$3], /=[/(+(-(-($17, $16), $14), $15), CAST(2):DECIMAL(10, 0))])
+              HiveProject(ss_sold_date_sk=[$0], ss_customer_sk=[$3], $f8=[/(+(-(-($17, $16), $14), $15), 2:DECIMAL(10, 0))])
                 HiveFilter(condition=[AND(IS NOT NULL($3), IS NOT NULL($0))])
                   HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
               HiveProject(d_date_sk=[$0])
                 HiveFilter(condition=[AND(=($6, 2002), IS NOT NULL($0))])
                   HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
-      HiveProject($f0=[$0])
-        HiveFilter(condition=[>($1, 0)])
+      HiveProject(customer_id=[$0])
+        HiveFilter(condition=[>($1, 0:DECIMAL(1, 0))])
           HiveAggregate(group=[{1}], agg#0=[sum($10)])
             HiveJoin(condition=[=($0, $9)], joinType=[inner], algorithm=[none], cost=[not available])
               HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
                 HiveTableScan(table=[[default, customer]], table:alias=[customer])
               HiveJoin(condition=[=($0, $3)], joinType=[inner], algorithm=[none], cost=[not available])
-                HiveProject(ss_sold_date_sk=[$0], ss_customer_sk=[$3], /=[/(+(-(-($17, $16), $14), $15), CAST(2):DECIMAL(10, 0))])
+                HiveProject(ss_sold_date_sk=[$0], ss_customer_sk=[$3], $f8=[/(+(-(-($17, $16), $14), $15), 2:DECIMAL(10, 0))])
                   HiveFilter(condition=[AND(IS NOT NULL($3), IS NOT NULL($0))])
                     HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
                 HiveProject(d_date_sk=[$0])
@@ -2596,9 +2661,9 @@ POSTHOOK: Input: default@customer
 POSTHOOK: Input: default@store_sales
 #### A masked pattern was here ####
 CBO PLAN:
-HiveAggregate(group=[{0}])
-  HiveJoin(condition=[=($0, $8)], joinType=[inner], algorithm=[none], cost=[not available])
-    HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
+HiveProject(c_customer_sk=[$0])
+  HiveSemiJoin(condition=[=($0, $1)], joinType=[semi])
+    HiveProject(c_customer_sk=[$0])
       HiveTableScan(table=[[default, customer]], table:alias=[customer])
     HiveProject(ss_customer_sk=[$3])
       HiveFilter(condition=[IS NOT NULL($3)])
@@ -2647,8 +2712,114 @@ POSTHOOK: Input: default@customer
 POSTHOOK: Input: default@store_sales
 #### A masked pattern was here ####
 CBO PLAN:
-HiveProject(c_customer_id=[$1])
-  HiveAggregate(group=[{0, 1}])
+HiveProject(c_customer_id=[$2])
+  HiveJoin(condition=[=($0, $1)], joinType=[inner], algorithm=[none], cost=[not available])
+    HiveSemiJoin(condition=[=($0, $1)], joinType=[semi])
+      HiveProject(c_customer_sk=[$0])
+        HiveTableScan(table=[[default, customer]], table:alias=[customer])
+      HiveProject(ss_customer_sk=[$0])
+        HiveFilter(condition=[IS NOT NULL($0)])
+          HiveProject(ss_customer_sk=[$3])
+            HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+    HiveProject(c_customer_sk=[$0], c_customer_id=[$1])
+      HiveTableScan(table=[[default, customer]], table:alias=[customer])
+
+PREHOOK: query: EXPLAIN	CBO
+SELECT
+	C_FIRST_NAME
+FROM
+	CUSTOMER
+,	STORE_SALES
+WHERE
+	C_CUSTOMER_SK	=	SS_CUSTOMER_SK
+GROUP BY
+	C_CUSTOMER_SK
+,	C_FIRST_NAME
+,	C_LAST_NAME
+,	C_PREFERRED_CUST_FLAG
+,	C_BIRTH_COUNTRY
+,	C_LOGIN
+,	C_EMAIL_ADDRESS
+PREHOOK: type: QUERY
+PREHOOK: Input: default@customer
+PREHOOK: Input: default@store_sales
+#### A masked pattern was here ####
+POSTHOOK: query: EXPLAIN	CBO
+SELECT
+	C_FIRST_NAME
+FROM
+	CUSTOMER
+,	STORE_SALES
+WHERE
+	C_CUSTOMER_SK	=	SS_CUSTOMER_SK
+GROUP BY
+	C_CUSTOMER_SK
+,	C_FIRST_NAME
+,	C_LAST_NAME
+,	C_PREFERRED_CUST_FLAG
+,	C_BIRTH_COUNTRY
+,	C_LOGIN
+,	C_EMAIL_ADDRESS
+POSTHOOK: type: QUERY
+POSTHOOK: Input: default@customer
+POSTHOOK: Input: default@store_sales
+#### A masked pattern was here ####
+CBO PLAN:
+HiveProject(c_first_name=[$2])
+  HiveJoin(condition=[=($0, $1)], joinType=[inner], algorithm=[none], cost=[not available])
+    HiveSemiJoin(condition=[=($0, $1)], joinType=[semi])
+      HiveProject(c_customer_sk=[$0])
+        HiveTableScan(table=[[default, customer]], table:alias=[customer])
+      HiveProject(ss_customer_sk=[$0])
+        HiveFilter(condition=[IS NOT NULL($0)])
+          HiveProject(ss_customer_sk=[$3])
+            HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+    HiveProject(c_customer_sk=[$0], c_first_name=[$8])
+      HiveTableScan(table=[[default, customer]], table:alias=[customer])
+
+PREHOOK: query: EXPLAIN	CBO
+SELECT
+	C_CUSTOMER_ID
+FROM
+	CUSTOMER
+,	STORE_SALES
+WHERE
+	C_CUSTOMER_SK	=	SS_CUSTOMER_SK
+GROUP BY
+	C_EMAIL_ADDRESS
+,	C_LAST_NAME
+,	C_FIRST_NAME
+,	C_CUSTOMER_ID
+,	C_PREFERRED_CUST_FLAG
+,	C_BIRTH_COUNTRY
+,	C_LOGIN
+PREHOOK: type: QUERY
+PREHOOK: Input: default@customer
+PREHOOK: Input: default@store_sales
+#### A masked pattern was here ####
+POSTHOOK: query: EXPLAIN	CBO
+SELECT
+	C_CUSTOMER_ID
+FROM
+	CUSTOMER
+,	STORE_SALES
+WHERE
+	C_CUSTOMER_SK	=	SS_CUSTOMER_SK
+GROUP BY
+	C_EMAIL_ADDRESS
+,	C_LAST_NAME
+,	C_FIRST_NAME
+,	C_CUSTOMER_ID
+,	C_PREFERRED_CUST_FLAG
+,	C_BIRTH_COUNTRY
+,	C_LOGIN
+POSTHOOK: type: QUERY
+POSTHOOK: Input: default@customer
+POSTHOOK: Input: default@store_sales
+#### A masked pattern was here ####
+CBO PLAN:
+HiveProject(c_customer_id=[$0])
+  HiveAggregate(group=[{1}])
     HiveJoin(condition=[=($0, $8)], joinType=[inner], algorithm=[none], cost=[not available])
       HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
         HiveTableScan(table=[[default, customer]], table:alias=[customer])
@@ -2656,105 +2827,6 @@ HiveProject(c_customer_id=[$1])
         HiveFilter(condition=[IS NOT NULL($3)])
           HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
 
-PREHOOK: query: EXPLAIN	CBO
-SELECT
-	C_FIRST_NAME
-FROM
-	CUSTOMER
-,	STORE_SALES
-WHERE
-	C_CUSTOMER_SK	=	SS_CUSTOMER_SK
-GROUP BY
-	C_CUSTOMER_SK
-,	C_FIRST_NAME
-,	C_LAST_NAME
-,	C_PREFERRED_CUST_FLAG
-,	C_BIRTH_COUNTRY
-,	C_LOGIN
-,	C_EMAIL_ADDRESS
-PREHOOK: type: QUERY
-PREHOOK: Input: default@customer
-PREHOOK: Input: default@store_sales
-#### A masked pattern was here ####
-POSTHOOK: query: EXPLAIN	CBO
-SELECT
-	C_FIRST_NAME
-FROM
-	CUSTOMER
-,	STORE_SALES
-WHERE
-	C_CUSTOMER_SK	=	SS_CUSTOMER_SK
-GROUP BY
-	C_CUSTOMER_SK
-,	C_FIRST_NAME
-,	C_LAST_NAME
-,	C_PREFERRED_CUST_FLAG
-,	C_BIRTH_COUNTRY
-,	C_LOGIN
-,	C_EMAIL_ADDRESS
-POSTHOOK: type: QUERY
-POSTHOOK: Input: default@customer
-POSTHOOK: Input: default@store_sales
-#### A masked pattern was here ####
-CBO PLAN:
-HiveProject(c_first_name=[$1])
-  HiveAggregate(group=[{0, 1}])
-    HiveJoin(condition=[=($0, $7)], joinType=[inner], algorithm=[none], cost=[not available])
-      HiveProject(c_customer_sk=[$0], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
-        HiveTableScan(table=[[default, customer]], table:alias=[customer])
-      HiveProject(ss_customer_sk=[$3])
-        HiveFilter(condition=[IS NOT NULL($3)])
-          HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
-
-PREHOOK: query: EXPLAIN	CBO
-SELECT
-	C_CUSTOMER_ID
-FROM
-	CUSTOMER
-,	STORE_SALES
-WHERE
-	C_CUSTOMER_SK	=	SS_CUSTOMER_SK
-GROUP BY
-	C_EMAIL_ADDRESS
-,	C_LAST_NAME
-,	C_FIRST_NAME
-,	C_CUSTOMER_ID
-,	C_PREFERRED_CUST_FLAG
-,	C_BIRTH_COUNTRY
-,	C_LOGIN
-PREHOOK: type: QUERY
-PREHOOK: Input: default@customer
-PREHOOK: Input: default@store_sales
-#### A masked pattern was here ####
-POSTHOOK: query: EXPLAIN	CBO
-SELECT
-	C_CUSTOMER_ID
-FROM
-	CUSTOMER
-,	STORE_SALES
-WHERE
-	C_CUSTOMER_SK	=	SS_CUSTOMER_SK
-GROUP BY
-	C_EMAIL_ADDRESS
-,	C_LAST_NAME
-,	C_FIRST_NAME
-,	C_CUSTOMER_ID
-,	C_PREFERRED_CUST_FLAG
-,	C_BIRTH_COUNTRY
-,	C_LOGIN
-POSTHOOK: type: QUERY
-POSTHOOK: Input: default@customer
-POSTHOOK: Input: default@store_sales
-#### A masked pattern was here ####
-CBO PLAN:
-HiveAggregate(group=[{1}])
-  HiveJoin(condition=[=($0, $8)], joinType=[inner], algorithm=[none], cost=[not available])
-    HiveProject(c_customer_sk=[$0], c_customer_id=[$1], c_first_name=[$8], c_last_name=[$9], c_preferred_cust_flag=[$10], c_birth_country=[$14], c_login=[$15], c_email_address=[$16])
-      HiveTableScan(table=[[default, customer]], table:alias=[customer])
-    HiveProject(ss_customer_sk=[$3])
-      HiveFilter(condition=[IS NOT NULL($3)])
-        HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
-
 PREHOOK: query: explain cbo select c_customer_sk from
  (select c_first_name, c_customer_sk ,d_date solddate,count(*) cnt
   from store_sales
@@ -2786,18 +2858,19 @@ POSTHOOK: Input: default@store_sales
 CBO PLAN:
 HiveProject(c_customer_sk=[$0])
   HiveFilter(condition=[>($2, 4)])
-    HiveProject(c_customer_sk=[$1], d_date=[$0], $f2=[$2])
-      HiveAggregate(group=[{3, 4}], agg#0=[count()])
-        HiveJoin(condition=[=($1, $4)], joinType=[inner], algorithm=[none], cost=[not available])
-          HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
-            HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
-              HiveFilter(condition=[IS NOT NULL($0)])
-                HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
-            HiveProject(d_date_sk=[$0], d_date=[$2])
-              HiveFilter(condition=[IS NOT NULL($0)])
-                HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
-          HiveProject(c_customer_sk=[$0], c_first_name=[$8])
-            HiveTableScan(table=[[default, customer]], table:alias=[customer])
+    HiveProject(c_customer_sk=[$3], d_date=[$1], $f2=[$2])
+      HiveJoin(condition=[=($0, $3)], joinType=[inner], algorithm=[none], cost=[not available])
+        HiveProject(ss_item_sk=[$0], d_date=[$1], $f2=[$2])
+          HiveAggregate(group=[{1, 3}], agg#0=[count()])
+            HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
+              HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+              HiveProject(d_date_sk=[$0], d_date=[$2])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
+        HiveProject(c_customer_sk=[$0])
+          HiveTableScan(table=[[default, customer]], table:alias=[customer])
 
 PREHOOK: query: explain cbo select c_customer_sk from
  (select substr(c_first_name, 1,30), c_customer_sk ,d_date solddate,count(*) cnt
@@ -2830,18 +2903,19 @@ POSTHOOK: Input: default@store_sales
 CBO PLAN:
 HiveProject(c_customer_sk=[$0])
   HiveFilter(condition=[>($2, 4)])
-    HiveProject(c_customer_sk=[$1], d_date=[$0], $f2=[$2])
-      HiveAggregate(group=[{3, 4}], agg#0=[count()])
-        HiveJoin(condition=[=($1, $4)], joinType=[inner], algorithm=[none], cost=[not available])
-          HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
-            HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
-              HiveFilter(condition=[IS NOT NULL($0)])
-                HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
-            HiveProject(d_date_sk=[$0], d_date=[$2])
-              HiveFilter(condition=[IS NOT NULL($0)])
-                HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
-          HiveProject(c_customer_sk=[$0], substr=[substr($8, 1, 30)])
-            HiveTableScan(table=[[default, customer]], table:alias=[customer])
+    HiveProject(c_customer_sk=[$3], d_date=[$1], $f2=[$2])
+      HiveJoin(condition=[=($0, $3)], joinType=[inner], algorithm=[none], cost=[not available])
+        HiveProject(ss_item_sk=[$0], d_date=[$1], $f2=[$2])
+          HiveAggregate(group=[{1, 3}], agg#0=[count()])
+            HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
+              HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+              HiveProject(d_date_sk=[$0], d_date=[$2])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
+        HiveProject(c_customer_sk=[$0])
+          HiveTableScan(table=[[default, customer]], table:alias=[customer])
 
 PREHOOK: query: explain cbo select c_customer_sk from
  (select substr(c_first_name, 1,30), c_customer_sk ,count(*) cnt
@@ -2874,16 +2948,18 @@ POSTHOOK: Input: default@store_sales
 CBO PLAN:
 HiveProject(c_customer_sk=[$0])
   HiveFilter(condition=[>($1, 4)])
-    HiveAggregate(group=[{3}], agg#0=[count()])
-      HiveJoin(condition=[=($1, $3)], joinType=[inner], algorithm=[none], cost=[not available])
-        HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
-          HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
-            HiveFilter(condition=[IS NOT NULL($0)])
-              HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
-          HiveProject(d_date_sk=[$0])
-            HiveFilter(condition=[IS NOT NULL($0)])
-              HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
-        HiveProject(c_customer_sk=[$0], substr=[substr($8, 1, 30)])
+    HiveProject(c_customer_sk=[$2], $f1=[$1])
+      HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
+        HiveProject(ss_item_sk=[$0], $f1=[$1])
+          HiveAggregate(group=[{1}], agg#0=[count()])
+            HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
+              HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+              HiveProject(d_date_sk=[$0])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
+        HiveProject(c_customer_sk=[$0])
           HiveTableScan(table=[[default, customer]], table:alias=[customer])
 
 PREHOOK: query: -- group by keys from multiple table with non-deterministic expression
@@ -2961,19 +3037,20 @@ POSTHOOK: Input: default@date_dim
 POSTHOOK: Input: default@store_sales
 #### A masked pattern was here ####
 CBO PLAN:
-HiveFilter(condition=[>($3, 4)])
-  HiveProject(substr=[$1], log2=[$2], d_date=[$0], $f3=[$3])
-    HiveAggregate(group=[{3, 5, 6}], agg#0=[count()])
-      HiveJoin(condition=[=($1, $4)], joinType=[inner], algorithm=[none], cost=[not available])
-        HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
-          HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
-            HiveFilter(condition=[IS NOT NULL($0)])
-              HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
-          HiveProject(d_date_sk=[$0], d_date=[$2])
-            HiveFilter(condition=[IS NOT NULL($0)])
-              HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
-        HiveProject(c_customer_sk=[$0], substr=[substr($8, 1, 30)], log2=[log2($0)])
-          HiveTableScan(table=[[default, customer]], table:alias=[customer])
+HiveProject(subq._c0=[$0], subq._c1=[$1], subq.solddate=[$2], subq.cnt=[$3])
+  HiveFilter(condition=[>($3, 4)])
+    HiveProject($f0=[$1], $f1=[$2], d_date=[$0], $f3=[$3])
+      HiveAggregate(group=[{3, 5, 6}], agg#0=[count()])
+        HiveJoin(condition=[=($1, $4)], joinType=[inner], algorithm=[none], cost=[not available])
+          HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
+            HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
+              HiveFilter(condition=[IS NOT NULL($0)])
+                HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+            HiveProject(d_date_sk=[$0], d_date=[$2])
+              HiveFilter(condition=[IS NOT NULL($0)])
+                HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
+          HiveProject(c_customer_sk=[$0], $f0=[substr($8, 1, 30)], $f1=[log2($0)])
+            HiveTableScan(table=[[default, customer]], table:alias=[customer])
 
 PREHOOK: query: -- group by with keys consisting of pk from multiple tables with extra columns from both side
  explain cbo select c_customer_sk from
@@ -3008,18 +3085,19 @@ POSTHOOK: Input: default@store_sales
 CBO PLAN:
 HiveProject(c_customer_sk=[$0])
   HiveFilter(condition=[>($3, 4)])
-    HiveProject(c_customer_sk=[$2], d_date=[$1], d_date_sk=[$0], $f3=[$3])
-      HiveAggregate(group=[{2, 3, 4}], agg#0=[count()])
-        HiveJoin(condition=[=($1, $4)], joinType=[inner], algorithm=[none], cost=[not available])
-          HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
-            HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
-              HiveFilter(condition=[IS NOT NULL($0)])
-                HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
-            HiveProject(d_date_sk=[$0], d_date=[$2])
-              HiveFilter(condition=[IS NOT NULL($0)])
-                HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
-          HiveProject(c_customer_sk=[$0], substr=[substr($8, 1, 30)])
-            HiveTableScan(table=[[default, customer]], table:alias=[customer])
+    HiveProject(c_customer_sk=[$4], d_date=[$2], d_date_sk=[$1], $f3=[$3])
+      HiveJoin(condition=[=($0, $4)], joinType=[inner], algorithm=[none], cost=[not available])
+        HiveProject(ss_item_sk=[$0], d_date_sk=[$1], d_date=[$2], $f3=[$3])
+          HiveAggregate(group=[{1, 2, 3}], agg#0=[count()])
+            HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
+              HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+              HiveProject(d_date_sk=[$0], d_date=[$2])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
+        HiveProject(c_customer_sk=[$0])
+          HiveTableScan(table=[[default, customer]], table:alias=[customer])
 
 PREHOOK: query: -- group by with keys consisting of pk from multiple tables with extra expressions from both side
   explain cbo select c_customer_sk from
@@ -3054,18 +3132,19 @@ POSTHOOK: Input: default@store_sales
 CBO PLAN:
 HiveProject(c_customer_sk=[$0])
   HiveFilter(condition=[>($3, 4)])
-    HiveProject(c_customer_sk=[$2], log2=[$1], d_date_sk=[$0], $f3=[$3])
-      HiveAggregate(group=[{2, 3, 4}], agg#0=[count()])
-        HiveJoin(condition=[=($1, $4)], joinType=[inner], algorithm=[none], cost=[not available])
-          HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
-            HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
-              HiveFilter(condition=[IS NOT NULL($0)])
-                HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
-            HiveProject(d_date_sk=[$0], log2=[log2($2)])
-              HiveFilter(condition=[IS NOT NULL($0)])
-                HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
-          HiveProject(c_customer_sk=[$0], substr=[substr($8, 1, 30)])
-            HiveTableScan(table=[[default, customer]], table:alias=[customer])
+    HiveProject(c_customer_sk=[$4], $f2=[$2], d_date_sk=[$1], $f3=[$3])
+      HiveJoin(condition=[=($0, $4)], joinType=[inner], algorithm=[none], cost=[not available])
+        HiveProject(ss_item_sk=[$0], d_date_sk=[$1], $f2=[$2], $f3=[$3])
+          HiveAggregate(group=[{1, 2, 3}], agg#0=[count()])
+            HiveJoin(condition=[=($0, $2)], joinType=[inner], algorithm=[none], cost=[not available])
+              HiveProject(ss_sold_date_sk=[$0], ss_item_sk=[$2])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, store_sales]], table:alias=[store_sales])
+              HiveProject(d_date_sk=[$0], $f2=[log2($2)])
+                HiveFilter(condition=[IS NOT NULL($0)])
+                  HiveTableScan(table=[[default, date_dim]], table:alias=[date_dim])
+        HiveProject(c_customer_sk=[$0])
+          HiveTableScan(table=[[default, customer]], table:alias=[customer])
 
 PREHOOK: query: create table web_sales(ws_order_number int, ws_item_sk int, ws_price float,
     constraint pk1 primary key(ws_order_number, ws_item_sk) disable rely)
@@ -3108,10 +3187,11 @@ POSTHOOK: type: QUERY
 POSTHOOK: Input: default@web_sales
 #### A masked pattern was here ####
 CBO PLAN:
-HiveAggregate(group=[{}], agg#0=[count()])
-  HiveProject(ws_order_number=[$0])
-    HiveAggregate(group=[{0}])
-      HiveTableScan(table=[[default, web_sales]], table:alias=[web_sales])
+HiveProject(_c0=[$0])
+  HiveAggregate(group=[{}], agg#0=[count()])
+    HiveProject(ws_order_number=[$0])
+      HiveAggregate(group=[{0}])
+        HiveTableScan(table=[[default, web_sales]], table:alias=[web_sales])
 
 PREHOOK: query: select count(distinct ws_order_number) from web_sales
 PREHOOK: type: QUERY
@@ -3125,10 +3205,12 @@ POSTHOOK: Input: default@web_sales
 PREHOOK: query: drop table web_sales
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@web_sales
+PREHOOK: Output: database:default
 PREHOOK: Output: default@web_sales
 POSTHOOK: query: drop table web_sales
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@web_sales
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@web_sales
 PREHOOK: query: create table t1(i int primary key disable rely, j int)
 PREHOOK: type: CREATETABLE
@@ -3197,9 +3279,9 @@ POSTHOOK: Input: default@t1
 POSTHOOK: Input: default@t2
 #### A masked pattern was here ####
 2
+1
 2
 4
-1
 PREHOOK: query: explain cbo select i from (select i, j from t1 intersect select i,j from t2) subq group by i,j
 PREHOOK: type: QUERY
 PREHOOK: Input: default@t1
@@ -3236,16 +3318,20 @@ POSTHOOK: Input: default@t2
 PREHOOK: query: drop table t1
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@t1
+PREHOOK: Output: database:default
 PREHOOK: Output: default@t1
 POSTHOOK: query: drop table t1
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@t1
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@t1
 PREHOOK: query: drop table t2
 PREHOOK: type: DROPTABLE
 PREHOOK: Input: default@t2
+PREHOOK: Output: database:default
 PREHOOK: Output: default@t2
 POSTHOOK: query: drop table t2
 POSTHOOK: type: DROPTABLE
 POSTHOOK: Input: default@t2
+POSTHOOK: Output: database:default
 POSTHOOK: Output: default@t2

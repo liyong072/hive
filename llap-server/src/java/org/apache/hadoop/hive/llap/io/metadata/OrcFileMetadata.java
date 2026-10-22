@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.llap.io.metadata;
@@ -26,6 +27,7 @@ import org.apache.orc.FileFormatException;
 import org.apache.orc.FileMetadata;
 import org.apache.orc.OrcFile;
 import org.apache.orc.OrcProto;
+import org.apache.orc.OrcProto.CalendarKind;
 import org.apache.orc.OrcProto.StripeStatistics;
 import org.apache.orc.OrcUtils;
 import org.apache.orc.StripeInformation;
@@ -51,6 +53,7 @@ public final class OrcFileMetadata implements FileMetadata, ConsumerFileMetadata
   private final long numberOfRows;
   private final boolean isOriginalFormat;
   private final OrcFile.Version fileVersion;
+  private final CalendarKind calendar;
 
   public OrcFileMetadata(Object fileKey, OrcProto.Footer footer, OrcProto.PostScript ps,
     List<StripeStatistics> stats, List<StripeInformation> stripes, final OrcFile.Version fileVersion) {
@@ -69,6 +72,7 @@ public final class OrcFileMetadata implements FileMetadata, ConsumerFileMetadata
     this.fileStats = footer.getStatisticsList();
     this.fileKey = fileKey;
     this.fileVersion = fileVersion;
+    this.calendar = footer.getCalendar();
   }
 
   // FileMetadata
@@ -169,5 +173,10 @@ public final class OrcFileMetadata implements FileMetadata, ConsumerFileMetadata
   @Override
   public OrcFile.Version getFileVersion() {
     return fileVersion;
+  }
+
+  @Override
+  public CalendarKind getCalendar() {
+    return calendar;
   }
 }

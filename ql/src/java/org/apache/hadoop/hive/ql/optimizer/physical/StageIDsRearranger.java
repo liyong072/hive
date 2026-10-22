@@ -9,16 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.optimizer.physical;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -49,11 +49,11 @@ public class StageIDsRearranger implements PhysicalPlanResolver {
     for (Task task : getExplainOrder(pctx)) {
       task.setId(PREFIX + (++counter));
     }
-    return null;
+    return pctx;
   }
 
   private static List<Task> getExplainOrder(PhysicalContext pctx) {
-    List<Task> tasks = getExplainOrder(pctx.getConf(), pctx.getRootTasks());
+    List<Task> tasks = getExplainOrder(pctx.getRootTasks(), pctx.getConf().getVar(HiveConf.ConfVars.HIVE_STAGE_ID_REARRANGE));
     if (pctx.getFetchTask() != null) {
       tasks.add(pctx.getFetchTask());
     }
@@ -70,18 +70,17 @@ public class StageIDsRearranger implements PhysicalPlanResolver {
         }
       }
     };
-    for (Task<? extends Serializable> task : tasks) {
+    for (Task<?> task : tasks) {
       traverse.traverse(task);
     }
     return sources;
   }
 
-  public static List<Task> getExplainOrder(HiveConf conf, List<Task<?>> tasks) {
-    for (Task<? extends Serializable> task : tasks) {
+  public static List<Task> getExplainOrder(List<Task<?>> tasks, String stageIdRearrange) {
+    for (Task<?> task : tasks) {
       task.setRootTask(true);
     }
-    String var = conf.getVar(HiveConf.ConfVars.HIVESTAGEIDREARRANGE);
-    ArrangeType type = ArrangeType.valueOf(var.toUpperCase());
+    ArrangeType type = ArrangeType.valueOf(stageIdRearrange.toUpperCase());
     if (type == ArrangeType.EXECUTION) {
       return executionOrder(tasks);
     }
@@ -122,7 +121,7 @@ public class StageIDsRearranger implements PhysicalPlanResolver {
         return type == ArrangeType.NONE || type == ArrangeType.IDONLY || super.isReady(task);
       }
     };
-    for (Task<? extends Serializable> task : tasks) {
+    for (Task<?> task : tasks) {
       traverse.traverse(task);
     }
     return new ArrayList<Task>(traverse.traversed);

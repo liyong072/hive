@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.parse;
@@ -53,6 +54,7 @@ public class ExplainConfiguration {
   private boolean locks = false;
   private boolean ast = false;
   private boolean debug = false;
+  private boolean ddl = false;
 
   private Path explainRootPath;
   private Map<String, Long> opIdToRuntimeNumRows;
@@ -205,5 +207,13 @@ public class ExplainConfiguration {
 
   public void setAst(boolean ast) {
     this.ast = ast;
+  }
+
+  public void setDDL(boolean ddl) {
+    this.ddl = ddl;
+  }
+
+  public boolean isDDL() {
+    return this.ddl;
   }
 }

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -29,7 +30,8 @@ import java.util.StringTokenizer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.VectorExpressionDescriptor;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
@@ -65,8 +67,8 @@ public abstract class AbstractFilterStringColLikeStringScalar extends VectorExpr
   }
 
   @Override
-  public void transientInit() throws HiveException {
-    super.transientInit();
+  public void transientInit(Configuration conf) throws HiveException {
+    super.transientInit(conf);
 
     checker = createChecker(pattern);
   }
@@ -225,7 +227,7 @@ public abstract class AbstractFilterStringColLikeStringScalar extends VectorExpr
   protected static final class NoneChecker implements Checker {
     final byte [] byteSub;
 
-    NoneChecker(String pattern) {
+    public NoneChecker(String pattern) {
       byteSub = pattern.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -249,7 +251,7 @@ public abstract class AbstractFilterStringColLikeStringScalar extends VectorExpr
   protected static final class BeginChecker implements Checker {
     final byte[] byteSub;
 
-    BeginChecker(String pattern) {
+    public BeginChecker(String pattern) {
       byteSub = pattern.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -268,7 +270,7 @@ public abstract class AbstractFilterStringColLikeStringScalar extends VectorExpr
   protected static final class EndChecker implements Checker {
     final byte[] byteSub;
 
-    EndChecker(String pattern) {
+    public EndChecker(String pattern) {
       byteSub = pattern.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -287,7 +289,7 @@ public abstract class AbstractFilterStringColLikeStringScalar extends VectorExpr
   protected static final class MiddleChecker implements Checker {
     final StringExpr.Finder finder;
 
-    MiddleChecker(String pattern) {
+    public MiddleChecker(String pattern) {
       finder = StringExpr.compile(pattern.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -323,7 +325,7 @@ public abstract class AbstractFilterStringColLikeStringScalar extends VectorExpr
     final int beginLen;
     final int endLen;
 
-    ChainedChecker(String pattern) {
+    public ChainedChecker(String pattern) {
       final StringTokenizer tokens = new StringTokenizer(pattern, "%");
       final boolean leftAnchor = pattern.startsWith("%") == false;
       final boolean rightAnchor = pattern.endsWith("%") == false;
@@ -412,13 +414,13 @@ public abstract class AbstractFilterStringColLikeStringScalar extends VectorExpr
   /**
    * Matches each string to a pattern with Java regular expression package.
    */
-  protected static class ComplexChecker implements Checker {
+  protected static final class ComplexChecker implements Checker {
     Pattern compiledPattern;
     Matcher matcher;
     FastUTF8Decoder decoder;
 
-    ComplexChecker(String pattern) {
-      compiledPattern = Pattern.compile(pattern);
+    public ComplexChecker(String pattern) {
+      compiledPattern = Pattern.compile(pattern, Pattern.DOTALL);
       matcher = compiledPattern.matcher("");
       decoder = new FastUTF8Decoder();
     }

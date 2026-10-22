@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -21,7 +22,7 @@ package org.apache.hadoop.hive.ql.exec.vector.expressions;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.VectorExpressionDescriptor;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
@@ -37,8 +38,6 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 public class StringSubstrColStartLen extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private final int colNum;
-
   private final int startIdx;
   private final int length;
   private final int[] offsetArray;
@@ -47,8 +46,7 @@ public class StringSubstrColStartLen extends VectorExpression {
       StringUtils.EMPTY.getBytes(StandardCharsets.UTF_8);
 
   public StringSubstrColStartLen(int colNum, int startIdx, int length, int outputColumnNum) {
-    super(outputColumnNum);
-    this.colNum = colNum;
+    super(colNum, outputColumnNum);
     offsetArray = new int[2];
 
     /* Switch from a 1-based start offset (the Hive end user convention) to a 0-based start offset
@@ -74,7 +72,6 @@ public class StringSubstrColStartLen extends VectorExpression {
     super();
 
     // Dummy final assignments.
-    colNum = -1;
     startIdx = -1;
     length = 0;
     offsetArray = null;
@@ -87,10 +84,10 @@ public class StringSubstrColStartLen extends VectorExpression {
    * @param start start offset of the byte array the string starts at
    * @param len length of the bytes the string holds in the byte array
    * @param substrStart the Start index for the substring operation
-   * @param substrLen the length of the substring
-   * @param offsetArray the array that indexes are populated to. Assume its length >= 2.
+   * @param substrLength the length of the substring
+   * @param offsetArray the array that indexes are populated to. Assume its {@literal length >= 2}.
    */
-  static void populateSubstrOffsets(byte[] utf8String, int start, int len, int substrStart,
+  public static void populateSubstrOffsets(byte[] utf8String, int start, int len, int substrStart,
       int substrLength, int[] offsetArray) {
     int curIdx = -1;
     offsetArray[0] = -1;
@@ -139,7 +136,7 @@ public class StringSubstrColStartLen extends VectorExpression {
       super.evaluateChildren(batch);
     }
 
-    BytesColumnVector inV = (BytesColumnVector) batch.cols[colNum];
+    BytesColumnVector inV = (BytesColumnVector) batch.cols[inputColumnNum[0]];
     BytesColumnVector outputColVector = (BytesColumnVector) batch.cols[outputColumnNum];
 
     int n = batch.size;
@@ -251,7 +248,7 @@ public class StringSubstrColStartLen extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return getColumnParamString(0, colNum) + ", start " + startIdx + ", length " + length;
+    return getColumnParamString(0, inputColumnNum[0]) + ", start " + startIdx + ", length " + length;
   }
 
   @Override

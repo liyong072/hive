@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec;
@@ -27,10 +28,12 @@ import java.util.concurrent.Executors;
 
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
-import org.apache.hadoop.hive.ql.CompilationOpContext;
+import org.apache.hadoop.hive.ql.Context;
+import org.apache.hadoop.hive.ql.log.PerfLogger;
+import org.apache.hadoop.hive.ql.session.SessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.hadoop.hive.ql.DriverContext;
+import org.apache.hadoop.hive.ql.TaskQueue;
 import org.apache.hadoop.hive.ql.QueryPlan;
 import org.apache.hadoop.hive.ql.QueryState;
 import org.apache.hadoop.hive.ql.metadata.Hive;
@@ -54,7 +57,8 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 public class StatsTask extends Task<StatsWork> implements Serializable {
   private static final long serialVersionUID = 1L;
-  private static transient final Logger LOG = LoggerFactory.getLogger(StatsTask.class);
+  private static final Logger LOG = LoggerFactory.getLogger(StatsTask.class);
+  private final PerfLogger perfLogger = SessionState.getPerfLogger();
 
   public StatsTask() {
     super();
@@ -63,9 +67,8 @@ public class StatsTask extends Task<StatsWork> implements Serializable {
   List<IStatsProcessor> processors = new ArrayList<>();
 
   @Override
-  public void initialize(QueryState queryState, QueryPlan queryPlan, DriverContext ctx,
-      CompilationOpContext opContext) {
-    super.initialize(queryState, queryPlan, ctx, opContext);
+  public void initialize(QueryState queryState, QueryPlan queryPlan, TaskQueue taskQueue, Context context) {
+    super.initialize(queryState, queryPlan, taskQueue, context);
 
     if (work.getBasicStatsWork() != null) {
       BasicStatsTask task = new BasicStatsTask(conf, work.getBasicStatsWork());
@@ -80,14 +83,14 @@ public class StatsTask extends Task<StatsWork> implements Serializable {
     }
 
     for (IStatsProcessor p : processors) {
-      p.initialize(opContext);
+      p.initialize(context.getOpContext());
     }
   }
 
 
   @Override
-  public int execute(DriverContext driverContext) {
-    if (driverContext.getCtx().getExplainAnalyze() == AnalyzeState.RUNNING) {
+  public int execute() {
+    if (context.getExplainAnalyze() == AnalyzeState.RUNNING) {
       return 0;
     }
     if (work.isAggregating() && work.isFooterScan()) {
@@ -95,6 +98,7 @@ public class StatsTask extends Task<StatsWork> implements Serializable {
     }
     int ret = 0;
     try {
+      perfLogger.perfLogBegin("StatsTask", PerfLogger.STATS_TASK);
 
       if (work.isFooterScan()) {
         work.getBasicStatsNoJobWork().setPartitions(work.getPartitions());
@@ -114,18 +118,18 @@ public class StatsTask extends Task<StatsWork> implements Serializable {
       LOG.error("Failed to run stats task", e);
       setException(e);
       return 1;
+    } finally {
+      perfLogger.perfLogEnd("StatsTask", PerfLogger.STATS_TASK);
+      console.printInfo(String.format("StatsTask took %d", perfLogger.getDuration(PerfLogger.STATS_TASK)));
     }
     return 0;
   }
 
-
   private Table getTable(Hive db) throws SemanticException, HiveException {
-    Table tbl = work.getTable();
-    // FIXME for ctas this is still needed because location is not set sometimes
-    if (tbl.getSd().getLocation() == null) {
-      tbl = db.getTable(work.getFullTableName());
-    }
-    return tbl;
+    Table table = db.getTable(work.getFullTableName());
+    // a lookup by name carries no snapshot ref: restore the one the write targeted
+    table.setSnapshotRef(work.getTable().getSnapshotRef());
+    return table;
   }
 
   @Override

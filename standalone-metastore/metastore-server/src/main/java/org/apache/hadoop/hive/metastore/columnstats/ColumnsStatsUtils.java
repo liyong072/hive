@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.metastore.columnstats;
@@ -23,6 +24,7 @@ import org.apache.hadoop.hive.metastore.columnstats.cache.DateColumnStatsDataIns
 import org.apache.hadoop.hive.metastore.columnstats.cache.DecimalColumnStatsDataInspector;
 import org.apache.hadoop.hive.metastore.columnstats.cache.DoubleColumnStatsDataInspector;
 import org.apache.hadoop.hive.metastore.columnstats.cache.LongColumnStatsDataInspector;
+import org.apache.hadoop.hive.metastore.columnstats.cache.TimestampColumnStatsDataInspector;
 import org.apache.hadoop.hive.metastore.columnstats.cache.StringColumnStatsDataInspector;
 
 /**
@@ -46,6 +48,22 @@ public final class ColumnsStatsUtils {
       dateColumnStats = new DateColumnStatsDataInspector(cso.getStatsData().getDateStats());
     }
     return dateColumnStats;
+  }
+
+  /**
+   * Convertes to TimestampColumnStatsDataInspector if it's a TimestampColumnStatsData.
+   * @param cso ColumnStatisticsObj
+   * @return TimestampColumnStatsDataInspector
+   */
+  public static TimestampColumnStatsDataInspector timestampInspectorFromStats(ColumnStatisticsObj cso) {
+    TimestampColumnStatsDataInspector timestampColumnStats;
+    if (cso.getStatsData().getTimestampStats() instanceof TimestampColumnStatsDataInspector) {
+      timestampColumnStats =
+          (TimestampColumnStatsDataInspector)(cso.getStatsData().getTimestampStats());
+    } else {
+      timestampColumnStats = new TimestampColumnStatsDataInspector(cso.getStatsData().getTimestampStats());
+    }
+    return timestampColumnStats;
   }
 
   /**

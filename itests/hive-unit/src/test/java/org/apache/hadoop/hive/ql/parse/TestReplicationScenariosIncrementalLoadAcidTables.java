@@ -9,20 +9,28 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.parse;
 
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
+import org.apache.hadoop.hive.common.FileUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.conf.HiveConfForTest;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.messaging.json.gzip.GzipJSONMessageEncoder;
+import org.apache.hadoop.hive.ql.metadata.HiveMetaStoreClientWithLocalCache;
+import org.apache.hadoop.hive.ql.parse.repl.CopyUtils;
 import org.apache.hadoop.hive.shims.Utils;
-import static org.apache.hadoop.hive.metastore.ReplChangeManager.SOURCE_OF_REPLICATION;
+import static org.apache.hadoop.hive.common.repl.ReplConst.SOURCE_OF_REPLICATION;
+import org.apache.hadoop.hive.common.DataCopyStatistics;
 import org.junit.rules.TestName;
 
 import org.slf4j.Logger;
@@ -33,6 +41,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.BeforeClass;
 import org.junit.AfterClass;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -65,18 +74,17 @@ public class TestReplicationScenariosIncrementalLoadAcidTables {
 
   static void internalBeforeClassSetup(Map<String, String> overrides, Class clazz)
       throws Exception {
-    conf = new HiveConf(clazz);
+    conf = new HiveConfForTest(TestReplicationScenariosIncrementalLoadAcidTables.class);
     conf.set("dfs.client.use.datanode.hostname", "true");
     conf.set("hadoop.proxyuser." + Utils.getUGI().getShortUserName() + ".hosts", "*");
     MiniDFSCluster miniDFSCluster =
-           new MiniDFSCluster.Builder(conf).numDataNodes(1).format(true).build();
+           new MiniDFSCluster.Builder(conf).numDataNodes(2).format(true).build();
     HashMap<String, String> acidConfs = new HashMap<String, String>() {{
         put("fs.defaultFS", miniDFSCluster.getFileSystem().getUri().toString());
         put("hive.support.concurrency", "true");
         put("hive.txn.manager", "org.apache.hadoop.hive.ql.lockmgr.DbTxnManager");
         put("hive.metastore.client.capability.check", "false");
         put("hive.repl.bootstrap.dump.open.txn.timeout", "1s");
-        put("hive.exec.dynamic.partition.mode", "nonstrict");
         put("hive.strict.checks.bucketing", "false");
         put("hive.mapred.mode", "nonstrict");
         put("mapred.input.dir.recursive", "true");
@@ -86,6 +94,7 @@ public class TestReplicationScenariosIncrementalLoadAcidTables {
 
     acidConfs.putAll(overrides);
     primary = new WarehouseInstance(LOG, miniDFSCluster, acidConfs);
+    acidConfs.put(MetastoreConf.ConfVars.REPLDIR.getHiveName(), primary.repldDir);
     replica = new WarehouseInstance(LOG, miniDFSCluster, acidConfs);
     Map<String, String> overridesForHiveConf1 = new HashMap<String, String>() {{
         put("fs.defaultFS", miniDFSCluster.getFileSystem().getUri().toString());
@@ -94,6 +103,7 @@ public class TestReplicationScenariosIncrementalLoadAcidTables {
         put("hive.metastore.client.capability.check", "false");
         put("hive.stats.autogather", "false");
     }};
+    overridesForHiveConf1.put(MetastoreConf.ConfVars.REPLDIR.getHiveName(), primary.repldDir);
     replicaNonAcid = new WarehouseInstance(LOG, miniDFSCluster, overridesForHiveConf1);
   }
 
@@ -105,6 +115,11 @@ public class TestReplicationScenariosIncrementalLoadAcidTables {
 
   @Before
   public void setup() throws Throwable {
+    // set up metastore client cache
+    if (conf.getBoolVar(HiveConf.ConfVars.MSC_CACHE_ENABLED)) {
+      HiveMetaStoreClientWithLocalCache.init(conf);
+    }
+
     primaryDbName = testName.getMethodName() + "_" + +System.currentTimeMillis();
     replicatedDbName = "replicated_" + primaryDbName;
     primary.run("create database " + primaryDbName + " WITH DBPROPERTIES ( '" +
@@ -123,9 +138,10 @@ public class TestReplicationScenariosIncrementalLoadAcidTables {
   }
 
   @Test
+  @org.junit.Ignore("HIVE-25491")
   public void testAcidTableIncrementalReplication() throws Throwable {
-    WarehouseInstance.Tuple bootStrapDump = primary.dump(primaryDbName, null);
-    replica.load(replicatedDbName, bootStrapDump.dumpLocation)
+    WarehouseInstance.Tuple bootStrapDump = primary.dump(primaryDbName);
+    replica.load(replicatedDbName, primaryDbName)
             .run("REPL STATUS " + replicatedDbName)
             .verifyResult(bootStrapDump.lastReplicationId);
     List<String> selectStmtList = new ArrayList<>();
@@ -209,16 +225,16 @@ public class TestReplicationScenariosIncrementalLoadAcidTables {
     String[] result = new String[]{"5"};
 
     WarehouseInstance.Tuple incrementalDump;
-    WarehouseInstance.Tuple bootStrapDump = primary.dump(primaryDbName, null);
-    replica.load(replicatedDbName, bootStrapDump.dumpLocation)
+    WarehouseInstance.Tuple bootStrapDump = primary.dump(primaryDbName);
+    replica.load(replicatedDbName, primaryDbName)
             .run("REPL STATUS " + replicatedDbName)
             .verifyResult(bootStrapDump.lastReplicationId);
 
     ReplicationTestUtils.insertRecords(primary, primaryDbName, primaryDbNameExtra,
             tableName, null, false, ReplicationTestUtils.OperationType.REPL_TEST_ACID_INSERT);
-    incrementalDump = primary.dump(primaryDbName, bootStrapDump.lastReplicationId);
+    incrementalDump = primary.dump(primaryDbName);
     primary.run("drop table " + primaryDbName + "." + tableName);
-    replica.loadWithoutExplain(replicatedDbName, incrementalDump.dumpLocation)
+    replica.loadWithoutExplain(replicatedDbName, primaryDbName)
             .run("REPL STATUS " + replicatedDbName).verifyResult(incrementalDump.lastReplicationId);
     verifyResultsInReplicaInt(Lists.newArrayList("select count(*) from " + tableName,
                                               "select count(*) from " + tableName + "_nopart"),
@@ -226,13 +242,73 @@ public class TestReplicationScenariosIncrementalLoadAcidTables {
 
     ReplicationTestUtils.insertRecords(primary, primaryDbName, primaryDbNameExtra,
             tableNameMM, null, true, ReplicationTestUtils.OperationType.REPL_TEST_ACID_INSERT);
-    incrementalDump = primary.dump(primaryDbName, bootStrapDump.lastReplicationId);
+    incrementalDump = primary.dump(primaryDbName);
     primary.run("drop table " + primaryDbName + "." + tableNameMM);
-    replica.loadWithoutExplain(replicatedDbName, incrementalDump.dumpLocation)
+    replica.loadWithoutExplain(replicatedDbName, primaryDbName)
             .run("REPL STATUS " + replicatedDbName).verifyResult(incrementalDump.lastReplicationId);
     verifyResultsInReplicaInt(Lists.newArrayList("select count(*) from " + tableNameMM,
             "select count(*) from " + tableNameMM + "_nopart"),
             Lists.newArrayList(result, result));
+  }
+
+  @Test
+  public void testReplCommitTransactionOnSourceDeleteORC() throws Throwable {
+    // Run test with ORC format & with transactional true.
+    testReplCommitTransactionOnSourceDelete("STORED AS ORC", "'transactional'='true'");
+  }
+
+  @Test
+  public void testReplCommitTransactionOnSourceDeleteText() throws Throwable {
+    // Run test with TEXT format & with transactional false.
+    testReplCommitTransactionOnSourceDelete("STORED AS TEXTFILE", "'transactional'='false'");
+  }
+
+  public void testReplCommitTransactionOnSourceDelete(String tableStorage, String tableProperty) throws Throwable {
+    String tableName = "testReplCommitTransactionOnSourceDelete";
+    String[] result = new String[] { "5" };
+
+    // Do a bootstrap dump.
+    WarehouseInstance.Tuple bootStrapDump = primary.dump(primaryDbName);
+    replica.load(replicatedDbName, primaryDbName).run("REPL STATUS " + replicatedDbName)
+        .verifyResult(bootStrapDump.lastReplicationId);
+
+    // Add some data to the table & do a incremental dump.
+    ReplicationTestUtils.insertIntoDB(primary, primaryDbName, tableName, tableProperty, tableStorage,
+        new String[] { "1", "2", "3", "4", "5" });
+    WarehouseInstance.Tuple incrementalDump = primary.dump(primaryDbName);
+
+    // Keep a copy of the data, before we drop the table, so that we can copy it back to the location, in order to
+    // trigger source delete at the time of checksum verification.
+    Path tablePath = new Path(primary.getTable(primaryDbName, tableName).getSd().getLocation());
+    Path tablePath_dupe = new Path(primary.getTable(primaryDbName, tableName).getSd().getLocation() + "_dupe");
+    FileSystem fs = tablePath.getFileSystem(conf);
+    DataCopyStatistics copyStatistics = new DataCopyStatistics();
+    FileUtils.copy(fs, tablePath, fs, tablePath_dupe, false, false, conf, copyStatistics);
+
+    // Drop the table.
+    primary.run("drop table " + primaryDbName + "." + tableName);
+
+    // Copy back the data to original location, so that copy happens from original location, not the CM location.
+    copyStatistics = new DataCopyStatistics();
+    FileUtils.copy(fs, tablePath_dupe, fs, tablePath, false, false, conf, copyStatistics);
+
+    // Add a util to delete the original source at the time of source checksum verification.
+    CopyUtils.testCallable = () -> {
+      try {
+        fs.delete(tablePath, true);
+      } catch (Throwable throwable) {
+        throwable.printStackTrace();
+      }
+      return null;
+    };
+
+    // Do an incremental load & verify if things are good.
+    replica.loadWithoutExplain(replicatedDbName, primaryDbName)
+        .run("REPL STATUS " + replicatedDbName).verifyResult(incrementalDump.lastReplicationId);
+    verifyResultsInReplicaInt(Lists.newArrayList("select count(*) from " + tableName,
+        "select count(*) from " + tableName + "_nopart"),
+        Lists.newArrayList(result, result));
+
   }
 
   private void verifyResultsInReplicaInt(List<String> selectStmtList, List<String[]> expectedValues) throws Throwable  {

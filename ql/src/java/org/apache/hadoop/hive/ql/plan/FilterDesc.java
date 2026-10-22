@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.plan;
@@ -111,22 +112,14 @@ public class FilterDesc extends AbstractOperatorDesc {
   }
 
   @Signature
+  @Explain(displayName = "predicate")
   public String getPredicateString() {
     return PlanUtils.getExprListString(Arrays.asList(predicate));
   }
 
+  @Explain(displayName = "predicate", explainLevels = { Level.USER })
   public String getUserLevelExplainPredicateString() {
     return PlanUtils.getExprListString(Arrays.asList(predicate), true);
-  }
-
-  @Explain(displayName = "predicate", postProcess = true)
-  public String getPredicateString(boolean postProcess) {
-    return PlanUtils.getExprListString(Arrays.asList(predicate), false, postProcess);
-  }
-
-  @Explain(displayName = "predicate", explainLevels = { Level.USER }, postProcess = true)
-  public String getUserLevelExplainPredicateString(boolean postProcess) {
-    return PlanUtils.getExprListString(Arrays.asList(predicate), true, postProcess);
   }
 
   public org.apache.hadoop.hive.ql.plan.ExprNodeDesc getPredicate() {

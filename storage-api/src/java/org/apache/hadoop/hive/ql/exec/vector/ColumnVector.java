@@ -9,16 +9,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector;
 
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * ColumnVector contains the shared structure for the sub-types,
@@ -31,6 +33,10 @@ import java.util.Arrays;
  * structure that is used in the inner loop of query execution.
  */
 public abstract class ColumnVector {
+
+
+  /** Reference count. */
+  private AtomicInteger refCount = new AtomicInteger(0);
 
   /**
    * The current kinds of column vectors.
@@ -95,6 +101,7 @@ public abstract class ColumnVector {
    *  - sets isRepeating to false
    */
   public void reset() {
+    assert (refCount.get() == 0);
     if (!noNulls) {
       Arrays.fill(isNull, false);
     }
@@ -102,6 +109,21 @@ public abstract class ColumnVector {
     isRepeating = false;
     preFlattenNoNulls = true;
     preFlattenIsRepeating = false;
+  }
+
+
+  public final void incRef() {
+    refCount.incrementAndGet();
+  }
+
+  public final int getRef() {
+    return refCount.get();
+  }
+
+  public final int decRef() {
+    int i = refCount.decrementAndGet();
+    assert i >= 0;
+    return i;
   }
 
   /**
@@ -211,6 +233,32 @@ public abstract class ColumnVector {
       boolean selectedInUse, int[] sel, int size, ColumnVector outputColVector);
 
   /**
+   * Mark the slot null and put its underlying value into a defined cleared
+   * state. Sets {@code isNull[elementNum] = true} and {@code noNulls = false},
+   * then dispatches to {@link #clearSlotValue(int)} for per-type clearing.
+   *
+   * <p>Defends against consumers that read {@code vector[i]} without first
+   * checking {@code isNull[i]}. Distinct from per-type {@code NULL_VALUE}
+   * sentinels (e.g. {@link LongColumnVector#NULL_VALUE}), which assume the
+   * isNull[]-first contract. Final by design — subclasses customize behavior
+   * by overriding {@link #clearSlotValue(int)}, never this method.
+   */
+  public final void clearValue(int elementNum) {
+    noNulls = false;
+    isNull[elementNum] = true;
+    clearSlotValue(elementNum);
+  }
+
+  /**
+   * Per-type slot-clearing hook invoked by {@link #clearValue(int)}.
+   * Subclasses override to zero out their value array at {@code elementNum}.
+   * Container and void types inherit the no-op default.
+   */
+  protected void clearSlotValue(int elementNum) {
+    // Default no-op.
+  }
+
+  /**
    * Initialize the column vector. This method can be overridden by specific column vector types.
    * Use this method only if the individual type of the column vector is not known, otherwise its
    * preferable to call specific initialization methods.
@@ -258,5 +306,6 @@ public abstract class ColumnVector {
     otherCv.isRepeating = isRepeating;
     otherCv.preFlattenIsRepeating = preFlattenIsRepeating;
     otherCv.preFlattenNoNulls = preFlattenNoNulls;
+    otherCv.refCount = refCount;
   }
 }

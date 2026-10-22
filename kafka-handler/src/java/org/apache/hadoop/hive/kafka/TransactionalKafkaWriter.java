@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.kafka;
@@ -46,6 +47,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -63,6 +65,7 @@ class TransactionalKafkaWriter implements FileSinkOperator.RecordWriter, RecordW
 
   private static final Logger LOG = LoggerFactory.getLogger(TransactionalKafkaWriter.class);
   private static final String TRANSACTION_DIR = "transaction_states";
+  private static final Duration DURATION_0 = Duration.ofMillis(0);
 
   private final String topic;
   private final HiveKafkaProducer<byte[], byte[]> producer;
@@ -124,7 +127,7 @@ class TransactionalKafkaWriter implements FileSinkOperator.RecordWriter, RecordW
         producer.abortTransaction();
       }
       LOG.error("Closing writer [{}] caused by ERROR [{}]", producer.getTransactionalId(), exception.getMessage());
-      producer.close(0, TimeUnit.MILLISECONDS);
+      producer.close(DURATION_0);
       throw exception;
     }
     writerIdTopicId = String.format("WriterId [%s], Kafka Topic [%s]", producer.getTransactionalId(), topic);
@@ -149,7 +152,7 @@ class TransactionalKafkaWriter implements FileSinkOperator.RecordWriter, RecordW
         // producer.send() may throw a KafkaException which wraps a FencedException re throw its wrapped inner cause.
         producer.abortTransaction();
       }
-      producer.close(0, TimeUnit.MILLISECONDS);
+      producer.close(DURATION_0);
       sendExceptionRef.compareAndSet(null, e);
       checkExceptions();
     }
@@ -178,7 +181,7 @@ class TransactionalKafkaWriter implements FileSinkOperator.RecordWriter, RecordW
       } catch (Exception e) {
         LOG.error("Aborting Transaction {} failed due to [{}]", writerIdTopicId, e.getMessage());
       }
-      producer.close(0, TimeUnit.MILLISECONDS);
+      producer.close(DURATION_0);
       return;
     }
 
@@ -209,11 +212,11 @@ class TransactionalKafkaWriter implements FileSinkOperator.RecordWriter, RecordW
       persistTxState();
     }
     checkExceptions();
-    producer.close();
     LOG.info("Closed writerId [{}], Sent [{}] records to Topic [{}]",
         producer.getTransactionalId(),
         sentRecords,
         topic);
+    producer.close(Duration.ZERO);
   }
 
   private void commitTransaction() {
@@ -276,7 +279,7 @@ class TransactionalKafkaWriter implements FileSinkOperator.RecordWriter, RecordW
         producer.abortTransaction();
       }
       LOG.error("Closing writer [{}] caused by ERROR [{}]", writerIdTopicId, exception.getMessage());
-      producer.close(0, TimeUnit.MILLISECONDS);
+      producer.close(DURATION_0);
       throw new IOException(exception);
     }
   }

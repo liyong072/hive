@@ -19,36 +19,80 @@
 
 package org.apache.hadoop.hive.metastore.columnstats.merge;
 
+import org.apache.hadoop.hive.common.histogram.KllHistogramEstimator;
 import org.apache.hadoop.hive.common.ndv.NumDistinctValueEstimator;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
 import org.apache.hadoop.hive.metastore.columnstats.cache.LongColumnStatsDataInspector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static org.apache.hadoop.hive.metastore.columnstats.ColumnsStatsUtils.longInspectorFromStats;
 
-public class LongColumnStatsMerger extends ColumnStatsMerger {
+public class LongColumnStatsMerger extends ColumnStatsMerger<Long> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(LongColumnStatsMerger.class);
+
   @Override
   public void merge(ColumnStatisticsObj aggregateColStats, ColumnStatisticsObj newColStats) {
+    LOG.debug("Merging statistics: [aggregateColStats:{}, newColStats: {}]", aggregateColStats, newColStats);
+
     LongColumnStatsDataInspector aggregateData = longInspectorFromStats(aggregateColStats);
     LongColumnStatsDataInspector newData = longInspectorFromStats(newColStats);
-    aggregateData.setLowValue(Math.min(aggregateData.getLowValue(), newData.getLowValue()));
-    aggregateData.setHighValue(Math.max(aggregateData.getHighValue(), newData.getHighValue()));
-    aggregateData.setNumNulls(aggregateData.getNumNulls() + newData.getNumNulls());
-    if (aggregateData.getNdvEstimator() == null || newData.getNdvEstimator() == null) {
-      aggregateData.setNumDVs(Math.max(aggregateData.getNumDVs(), newData.getNumDVs()));
-    } else {
-      NumDistinctValueEstimator oldEst = aggregateData.getNdvEstimator();
-      NumDistinctValueEstimator newEst = newData.getNdvEstimator();
-      long ndv = -1;
-      if (oldEst.canMerge(newEst)) {
-        oldEst.mergeEstimators(newEst);
-        ndv = oldEst.estimateNumDistinctValues();
-        aggregateData.setNdvEstimator(oldEst);
-      } else {
-        ndv = Math.max(aggregateData.getNumDVs(), newData.getNumDVs());
-      }
-      LOG.debug("Use bitvector to merge column " + aggregateColStats.getColName() + "'s ndvs of "
-          + aggregateData.getNumDVs() + " and " + newData.getNumDVs() + " to be " + ndv);
-      aggregateData.setNumDVs(ndv);
+
+    Long lowValue = mergeLowValue(getLowValue(aggregateData), getLowValue(newData));
+    if (lowValue != null) {
+      aggregateData.setLowValue(lowValue);
     }
+    Long highValue = mergeHighValue(getHighValue(aggregateData), getHighValue(newData));
+    if (highValue != null) {
+      aggregateData.setHighValue(highValue);
+    }
+    aggregateData.setNumNulls(mergeNumNulls(aggregateData.getNumNulls(), newData.getNumNulls()));
+
+    NumDistinctValueEstimator oldNDVEst = aggregateData.getNdvEstimator();
+    NumDistinctValueEstimator newNDVEst = newData.getNdvEstimator();
+    List<NumDistinctValueEstimator> ndvEstimatorsList = Arrays.asList(oldNDVEst, newNDVEst);
+    aggregateData.setNumDVs(mergeNumDistinctValueEstimator(aggregateColStats.getColName(),
+        ndvEstimatorsList, aggregateData.getNumDVs(), newData.getNumDVs()));
+    aggregateData.setNdvEstimator(ndvEstimatorsList.get(0));
+
+    KllHistogramEstimator oldKllEst = aggregateData.getHistogramEstimator();
+    KllHistogramEstimator newKllEst = newData.getHistogramEstimator();
+    aggregateData.setHistogramEstimator(mergeHistogramEstimator(aggregateColStats.getColName(), oldKllEst, newKllEst));
+
+    aggregateColStats.getStatsData().setLongStats(aggregateData);
+  }
+
+  public Long getLowValue(LongColumnStatsDataInspector data) {
+    return data.isSetLowValue() ? data.getLowValue() : null;
+  }
+
+  public Long getHighValue(LongColumnStatsDataInspector data) {
+    return data.isSetHighValue() ? data.getHighValue() : null;
+  }
+
+  @Override
+  public Long mergeLowValue(Long oldValue, Long newValue) {
+    if (oldValue != null && newValue != null) {
+      return Math.min(oldValue, newValue);
+    } else if (oldValue != null) {
+      return oldValue;
+    }
+    // it can be null
+    return newValue;
+  }
+
+  @Override
+  public Long mergeHighValue(Long oldValue, Long newValue) {
+    if (oldValue != null && newValue != null) {
+      return Math.max(oldValue, newValue);
+    } else if (oldValue != null) {
+      return oldValue;
+    }
+    // it can be null
+    return newValue;
   }
 }

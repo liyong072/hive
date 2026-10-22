@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hive.jdbc;
 
@@ -22,11 +23,10 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.Collections2;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
-import org.apache.curator.framework.recipes.nodes.PersistentEphemeralNode;
+import org.apache.curator.framework.recipes.nodes.PersistentNode;
 import org.apache.curator.retry.RetryOneTime;
 import org.apache.curator.test.TestingServer;
 import org.apache.hadoop.hive.common.ZooKeeperHiveHelper;
-import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.junit.After;
@@ -165,9 +165,8 @@ public class TestServiceDiscovery {
     // Publish configs for this instance as the data on the node
     znodeData = Joiner.on(';').withKeyValueSeparator("=").join(confs);
     byte[] znodeDataUTF8 = znodeData.getBytes(Charset.forName("UTF-8"));
-    PersistentEphemeralNode znode =
-      new PersistentEphemeralNode(client,
-        PersistentEphemeralNode.Mode.EPHEMERAL_SEQUENTIAL, pathPrefix, znodeDataUTF8);
+    PersistentNode znode = new PersistentNode(client, CreateMode.EPHEMERAL_SEQUENTIAL,
+        false, pathPrefix, znodeDataUTF8);
     znode.start();
     // We'll wait for 120s for node creation
     long znodeCreationTimeout = 120;

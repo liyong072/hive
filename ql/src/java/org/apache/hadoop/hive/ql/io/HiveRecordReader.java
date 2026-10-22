@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io;
@@ -35,12 +36,12 @@ public class HiveRecordReader<K extends WritableComparable, V extends Writable>
 
 
 
-  public HiveRecordReader(RecordReader recordReader)
+  public HiveRecordReader(RecordReader<K, V> recordReader)
       throws IOException {
     super(recordReader);
   }
 
-  public HiveRecordReader(RecordReader recordReader, JobConf conf)
+  public HiveRecordReader(RecordReader<K, V> recordReader, JobConf conf)
       throws IOException {
     super(recordReader, conf);
   }
@@ -50,14 +51,17 @@ public class HiveRecordReader<K extends WritableComparable, V extends Writable>
     recordReader.close();
   }
 
+  @Override
   public K createKey() {
-    return (K) recordReader.createKey();
+    return recordReader.createKey();
   }
 
+  @Override
   public V createValue() {
-    return (V) recordReader.createValue();
+    return recordReader.createValue();
   }
 
+  @Override
   public long getPos() throws IOException {
     return recordReader.getPos();
   }

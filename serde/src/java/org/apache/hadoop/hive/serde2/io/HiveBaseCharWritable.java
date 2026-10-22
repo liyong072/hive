@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.serde2.io;
@@ -27,12 +28,17 @@ import org.apache.hive.common.util.HiveStringUtils;
 
 public abstract class HiveBaseCharWritable {
   protected Text value = new Text();
+  protected int charLength = -1;
 
   public HiveBaseCharWritable() {
   }
 
   public int getCharacterLength() {
-    return HiveStringUtils.getTextUtfLength(value);
+    if (charLength != -1) {
+      return charLength;
+    }
+    charLength = HiveStringUtils.getTextUtfLength(value);
+    return charLength;
   }
 
   /**
@@ -45,6 +51,7 @@ public abstract class HiveBaseCharWritable {
 
   public void readFields(DataInput in) throws IOException {
     value.readFields(in);
+    charLength = -1;
   }
 
   public void write(DataOutput out) throws IOException {

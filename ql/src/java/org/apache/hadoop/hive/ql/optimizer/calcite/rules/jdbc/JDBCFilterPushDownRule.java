@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer.calcite.rules.jdbc;
 
@@ -24,6 +25,7 @@ import org.apache.calcite.adapter.jdbc.JdbcRules.JdbcFilterRule;
 import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.convert.ConverterRule;
 import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rex.RexNode;
 import org.apache.hadoop.hive.ql.optimizer.calcite.reloperators.HiveFilter;
@@ -67,7 +69,7 @@ public class JDBCFilterPushDownRule extends RelOptRule {
     final HiveJdbcConverter converter = call.rel(1);
 
     Filter newHiveFilter = filter.copy(filter.getTraitSet(), converter.getInput(), filter.getCondition());
-    JdbcFilter newJdbcFilter = (JdbcFilter) new JdbcFilterRule(converter.getJdbcConvention()).convert(newHiveFilter);
+    JdbcFilter newJdbcFilter = (JdbcFilter) JdbcFilterRule.create(converter.getJdbcConvention()).convert(newHiveFilter);
     if (newJdbcFilter != null) {
       RelNode converterRes = converter.copy(converter.getTraitSet(), Arrays.asList(newJdbcFilter));
 

@@ -9,24 +9,25 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.io;
 
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.JavaUtils;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.llap.io.api.LlapProxy;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.mr.ExecMapper;
 import org.apache.hadoop.hive.ql.io.CombineHiveInputFormat.CombineHiveInputSplit;
@@ -42,6 +43,8 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.mapred.lib.CombineFileSplit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * CombineHiveRecordReader.
@@ -51,9 +54,9 @@ import org.apache.hadoop.mapred.lib.CombineFileSplit;
  */
 public class CombineHiveRecordReader<K extends WritableComparable, V extends Writable>
     extends HiveContextAwareRecordReader<K, V> {
-  private org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(CombineHiveRecordReader.class);
+  private static final Logger LOG = LoggerFactory.getLogger(CombineHiveRecordReader.class);
 
-  private LinkedHashMap<Path, PartitionDesc> pathToPartInfo;
+  private Map<Path, PartitionDesc> pathToPartInfo;
 
   public CombineHiveRecordReader(InputSplit split, Configuration conf,
       Reporter reporter, Integer partition, RecordReader preReader) throws IOException {
@@ -70,53 +73,54 @@ public class CombineHiveRecordReader<K extends WritableComparable, V extends Wri
           + inputFormatClassName);
     }
     InputFormat inputFormat = HiveInputFormat.getInputFormatFromCache(inputFormatClass, jobConf);
-    try {
-      // TODO: refactor this out
-      if (pathToPartInfo == null) {
-        MapWork mrwork;
-        if (HiveConf.getVar(conf, HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
-          mrwork = (MapWork) Utilities.getMergeWork(jobConf);
-          if (mrwork == null) {
-            mrwork = Utilities.getMapWork(jobConf);
-          }
-        } else {
-          mrwork = Utilities.getMapWork(jobConf);
+    MapWork mrwork = null;
+    if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.LLAP_IO_ENABLED, LlapProxy.isDaemon())) {
+      try {
+        // TODO : refactor this out
+        if (pathToPartInfo == null) {
+          mrwork = getMrWork(jobConf);
+          pathToPartInfo = mrwork.getPathToPartitionInfo();
         }
-        pathToPartInfo = mrwork.getPathToPartitionInfo();
-      }
 
-      PartitionDesc part = extractSinglePartSpec(hsplit);
-      inputFormat = HiveInputFormat.wrapForLlap(inputFormat, jobConf, part);
-    } catch (HiveException e) {
-      throw new IOException(e);
+        PartitionDesc part = extractSinglePartSpec(hsplit);
+        inputFormat = HiveInputFormat.wrapForLlap(inputFormat, jobConf, part);
+      } catch (HiveException e) {
+        throw new IOException(e);
+      }
     }
 
+    FileSplit inputSplit;
     // create a split for the given partition
-    FileSplit fsplit = new FileSplit(hsplit.getPaths()[partition], hsplit
-        .getStartOffsets()[partition], hsplit.getLengths()[partition], hsplit
-        .getLocations());
+    if (inputFormat instanceof CombineHiveInputFormat.MergeSplits) {
+      mrwork = getMrWork(jobConf);
+      inputSplit = ((CombineHiveInputFormat.MergeSplits) inputFormat).createMergeSplit(hsplit, partition,
+          mrwork.getMergeSplitProperties());
+    } else {
+      inputSplit = new FileSplit(hsplit.getPaths()[partition],
+          hsplit.getStartOffsets()[partition], hsplit.getLengths()[partition],
+          hsplit.getLocations());
+    }
 
-    this.setRecordReader(inputFormat.getRecordReader(fsplit, jobConf, reporter));
+    this.setRecordReader(inputFormat.getRecordReader(inputSplit, jobConf, reporter));
 
-    this.initIOContext(fsplit, jobConf, inputFormatClass, this.recordReader);
+    this.initIOContext(inputSplit, jobConf, inputFormatClass, this.recordReader);
 
     //If current split is from the same file as preceding split and the preceding split has footerbuffer,
     //the current split should use the preceding split's footerbuffer in order to skip footer correctly.
-    if (preReader != null && preReader instanceof CombineHiveRecordReader
-        && ((CombineHiveRecordReader)preReader).getFooterBuffer() != null) {
+    if (preReader instanceof CombineHiveRecordReader
+        && ((CombineHiveRecordReader) preReader).getFooterBuffer() != null) {
       if (partition != 0 && hsplit.getPaths()[partition -1].equals(hsplit.getPaths()[partition]))
         this.setFooterBuffer(((CombineHiveRecordReader)preReader).getFooterBuffer());
     }
-
   }
 
   private PartitionDesc extractSinglePartSpec(CombineHiveInputSplit hsplit) throws IOException {
     PartitionDesc part = null;
-    Map<Map<Path,PartitionDesc>, Map<Path,PartitionDesc>> cache = new HashMap<>();
+    Map<Path, Path> cache = new HashMap<>();
     for (Path path : hsplit.getPaths()) {
       PartitionDesc otherPart = HiveFileFormatUtils.getFromPathRecursively(
           pathToPartInfo, path, cache);
-      LOG.debug("Found spec for " + path + " " + otherPart + " from " + pathToPartInfo);
+      LOG.debug("Found spec for {} {} from {}", path, otherPart, pathToPartInfo);
       if (part == null) {
         part = otherPart;
       } else if (otherPart != part) { // Assume we should have the exact same object.
@@ -130,6 +134,14 @@ public class CombineHiveRecordReader<K extends WritableComparable, V extends Wri
     return part;
   }
 
+  private MapWork getMrWork(JobConf jobConf) {
+    MapWork mrwork = (MapWork) Utilities.getMergeWork(jobConf);
+    if (mrwork == null) {
+      mrwork = Utilities.getMapWork(jobConf);
+    }
+    return mrwork;
+  }
+
   @Override
   public void doClose() throws IOException {
     recordReader.close();
@@ -137,12 +149,12 @@ public class CombineHiveRecordReader<K extends WritableComparable, V extends Wri
 
   @Override
   public K createKey() {
-    return (K) recordReader.createKey();
+    return recordReader.createKey();
   }
 
   @Override
   public V createValue() {
-    return (V) recordReader.createValue();
+    return recordReader.createValue();
   }
 
   @Override

@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.history;
@@ -21,7 +22,6 @@ package org.apache.hadoop.hive.ql.history;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
@@ -80,7 +80,7 @@ public class HiveHistoryImpl implements HiveHistory{
     try {
       console = new LogHelper(LOG);
       String conf_file_loc = ss.getConf().getVar(
-          HiveConf.ConfVars.HIVEHISTORYFILELOC);
+          HiveConf.ConfVars.HIVE_HISTORY_FILE_LOC);
       if ((conf_file_loc == null) || conf_file_loc.length() == 0) {
         console.printError("No history file location given");
         return;
@@ -229,7 +229,7 @@ public class HiveHistoryImpl implements HiveHistory{
       }
 
     } catch (Exception e) {
-      LOG.warn(org.apache.hadoop.util.StringUtils.stringifyException(e));
+      LOG.warn("Failed to set task counters", e);
     }
     if (sb1.length() > 0) {
       taskInfoMap.get(id).hm.put(Keys.ROWS_INSERTED.name(), sb1.toString());
@@ -263,7 +263,7 @@ public class HiveHistoryImpl implements HiveHistory{
   }
 
   @Override
-  public void startTask(String queryId, Task<? extends Serializable> task,
+  public void startTask(String queryId, Task<?> task,
       String taskName) {
     TaskInfo ti = new TaskInfo();
 
@@ -279,7 +279,7 @@ public class HiveHistoryImpl implements HiveHistory{
   }
 
   @Override
-  public void endTask(String queryId, Task<? extends Serializable> task) {
+  public void endTask(String queryId, Task<?> task) {
     String id = queryId + ":" + task.getId();
     TaskInfo ti = taskInfoMap.get(id);
 
@@ -291,7 +291,7 @@ public class HiveHistoryImpl implements HiveHistory{
   }
 
   @Override
-  public void progressTask(String queryId, Task<? extends Serializable> task) {
+  public void progressTask(String queryId, Task<?> task) {
     String id = queryId + ":" + task.getId();
     TaskInfo ti = taskInfoMap.get(id);
     if (ti == null) {

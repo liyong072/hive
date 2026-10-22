@@ -9,15 +9,16 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.apache.hadoop.hive.ql.optimizer;
 
-import org.apache.hadoop.hive.ql.ddl.DDLWork2;
+import org.apache.hadoop.hive.ql.ddl.DDLWork;
 import org.apache.hadoop.hive.ql.exec.FileSinkOperator;
 import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hadoop.hive.ql.exec.OperatorUtils;
@@ -27,7 +28,6 @@ import org.apache.hadoop.hive.ql.exec.repl.ReplLoadWork;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.parse.GenTezProcContext;
 import org.apache.hadoop.hive.ql.parse.GenTezWork;
-import org.apache.hadoop.hive.ql.parse.spark.GenSparkWork;
 import org.apache.hadoop.hive.ql.plan.ArchiveWork;
 import org.apache.hadoop.hive.ql.plan.BaseWork;
 import org.apache.hadoop.hive.ql.plan.BasicStatsNoJobWork;
@@ -35,17 +35,14 @@ import org.apache.hadoop.hive.ql.plan.BasicStatsWork;
 import org.apache.hadoop.hive.ql.plan.ColumnStatsUpdateWork;
 import org.apache.hadoop.hive.ql.plan.ConditionalWork;
 import org.apache.hadoop.hive.ql.plan.CopyWork;
-import org.apache.hadoop.hive.ql.plan.DDLWork;
 import org.apache.hadoop.hive.ql.plan.DependencyCollectionWork;
 import org.apache.hadoop.hive.ql.plan.ExplainSQRewriteWork;
 import org.apache.hadoop.hive.ql.plan.ExplainWork;
 import org.apache.hadoop.hive.ql.plan.FetchWork;
 import org.apache.hadoop.hive.ql.plan.FileSinkDesc;
-import org.apache.hadoop.hive.ql.plan.FunctionWork;
 import org.apache.hadoop.hive.ql.plan.MapredLocalWork;
 import org.apache.hadoop.hive.ql.plan.MapredWork;
 import org.apache.hadoop.hive.ql.plan.MoveWork;
-import org.apache.hadoop.hive.ql.plan.SparkWork;
 import org.apache.hadoop.hive.ql.plan.StatsWork;
 import org.apache.hadoop.hive.ql.plan.TezWork;
 import org.slf4j.Logger;
@@ -85,11 +82,6 @@ public class QueryPlanPostProcessor {
           collectFileSinkDescs(w.getReduceWork().getAllLeafOperators(), acidSinks);
         }
       }
-      else if(work instanceof SparkWork) {
-        for(BaseWork bw : ((SparkWork)work).getRoots()) {
-          collectFileSinkDescs(bw.getAllLeafOperators(), acidSinks);
-        }
-      }
       else if(work instanceof MapredLocalWork) {
         //I don't think this can have any FileSinkOperatorS - more future proofing
         Set<FileSinkOperator> fileSinkOperatorSet = OperatorUtils.findOperators(((MapredLocalWork) work).getAliasToWork().values(), FileSinkOperator.class);
@@ -103,18 +95,15 @@ public class QueryPlanPostProcessor {
       else if(work instanceof ReplLoadWork ||
           work instanceof ReplStateLogWork ||
           work instanceof GenTezWork ||
-          work instanceof GenSparkWork ||
           work instanceof ArchiveWork ||
           work instanceof ColumnStatsUpdateWork ||
           work instanceof BasicStatsWork ||
           work instanceof ConditionalWork ||
           work instanceof CopyWork ||
           work instanceof DDLWork ||
-          work instanceof DDLWork2 ||
           work instanceof DependencyCollectionWork ||
           work instanceof ExplainSQRewriteWork ||
           work instanceof FetchWork ||
-          work instanceof FunctionWork ||
           work instanceof MoveWork ||
           work instanceof BasicStatsNoJobWork ||
           work instanceof StatsWork) {

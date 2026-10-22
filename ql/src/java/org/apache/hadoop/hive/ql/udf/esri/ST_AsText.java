@@ -1,0 +1,78 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+package org.apache.hadoop.hive.ql.udf.esri;
+
+import org.apache.hadoop.hive.ql.exec.Description;
+import org.apache.hadoop.io.BytesWritable;
+import org.apache.hadoop.io.Text;
+import org.locationtech.jts.geom.Geometry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Description(name = "ST_AsText",
+    value = "_FUNC_(ST_Geometry) - return Well-Known Text (WKT) representation of ST_Geometry\n",
+    extended = "Example:\n" + "  SELECT _FUNC_(ST_Point(1, 2)) FROM onerow;  --  POINT (1 2)\n")
+//@HivePdkUnitTests(
+//	cases = {
+//		@HivePdkUnitTest(
+//			query = "SELECT ST_AsText(ST_Point(1, 2)), ST_AsText(ST_MultiPoint(1, 2, 3, 4)) FROM onerow",
+//			result = "POINT (1 2)	MULTIPOINT ((1 2), (3 4))"
+//			),
+//		@HivePdkUnitTest(
+//			query = "SELECT ST_AsText(ST_LineString(1, 1, 2, 2, 3, 3)) FROM onerow",
+//			result = "LINESTRING (1 1, 2 2, 3 3)"
+//			),
+//		@HivePdkUnitTest(
+//			query = "SELECT ST_AsText(ST_Polygon(1, 1, 1, 4, 4, 4, 4, 1)), ST_AsText(ST_Polygon(1, 1, 4, 1, 4, 4, 1, 4)) FROM onerow",
+//			result = "POLYGON ((4 1, 4 4, 1 4, 1 1, 4 1))	NULL"
+//			),
+//		@HivePdkUnitTest(
+//			query = "SELECT ST_AsText(ST_MultiPolygon(array(1, 1, 1, 4, 4, 4, 4, 1), array(11, 11, 11, 14, 14, 14, 14, 11))) FROM onerow",
+//			result = "MULTIPOLYGON (((4 1, 4 4, 1 4, 1 1, 4 1)), ((14 11, 14 14, 11 14, 11 11, 14 11)))"
+//			)
+//		}
+//	)
+public class ST_AsText extends ST_Geometry {
+
+  static final Logger LOG = LoggerFactory.getLogger(ST_AsText.class.getName());
+
+  public Text evaluate(BytesWritable geomref) {
+    if (geomref == null || geomref.getLength() == 0) {
+      LogUtils.Log_ArgumentsNull(LOG);
+      return null;
+    }
+
+    Geometry geom = GeometryUtils.geometryFromEsriShape(geomref);
+    if (geom == null) {
+      LogUtils.Log_ArgumentsNull(LOG);
+      return null;
+    }
+
+    try {
+      String wkt = GeometryUtils.wktWriterFor(geom).write(geom);
+      // JTS 1.20 WKTWriter omits the space between dimension qualifier and '(' (e.g. "POINT Z(").
+      // ISO WKT requires "POINT Z (" with a space. Fix by inserting a space.
+      wkt = wkt.replace(" ZM(", " ZM (").replace(" Z(", " Z (").replace(" M(", " M (");
+      return new Text(wkt);
+    } catch (Exception e) {
+      LogUtils.Log_InternalError(LOG, "ST_AsText: " + e);
+      return null;
+    }
+  }
+}

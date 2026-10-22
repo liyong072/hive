@@ -9,11 +9,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package org.apache.hadoop.hive.ql.exec.vector.expressions;
@@ -33,12 +34,10 @@ import org.apache.hadoop.hive.ql.metadata.HiveException;
 public class StringScalarConcatStringGroupCol extends VectorExpression {
   private static final long serialVersionUID = 1L;
 
-  private final int colNum;
   private final byte[] value;
 
   public StringScalarConcatStringGroupCol(byte[] value, int colNum, int outputColumnNum) {
-    super(outputColumnNum);
-    this.colNum = colNum;
+    super(colNum, outputColumnNum);
     this.value = value;
   }
 
@@ -46,7 +45,6 @@ public class StringScalarConcatStringGroupCol extends VectorExpression {
     super();
 
     // Dummy final assignments.
-    colNum = -1;
     value = null;
   }
 
@@ -57,7 +55,7 @@ public class StringScalarConcatStringGroupCol extends VectorExpression {
         super.evaluateChildren(batch);
       }
 
-    BytesColumnVector inputColVector = (BytesColumnVector) batch.cols[colNum];
+    BytesColumnVector inputColVector = (BytesColumnVector) batch.cols[inputColumnNum[0]];
     BytesColumnVector outputColVector = (BytesColumnVector) batch.cols[outputColumnNum];
     int[] sel = batch.selected;
     int n = batch.size;
@@ -153,7 +151,7 @@ public class StringScalarConcatStringGroupCol extends VectorExpression {
 
   @Override
   public String vectorExpressionParameters() {
-    return "val " + displayUtf8Bytes(value) + ", " + getColumnParamString(1, colNum);
+    return "val " + displayUtf8Bytes(value) + ", " + getColumnParamString(1, inputColumnNum[0]);
   }
 
   @Override
